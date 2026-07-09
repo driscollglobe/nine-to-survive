@@ -618,6 +618,40 @@ const NineToSurvive = (() => {
       }
     },
 
+    // THE ANONYMOUS SURVEY IS NOT. Meredith launches a Pulse Survey; the next
+    // day she starts identifying authors, for culture. Stages: 0 dormant ·
+    // 1 survey day (the card comes) · 2 the hunt · 3 filed. The comedy target
+    // is the survey, the font, and the metadata. Never the respondents.
+    hr_survey: {
+      npc: 'meredith',
+      advance(g, a){
+        const mer = g.npcState.meredith;
+        if(a.stage === 0){
+          if(a.startDay == null)
+            a.startDay = 4 + Math.floor(localRand((g.runSeed ^ hashStr('survey_start')) | 0)() * 4);
+          if(g.day >= a.startDay){
+            a.stage = 1;
+            pushFeed(g, 543, 'Meredith launched the Pulse Survey. “Anonymous,” it says, in a font that knows your name.');
+            g.todayIncidents.push({ id: 'hr_survey', owner: 'hr',
+              atMin: 640 + Math.floor(arcRand(g, 'hr', 'survey')() * 220) });
+          }
+        } else if(a.stage === 1){
+          // unanswered somehow? it re-arrives, like all mandatory optional things
+          if(!mer.counters.surveyDay){
+            g.todayIncidents.push({ id: 'hr_survey', owner: 'hr',
+              atMin: 640 + Math.floor(arcRand(g, 'hr', 'survey')() * 220) });
+          } else {
+            a.stage = 2;
+            pushFeed(g, 548, 'Meredith is cross-referencing writing styles. For culture.');
+            pushFeed(g, 560, 'Meredith asked IT for “aggregate metadata.” IT went quiet.');
+          }
+        } else if(a.stage === 2){
+          a.stage = 3;
+          pushFeed(g, 545, 'The Pulse Survey results are in: engagement is up. Nobody remembers agreeing to that.');
+        }
+      }
+    },
+
     // MARCUS HAS SEEN EVERYTHING. The survivor: funny, useful, slightly
     // spiritually dead, never a fraud. Stages: 0 dormant · 1 mentor (permanent —
     // coasting does not resolve). Once live, chatting with him delivers a tip.
@@ -663,6 +697,21 @@ const NineToSurvive = (() => {
           o:'He slams the lid and looks at you the way drowning men look at driftwood. “You’re solid,” he whispers. Complicit. The word is complicit. Your inbox, at least, is now a protected wetland.' },
         { key:'ride', t:'See nothing. Sip your coffee. Let it ride.', s:0, so:+1,
           o:'You turn back to your monitor and let the universe keep its own books. Whatever happens to Brad now was always going to happen. You are merely no longer load-bearing.' }
+      ]
+    },
+    hr_survey: {
+      tag: 'Incident · The Pulse Survey',
+      title: '“Anonymous. We Promise.”',
+      scene: 'The survey has eleven questions, a progress bar, and a required login. Question one asks how likely you are to recommend this workplace, 1 through 5. Question eleven asks for “any other context,” in a free-text box exactly the size of a career. The URL contains your employee ID.',
+      choices: [
+        { key:'bland', t:'Fives across the board. “No notes!”', s:+1, so:-4,
+          o:'Submitted in ninety seconds. Your five stars join the wall of five stars behind which nothing changes. Somewhere a dashboard turns a satisfying green, and a little more of you goes gray.' },
+        { key:'truth', t:'Tell the truth. All of it. Names, dates, the sync.', s:0, so:+8,
+          o:'You write it plainly and hit submit. It reads like testimony because it is. The survey is anonymous the way glass is private — expect your words to attend your next review without you.' },
+        { key:'help', t:'First, help a coworker phrase theirs safely.', s:0, so:+3,
+          o:'You translate their rage into “opportunities for process clarity.” It is a masterpiece of deniability. They owe you one, quietly, forever.' },
+        { key:'metadata', t:'Open the page source. Read the URL. Screenshot the “anonymous” form’s user ID field.', s:0, so:+2,
+          o:'response_id, employee_ref, session_token. You save it all. Anonymity has a schema, and now you have a copy. This will be useful the day a warning needs withdrawing.' }
       ]
     },
     boss_quick_call: {
@@ -712,6 +761,25 @@ const NineToSurvive = (() => {
       } else {
         a.stage = 5;
         pushFeed(g, min, 'Brad turned his desk eleven degrees away from the aisle. Feng shui, he said.');
+      }
+    }
+    if(id === 'hr_survey'){
+      const mer = g.npcState.meredith;
+      mer.counters.surveyDay = g.day;
+      if(c.key === 'truth'){
+        mer.flags.truthTold = true;
+        pushFeed(g, min, 'Someone submitted seven paragraphs. Meredith has opened a thesaurus.');
+      } else if(c.key === 'help'){
+        const peers = ['kayla', 'priya', 'marcus'];
+        const who = peers[Math.floor(arcRand(g, 'hr', 'peer')() * peers.length)];
+        g.npcState[who].trust += 2;
+        mer.counters.helped = who;
+        pushFeed(g, min, who.charAt(0).toUpperCase() + who.slice(1) + '’s survey response is a masterpiece of deniability. You are thanked in the metadata.');
+      } else if(c.key === 'metadata'){
+        addReceipt(g, 'hr_survey_metadata');
+        pushFeed(g, min, 'Someone viewed the survey’s page source for eleven minutes. Anonymously, of course.');
+      } else {
+        pushFeed(g, min, 'Early Pulse results: morale is “strong.” The word is doing a lot of shifts.');
       }
     }
     if(id === 'boss_quick_call'){
@@ -890,14 +958,31 @@ const NineToSurvive = (() => {
     if(g.money < 0){ g.money = 0; report.broke = true; if(!g.failed) soulHit(g, BROKE_SOUL); }
     if(!g.failed) soulHit(g, drain);
     if(!g.failed && g.day % 5 === 0){ // Friday review
-      if(g.standing >= PROMOTE_AT && g.jobIdx < LADDER.length - 1){
+      // the "anonymous" survey attends your review without you — once
+      const mer = g.npcState && g.npcState.meredith;
+      if(mer && mer.flags.truthTold && !mer.flags.truthBilled){
+        mer.flags.truthBilled = true;
+        g.standing = clamp(g.standing - 5);
+        report.truthBill = true;
+        pushFeed(g, 1019, 'Your survey answers attended your review. Anonymously.');
+        if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
+      }
+      if(g.failed){ /* the bill can end it */ }
+      else if(g.standing >= PROMOTE_AT && g.jobIdx < LADDER.length - 1){
         g.jobIdx++; g.standing = PROMOTE_RESET; soulHit(g, PROMOTE_SOUL);
         report.promoted = true; report.newTitle = jobTitle(g);
         pushFeed(g, 1020, 'A promotion was announced. The word “journey” was used twice.');
       } else if(g.standing < WARN_AT){
-        soulHit(g, WARN_SOUL); report.warned = true;
-        if(g.stats) g.stats.warnings++;
-        pushFeed(g, 1020, 'Meredith created a document. The filename contains your name and the word “alignment.”');
+        if(hasReceipt(g, 'hr_survey_metadata')){
+          // the receipt defuses exactly one warning, then it's spent
+          burnReceipt(g, 'hr_survey_metadata');
+          report.warningDefused = true;
+          pushFeed(g, 1020, 'The warning was withdrawn after you asked, politely, about survey response IDs.');
+        } else {
+          soulHit(g, WARN_SOUL); report.warned = true;
+          if(g.stats) g.stats.warnings++;
+          pushFeed(g, 1020, 'Meredith created a document. The filename contains your name and the word “alignment.”');
+        }
       }
     }
     report.money = g.money;
@@ -920,6 +1005,9 @@ const NineToSurvive = (() => {
       return d + 'you became the corner office’s emotional support animal.';
     if(boss.counters.callDay === rep.day)
       return d + 'a quick call was survived at async speed.';
+    if(g.npcState.meredith.counters.surveyDay === rep.day)
+      return d + 'HR discovered anonymity has a font.';
+    if(rep.warningDefused) return d + 'a warning met a metadata screenshot and blinked first.';
     if(rep.promoted) return d + 'promoted. The bar moved. It saw you coming.';
     if(rep.warned) return d + 'HR opened a document with your name in the filename.';
     if(rep.deadEyed >= 2) return d + 'three tasks in a row without blinking. HR calls it “flow.”';

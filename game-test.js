@@ -709,6 +709,74 @@ ok('dead-eyed day: Most Dead Inside', G.dayAward(gH4) === 'Most Dead Inside');
 ok('headline/award are pure functions of run state', G.dayHeadline(gH4) === G.dayHeadline(gH4)
   && G.dayAward(gH4) === G.dayAward(gH4));
 
+// ---- 16b. the HR anonymous-survey incident -----------------------------------------
+function toSurvey(seed){
+  const g2 = G.newGame(seed);
+  let guard = 0;
+  while(!g2.todayIncidents.some(i => i.id === 'hr_survey') && guard++ < 12){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return g2;
+}
+const gSv = toSurvey(601);
+ok('survey day: staged by the arc, Meredith delivers, launch feed line',
+  gSv.arcs.hr_survey.stage === 1
+  && gSv.todayIncidents.some(i => i.id === 'hr_survey' && i.owner === 'hr')
+  && gSv.feed.some(f => /font that knows your name/.test(f.text)));
+// bland: safe, Soul pays
+const gBl = toSurvey(601); gBl.soul = 50;
+const rBl = G.applyIncidentChoice(gBl, 'hr_survey', 0, 700);
+ok('bland nonsense: +1/−4, no flags', rBl.ds === 1 && rBl.dso === -4
+  && !gBl.npcState.meredith.flags.truthTold && !G.hasReceipt(gBl, 'hr_survey_metadata'));
+// truth: Soul up now, Standing exposure at the next review, once
+const gT = toSurvey(601); gT.soul = 50;
+G.applyIncidentChoice(gT, 'hr_survey', 1, 700);
+ok('truth: Soul +8, marked for the review', gT.soul === 58 && gT.npcState.meredith.flags.truthTold);
+gT.day = 10; gT.standing = 80;
+G.closeDay(gT, { tasksDone: 8, tasksTotal: 8 });
+ok('the truth attends the next review: −5 before evaluation, then never again',
+  gT.dayReport.truthBill === true && gT.npcState.meredith.flags.truthBilled
+  && gT.standing === G.PROMOTE_RESET,   // 80−6 decay −5 bill = 69 ≥ 68 → still promoted
+  'st=' + gT.standing);
+const gT2 = JSON.parse(JSON.stringify(gT));
+gT2.day = 15; gT2.standing = 80; gT2.failed = null; gT2.over = false;
+G.closeDay(gT2, { tasksDone: 8, tasksTotal: 8 });
+ok('the bill is one-shot', gT2.dayReport.truthBill !== true);
+// help a coworker: their trust climbs
+const gHp = toSurvey(601);
+G.applyIncidentChoice(gHp, 'hr_survey', 2, 700);
+const helped = gHp.npcState.meredith.counters.helped;
+ok('helping a coworker: seeded peer, trust +2', ['kayla','priya','marcus'].indexOf(helped) >= 0
+  && gHp.npcState[helped].trust === 2);
+// metadata: a receipt that defuses one warning
+const gMd = toSurvey(601);
+G.applyIncidentChoice(gMd, 'hr_survey', 3, 700);
+ok('metadata banked as a receipt', G.hasReceipt(gMd, 'hr_survey_metadata'));
+gMd.day = 10; gMd.standing = 25; gMd.soul = 60;
+G.closeDay(gMd, { tasksDone: 8, tasksTotal: 8 });
+ok('the receipt defuses one warning and is spent', gMd.dayReport.warningDefused === true
+  && !gMd.dayReport.warned && !G.hasReceipt(gMd, 'hr_survey_metadata')
+  && gMd.stats.warnings === 0 && gMd.soul === 60 - G.soulDrainFor(2));
+gMd.day = 15; gMd.standing = 25; gMd.failed = null; gMd.over = false;
+G.closeDay(gMd, { tasksDone: 8, tasksTotal: 8 });
+ok('the next warning lands normally', gMd.dayReport.warned === true && gMd.stats.warnings === 1);
+// the hunt: the day after, Meredith starts identifying authors
+const gHu = toSurvey(601);
+G.applyIncidentChoice(gHu, 'hr_survey', 0, 700);
+G.closeDay(gHu, { tasksDone: 8, tasksTotal: 8 });
+gHu.standing = 60; gHu.soul = 70; gHu.failed = null; gHu.over = false;
+G.nextDay(gHu);
+ok('stage 2: the hunt is in the feed', gHu.arcs.hr_survey.stage === 2
+  && gHu.feed.some(f => /cross-referencing writing styles/.test(f.text)));
+ok('survey day owns its headline', (() => {
+  const g2 = toSurvey(601);
+  G.applyIncidentChoice(g2, 'hr_survey', 0, 700);
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  return /anonymity has a font/.test(G.dayHeadline(g2));
+})());
+
 // ---- 17. share copy carries the story ------------------------------------------
 const gS0 = G.newGame(501);
 ok('a storyless run falls back to the plain format', G.storyLine(gS0) === null

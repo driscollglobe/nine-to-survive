@@ -377,7 +377,8 @@ function soakRun(seed, opts){
         case 'arcincident':
           // rotate the branch by day so the soak exercises every choice
           incidentsFired++;
-          G.applyIncidentChoice(g, s.id, (g.day + seed) % 3, Math.floor(w.clockMin));
+          G.applyIncidentChoice(g, s.id,
+            (g.day + seed) % G.ARC_INCIDENTS[s.id].choices.length, Math.floor(w.clockMin));
           if(g.over){ dayDone = true; break; }
           W.resolveEncounter(w); break;
         case 'braddeck':    G.bradDeckSeen(g, Math.floor(w.clockMin)); break;
