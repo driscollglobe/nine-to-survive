@@ -182,6 +182,116 @@ ok('status has name/role/mood/line', st.name === 'The Boss' && !!st.role && !!st
 ok('peers offer chat in status; boss does not', W.statusOf(w1, W.getActor(w1, 'kayla')).chat === true
   && W.statusOf(w1, boss1).chat === false);
 
+// ---- 12. SOAK: full careers through the real pipeline ---------------------------------
+// A bot plays whole days exactly the way the shell does: newDay each morning,
+// step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.
+// Asserts per day: 5 PM reached within a hard step cap, no actor stuck >60 sim-sec
+// in a non-idle state with an empty path, no exceptions. Two policies:
+//   desk-only — player never leaves the desk (the brief's bot)
+//   recovery  — coffee/couch/chats when soul dips (exercises errands + threats)
+function soakRun(seed, opts){
+  opts = opts || {};
+  const maxDays = opts.maxDays || 200;
+  const recover = !!opts.recover;
+  const issues = [];
+  const g = G.newGame(seed);
+  while(!g.over && g.day <= maxDays){
+    const w = W.newDay(seed, g.day, g.plan);
+    const stuck = {};
+    let steps = 0, dayDone = false, triedCoffee = false, triedCouch = false, triedChat = false;
+    while(!dayDone && !g.over){
+      if(++steps > 20000){
+        issues.push('day ' + g.day + ': step cap exceeded (clock=' + w.clockMin.toFixed(1)
+          + ' events=' + w.events.map(e => e.status).join(',') + ')');
+        return { g, issues };
+      }
+      let s = null;
+      try { s = W.step(w, 0.1); }
+      catch(err){ issues.push('day ' + g.day + ': exception ' + err); return { g, issues }; }
+      // stuck-actor watchdog (mirrors the shell watchdog's definition)
+      w.actors.forEach(a => {
+        const isStuck = a.path.length === 0 && a.state !== 'idle' && a.state !== 'atPlayer';
+        stuck[a.id] = isStuck ? (stuck[a.id] || 0) + 0.1 : 0;
+        if(stuck[a.id] > 60){
+          issues.push('day ' + g.day + ': actor ' + a.id + ' stuck in "' + a.state + '" 60s');
+          stuck[a.id] = -1e9;   // report once per day
+        }
+      });
+      // player policy
+      if(w.running){
+        if(recover){
+          if(!triedCoffee && w.clockMin >= 630){ triedCoffee = true; W.goForCoffee(w); }
+          if(!triedCouch && w.clockMin >= 780 && g.soul < 60){ triedCouch = true; W.goForCouch(w); }
+          if(!triedChat && w.clockMin >= 870 && g.soul < 60){
+            triedChat = true; W.requestChat(w, ['kayla','marcus','priya'][g.day % 3]);
+          }
+        }
+        if(!w.playerErrand && !W.playerAtDesk(w)){
+          const you = W.getActor(w, 'you');
+          if(!you.path.length) W.playerGoHome(w);
+        }
+      }
+      if(!s) continue;
+      switch(s.type){
+        case 'encounter':
+          G.applyChoice(g, 2);
+          if(G.advance(g) === 'gameover'){ dayDone = true; break; }
+          W.resolveEncounter(w); break;
+        case 'crunch':
+          G.applyCrunch(g, true);
+          if(g.over){ dayDone = true; break; }
+          W.resolveCrunch(w); break;
+        case 'taskdone':   G.applyWorldEffect(g, 'taskDone'); break;
+        case 'bosspass':   G.applyWorldEffect(g, 'bossPass'); break;
+        case 'bosscatch':  G.applyWorldEffect(g, s.bad ? 'bossCatchBad' : 'bossCatch'); break;
+        case 'bradsteal':  G.applyWorldEffect(g, 'bradSteal'); break;
+        case 'bradfoiled': G.applyWorldEffect(g, 'bradFoiled'); break;
+        case 'coffee':     G.applyCoffee(g); W.playerGoHome(w); break;
+        case 'couch':      G.applyWorldEffect(g, 'couch'); W.playerGoHome(w); break;
+        case 'chat':
+          G.applyWorldEffect(g, s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh');
+          W.playerGoHome(w); break;
+        case 'dayover': {
+          const r = G.closeDay(g, { tasksDone: s.tasksDone, tasksTotal: s.tasksTotal });
+          dayDone = true;
+          if(r !== 'gameover'){
+            if(G.canWalkOut(g)) G.walkOut(g);
+            else G.nextDay(g);
+          }
+          break;
+        }
+      }
+      if(g.over) dayDone = true;
+    }
+  }
+  return { g, issues };
+}
+
+const SOAK_SEEDS = 50;
+function soakSweep(recover){
+  const out = { issues: [], outcomes: { escaped:0, soul:0, standing:0, timeout:0 }, escapeDays: [] };
+  for(let sd = 1; sd <= SOAK_SEEDS; sd++){
+    const r = soakRun(sd * 1000 + 7, { recover });
+    out.issues = out.issues.concat(r.issues);
+    if(r.g.escaped){ out.outcomes.escaped++; out.escapeDays.push(r.g.day); }
+    else if(r.g.failed) out.outcomes[r.g.failed]++;
+    else out.outcomes.timeout++;
+  }
+  out.escapeDays.sort((a, b) => a - b);
+  return out;
+}
+const soakA = soakSweep(false);
+ok('soak/desk-only ×' + SOAK_SEEDS + ': no hangs, no stuck actors, no exceptions',
+  soakA.issues.length === 0, soakA.issues.slice(0, 3).join(' | '));
+ok('soak/desk-only: every career terminal', soakA.outcomes.timeout === 0, JSON.stringify(soakA.outcomes));
+const soakB = soakSweep(true);
+ok('soak/recovery ×' + SOAK_SEEDS + ': no hangs, no stuck actors, no exceptions',
+  soakB.issues.length === 0, soakB.issues.slice(0, 3).join(' | '));
+ok('soak/recovery: every career terminal', soakB.outcomes.timeout === 0, JSON.stringify(soakB.outcomes));
+lines.push('INFO  desk-only outcomes: ' + JSON.stringify(soakA.outcomes));
+lines.push('INFO  recovery outcomes: ' + JSON.stringify(soakB.outcomes));
+lines.push('INFO  recovery escape days: ' + JSON.stringify(soakB.escapeDays));
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');
