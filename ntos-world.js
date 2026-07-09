@@ -26,7 +26,7 @@ const TW = 64, TH = 32;           // iso tile size at zoom 1
 const WALK_SPEED = 3.2;           // tiles/sec (summoned NPCs + your errands hustle ×1.9)
 const CLOCK_SPEED = 3.2;          // game-minutes per real second → a day = 2.5 real min
 const TASK_WORK_SECS = 11;        // real seconds at your desk to ship one task
-const TASKS_PER_DAY = 8;
+const TASKS_MIN = 6, TASKS_MAX = 10;   // seeded daily load — some days the org just produces more org
 const CRUNCH_CHANCE = 0.45;       // odds a day contains a fire drill
 const BOSS_WALKS_PER_DAY = 2;
 
@@ -205,8 +205,8 @@ function newDay(seed, day, plan){
     })),
     nextEvent: 0,
     activeEvent: null,
-    // the actual work: tasks land in your inbox through the day
-    tasks: { pending: 0, done: 0, spawned: 0, total: TASKS_PER_DAY, progress: 0,
+    // the actual work: tasks land in your inbox through the day (load seeded below)
+    tasks: { pending: 0, done: 0, spawned: 0, total: 0, progress: 0,
              spawnAt: [] },
     // threats
     bossWalks: [],           // [{atMin, status:'pending'|'out'|'done'}]
@@ -224,9 +224,11 @@ function newDay(seed, day, plan){
     a.wanderT = 2 + rand(w) * 6;
     if(a.id !== 'you') a.mood = MOODS[Math.floor(rand(w) * 3)];
   });
-  // task drip: 3 waiting at 9:00, then one every ~55 game-min
+  // task drip: seeded daily load, 3 waiting at 9:00, the rest spread to ~3:30
+  w.tasks.total = TASKS_MIN + Math.floor(rand(w) * (TASKS_MAX - TASKS_MIN + 1));
   w.tasks.spawnAt = [540, 540, 540];
-  for(let i = 3; i < TASKS_PER_DAY; i++) w.tasks.spawnAt.push(595 + (i - 3) * 55);
+  const drip = Math.floor(390 / Math.max(1, w.tasks.total - 3));
+  for(let i = 3; i < w.tasks.total; i++) w.tasks.spawnAt.push(560 + (i - 3) * drip);
   // boss floor-walks: two, spaced through the day
   for(let i = 0; i < BOSS_WALKS_PER_DAY; i++)
     w.bossWalks.push({ atMin: 620 + i * 170 + Math.floor(rand(w) * 60), status: 'pending' });
@@ -789,7 +791,7 @@ function drawActor(ctx, cam, a, w){
 
 return {
   GRID_W, GRID_H, TW, TH, CAST, FURNITURE, ZONES, OWNER_BY_ENC,
-  TASKS_PER_DAY, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
+  TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
   armWalkout, goForExit,

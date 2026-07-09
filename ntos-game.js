@@ -136,7 +136,8 @@ const NineToSurvive = (() => {
   ];
   // Your number. Sized so a permanent Intern can NEVER reach it: intern net income
   // peaks around $2,325 lifetime as burn creep overtakes pay — you must climb.
-  const FU_TARGET      = 2500;
+  // (Crunch spot bonuses are level-gated below, so they can't leak to Interns.)
+  const FU_TARGET      = 3100;
   const DAY_ENCOUNTERS = 2;     // cards are spice now; the real-time office is the game
   const BURN_BASE      = 130;   // daily cost of living, week 1
   const BURN_STEP      = 25;    // lifestyle creep: burn rises this much per week
@@ -332,13 +333,17 @@ const NineToSurvive = (() => {
   }
 
   // Fire drill (a crunch, not a fire): deliver under a timer or eat a Standing hit.
-  const CRUNCH_WIN = 4, CRUNCH_LOSE = 10;
+  // Winning one pays a spot bonus — but only from Associate up. Interns are paid
+  // in experience, which keeps the permanent-Intern money cap intact.
+  const CRUNCH_WIN = 4, CRUNCH_LOSE = 10, CRUNCH_BONUS = 250;
   function applyCrunch(g, success){
     if(g.stats){ if(success) g.stats.crunchWins++; else g.stats.crunchFails++; }
     const before = g.standing;
     g.standing = clamp(g.standing + (success ? CRUNCH_WIN : -CRUNCH_LOSE));
+    let bonus = 0;
+    if(success && g.jobIdx > 0){ bonus = CRUNCH_BONUS; g.money += bonus; }
     if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
-    return { ds: g.standing - before, success };
+    return { ds: g.standing - before, success, bonus };
   }
 
   // The coffee machine: one small mercy per day.
@@ -388,7 +393,7 @@ const NineToSurvive = (() => {
     START, ENCOUNTERS, LADDER,
     FU_TARGET, DAY_ENCOUNTERS, BURN_BASE, BURN_STEP,
     PROMOTE_AT, PROMOTE_RESET, PROMOTE_SOUL, WARN_AT, WARN_SOUL, BROKE_SOUL,
-    CRUNCH_WIN, CRUNCH_LOSE, COFFEE_SOUL, DECAY_S, TASK_MISS_S, WORLD_EFFECTS,
+    CRUNCH_WIN, CRUNCH_LOSE, CRUNCH_BONUS, COFFEE_SOUL, DECAY_S, TASK_MISS_S, WORLD_EFFECTS,
     GRIND_STREAK, GRIND_SOUL,
     clamp, fmt, burnFor, soulDrainFor,
     newGame, planDay, currentEncounter, isFinalEncounter, jobTitle,

@@ -228,6 +228,16 @@ const rebel = runCareer(7, 1, 2, 3, 'bossCatch');
 ok('pure-rebel policy never escapes', !rebel.escaped, 'day='+rebel.day+' failed='+rebel.failed);
 ok('pure-rebel run is ended by the org', rebel.failed==='standing', 'failed='+rebel.failed+' day='+rebel.day);
 
+// crunch spot bonuses are level-gated: Interns are paid in experience
+const gcb = G.newGame(6);
+const rc0 = G.applyCrunch(gcb, true);
+ok('intern crunch win pays nothing', rc0.bonus === 0 && gcb.money === 300);
+gcb.jobIdx = 1;
+const rc1 = G.applyCrunch(gcb, true);
+ok('associate+ crunch win pays the $' + G.CRUNCH_BONUS + ' spot bonus',
+  rc1.bonus === G.CRUNCH_BONUS && gcb.money === 300 + G.CRUNCH_BONUS);
+ok('failed crunch pays nothing at any level', G.applyCrunch(gcb, false).bonus === 0);
+
 // the number is sized so climbing is mandatory: pin meters, block promotion,
 // and even a maximally diligent permanent Intern's bank must peak below it
 const gi = G.newGame(21);

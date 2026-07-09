@@ -347,3 +347,22 @@ First outside playtest (Ting, via iMessage screenshots). Feedback + fixes:
    addressed by Session 5's TASK 6.
 ?v=w8. Both suites green (67 + 56). Verified in preview: logo on start screen, chip +
 tile ring at desk. Committed as one feedback round.
+
+## Session 7 — Tightening pass (2026-07-09, autonomous per TASKS.md)
+
+### TASK 5 — variance sweep (before/after, 50 seeds, strong recovery bot)
+- **Before**: every seed escaped on exactly Day 11 (nothing seeded touched money under
+  strong play; promotions land every Friday, income deterministic).
+- **Levers added (2, both seeded, no new systems)**:
+  1. Daily task load is now seeded 6–10 (was always 8); inbox, HUD, and day report follow.
+  2. Crunch spot bonus: winning a fire drill pays **$250 — Associate and up only**
+     ("Interns are paid in experience"), so the permanent-Intern money cap stays intact
+     (peak $2,325). FU_TARGET moved $2,500 → **$3,100** so bonuses genuinely decide the day.
+- **After**: escape days = 10×8, 11×36, 12×6 → median 11, spread 10–12. Narrower than the
+  hoped 10–14 tail; the structural reason (logged deliberately): promotion pay-jumps
+  dominate the money curve, so cash noise can only shift escape day near the crossover.
+  A 13–14 tail would need promotion-level variance (e.g. seeded review strictness) — a
+  new system, out of scope per the timebox. Stopped tuning after one sweep as ordered.
+- Policy sims updated deliberately: third-way now escapes day 12 (no crunches in the sim
+  path), soul 87; suck-up dies day 3–4; rebel fired day 4. Intern guard re-verified vs
+  the new target and the bonus gate (3 new tests).

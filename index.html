@@ -4,19 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nine to Survive — Your Number</title>
-<meta name="description" content="A real-time office-survival game. Ship the work, dodge the Boss, guard your inbox from Brad, bank $2,500, and walk out with your soul.">
+<meta name="description" content="A real-time office-survival game. Ship the work, dodge the Boss, guard your inbox from Brad, bank $3,100, and walk out with your soul.">
 <meta property="og:title" content="Nine to Survive — Your Number">
-<meta property="og:description" content="Bank $2,500. Keep your soul. Walk out. A real-time office-survival game.">
+<meta property="og:description" content="Bank $3,100. Keep your soul. Walk out. A real-time office-survival game.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Nine to Survive — Your Number">
-<meta name="twitter:description" content="Bank $2,500. Keep your soul. Walk out.">
+<meta name="twitter:description" content="Bank $3,100. Keep your soul. Walk out.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2341E3D6'/%3E%3Ccircle cx='22' cy='20' r='7' fill='%236e4620'/%3E%3Ccircle cx='42' cy='20' r='7' fill='%236e4620'/%3E%3Ccircle cx='32' cy='36' r='18' fill='%238a5a2b'/%3E%3Ccircle cx='26' cy='33' r='2.5' fill='%2315120D'/%3E%3Ccircle cx='38' cy='33' r='2.5' fill='%2315120D'/%3E%3Cellipse cx='32' cy='42' rx='6' ry='4.5' fill='%23E8C39E'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n8"></script>
-<script src="ntos-world.js?v=w8"></script>
+<script src="ntos-game.js?v=n9"></script>
+<script src="ntos-world.js?v=w9"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -179,12 +179,12 @@ button{touch-action:manipulation;}
     <div class="mascot"><img src="assets/mascot.png" alt="Nine to Survive" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span class="fallback" style="display:none">🤷</span></div>
     <div class="badge">Nine to Survive presents</div>
     <h1 class="big">Your <span class="blue">Num</span><span class="amber">ber</span></h1>
-    <div class="tagline">Bank $2,500. Keep your soul. Walk out.</div>
-    <p class="lede">Everyone in this building has a number — the bank balance where they stand up, say the thing, and never come back. Yours is $2,500. It's a real office out there: tasks pile on your desk, the Boss walks the floor, Brad circles your inbox, and every trip to the coffee machine is a gamble. Click. Move. Survive. Get out.</p>
+    <div class="tagline">Bank $3,100. Keep your soul. Walk out.</div>
+    <p class="lede">Everyone in this building has a number — the bank balance where they stand up, say the thing, and never come back. Yours is $3,100. It's a real office out there: tasks pile on your desk, the Boss walks the floor, Brad circles your inbox, and every trip to the coffee machine is a gamble. Click. Move. Survive. Get out.</p>
     <div class="legend">
       <div class="leg"><span class="k s">Standing</span><div>How the org sees you. <span>Ship tasks at your desk to earn it — it decays every single day. Zero = managed out. Fridays decide promotions.</span></div></div>
       <div class="leg"><span class="k so">Soul</span><div>How much of you is left. <span>Work drains it. Coffee, the couch, and real conversations refill it — away from your desk, on the clock.</span></div></div>
-      <div class="leg"><span class="k m">Money</span><div>Your walk-out fund. <span>Paid daily, rent relentless, promotions pay better. Hit $2,500 and you're free.</span></div></div>
+      <div class="leg"><span class="k m">Money</span><div>Your walk-out fund. <span>Paid daily, rent relentless, promotions pay better. Hit $3,100 and you're free.</span></div></div>
     </div>
     <button class="cta" onclick="startGame()">Clock in — Day 1</button>
     <button class="cta resumebtn hidden" id="resumebtn" onclick="resumeGame()"></button>
@@ -201,7 +201,7 @@ button{touch-action:manipulation;}
         <div class="clock" id="clock"><b>9:00</b> AM</div>
       </div>
       <div class="jobline"><span id="jobline-l">Day 1 · Wk 1 · Intern</span><span class="pay" id="jobline-r">+$180/day</span></div>
-      <div class="jobline taskline"><span id="tasks-l">INBOX · 0 waiting</span><span id="tasks-r">0/8 shipped</span></div>
+      <div class="jobline taskline"><span id="tasks-l">INBOX · 0 waiting</span><span id="tasks-r">0/0 shipped</span></div>
       <div class="meters">
         <div class="meter standing">
           <div class="mrow"><div><span class="mname">Standing</span> <span class="msub">how they see you</span></div><div class="mval" id="v-standing">50<span class="delta" id="d-standing"></span></div></div>
@@ -212,7 +212,7 @@ button{touch-action:manipulation;}
           <div class="mtrack"><div class="mfill" id="f-soul" style="width:65%"></div></div>
         </div>
         <div class="meter money">
-          <div class="mrow"><div><span class="mname">Your Number</span> <span class="msub">bank $2,500 · walk out</span></div><div class="mval" id="v-money">$300<span class="delta" id="d-money"></span></div></div>
+          <div class="mrow"><div><span class="mname">Your Number</span> <span class="msub">bank $3,100 · walk out</span></div><div class="mval" id="v-money">$300<span class="delta" id="d-money"></span></div></div>
           <div class="mtrack"><div class="mfill" id="f-money" style="width:5%"></div></div>
         </div>
       </div>
@@ -831,8 +831,10 @@ function finishCrunch(){
   applyDelta('standing', res.ds);
   const r = $id('crunchresult');
   r.textContent = success
-    ? 'Delivered. The boss says “clutch” and walks off. Standing +' + G.CRUNCH_WIN + '. Nobody will remember this by Thursday.'
+    ? 'Delivered. The boss says “clutch” and walks off. Standing +' + G.CRUNCH_WIN + '.'
+      + (res.bonus ? ' A $' + res.bonus + ' spot bonus appears, quietly.' : ' No bonus — Interns are paid in experience.')
     : 'The timer died. The room saw it. Standing −' + G.CRUNCH_LOSE + '. Meredith has started a document with your name on it.';
+  if(res.bonus) setMoney();
   r.classList.remove('hidden');
   $id('workbtn').textContent = g.failed ? 'See how it ends' : 'Back to it';
 }

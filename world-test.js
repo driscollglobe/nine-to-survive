@@ -53,8 +53,16 @@ ok('one card event per planned encounter', w1.events.length === 2
   && w1.events.every((e, i) => e.encIdx === [0,9][i] && e.owner === W.OWNER_BY_ENC[e.encIdx]));
 ok('boss walks scheduled', w1.bossWalks.length === 2 && w1.bossWalks.every(b => b.atMin >= 600));
 ok('at least one brad raid scheduled', w1.bradRaids.length >= 1);
-ok('task drip: 3 at 9:00, then spread', w1.tasks.spawnAt.length === W.TASKS_PER_DAY
-  && w1.tasks.spawnAt[0] === 540 && w1.tasks.spawnAt[3] > 540);
+ok('task drip: seeded load 6–10, 3 at 9:00, then spread',
+  w1.tasks.total >= W.TASKS_MIN && w1.tasks.total <= W.TASKS_MAX
+  && w1.tasks.spawnAt.length === w1.tasks.total
+  && w1.tasks.spawnAt[0] === 540 && w1.tasks.spawnAt[3] > 540, 'total=' + w1.tasks.total);
+// the load actually varies across days (seeded, not constant)
+ok('task load varies day to day', (() => {
+  const loads = [];
+  for(let d = 1; d <= 8; d++) loads.push(W.newDay(7, d, [9]).tasks.total);
+  return loads.some(l => l !== loads[0]);
+})());
 ok('NPCs rolled daily moods', w1.actors.filter(a => a.id !== 'you')
   .every(a => ['good','meh','bad'].includes(a.mood)));
 const w1b = W.newDay(7, 1, [0, 9]);
@@ -93,10 +101,14 @@ W.movePlayer(wc, { x: 25, y: 22 });
 const bcatch = stepUntil(wc, 60, ['bosspass', 'bosscatch']);
 ok('boss catch: empty chair', bcatch && bcatch.type === 'bosscatch', bcatch && bcatch.type);
 ok('catch carries his mood', bcatch && bcatch.bad === (W.getActor(wc, 'boss').mood === 'bad'));
-const bossAfter = W.getActor(wc, 'boss');
-stepUntil(wc, 30, ['never']);
-ok('boss goes home after the walk', Math.hypot(bossAfter.x - bossAfter.home.x, bossAfter.y - bossAfter.home.y) < 1,
-  'at ' + bossAfter.x.toFixed(1) + ',' + bossAfter.y.toFixed(1));
+// he heads home after the walk (he may wander again later — catch the homecoming)
+let bossCameHome = false;
+for(let t = 0; t < 60 && !bossCameHome; t += 0.1){
+  W.step(wc, 0.1);
+  const b = W.getActor(wc, 'boss');
+  if(Math.hypot(b.x - b.home.x, b.y - b.home.y) < 1) bossCameHome = true;
+}
+ok('boss goes home after the walk', bossCameHome);
 
 // ---- 6. brad raids the inbox ------------------------------------------------------
 const wr = W.newDay(17, 1, [9]);
@@ -189,7 +201,7 @@ wd.bossWalks = []; wd.bradRaids = []; wd.crunch = null;
 wd.clockMin = 1015;
 const over = stepUntil(wd, 30, ['dayover']);
 ok('dayover fires at 5 PM with the day\'s stats', over && over.type === 'dayover'
-  && typeof over.tasksDone === 'number' && over.tasksTotal === W.TASKS_PER_DAY);
+  && typeof over.tasksDone === 'number' && over.tasksTotal === wd.tasks.total);
 ok('dayover fires only once', stepUntil(wd, 5, ['dayover']) === null);
 
 // ---- 11. picking + status --------------------------------------------------------------
