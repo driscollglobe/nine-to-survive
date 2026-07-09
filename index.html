@@ -379,6 +379,7 @@ function startGame(){
 
 function beginDay(){
   world = W.newDay(runSeed, g.day, g.plan);
+  window.g = g; window.world = world;   // console debugging
   screens('play');
   fitCanvas();
   cam.z = 1;
@@ -485,6 +486,29 @@ function updateJobline(){
   $id('jobline-l').textContent = 'Day ' + g.day + ' · Wk ' + g.week + ' · ' + G.jobTitle(g);
   $id('jobline-r').textContent = '+' + G.fmt(G.LADDER[g.jobIdx].pay) + '/day';
 }
+
+/* ---- stuck watchdog: if the clock freezes with no modal up, dump world state ---- */
+let wdClock = -1, wdMovedAt = 0;
+setInterval(() => {
+  if(!world || $id('play').classList.contains('hidden')) return;
+  const modalOpen = !$id('cardoverlay').classList.contains('hidden')
+                 || !$id('crunchmodal').classList.contains('hidden');
+  if(modalOpen || world.dayOver || world.clockMin !== wdClock){
+    wdClock = world.clockMin; wdMovedAt = performance.now();
+    return;
+  }
+  if(performance.now() - wdMovedAt > 20000){
+    console.warn('[NTOS WATCHDOG] clock frozen with no modal open', {
+      day: g.day, clock: world.clockMin, running: world.running,
+      activeEvent: world.activeEvent && { enc: world.activeEvent.encIdx, status: world.activeEvent.status },
+      events: world.events.map(e => ({ enc: e.encIdx, owner: e.owner, at: e.atMin, status: e.status })),
+      crunch: world.crunch,
+      actors: world.actors.map(a => ({ id: a.id, state: a.state, pathLen: a.path.length,
+        x: +a.x.toFixed(2), y: +a.y.toFixed(2) }))
+    });
+    wdMovedAt = performance.now();   // re-arm: warn again every 20s while stuck
+  }
+}, 5000);
 
 /* ---- encounter card (fires when the owner reaches your desk) ---- */
 function openCard(){
