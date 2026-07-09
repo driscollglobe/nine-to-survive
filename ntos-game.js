@@ -198,6 +198,7 @@ const NineToSurvive = (() => {
       failed: null, escaped: false, over: false,
       lastChoice: null, dayReport: null,
       stats: { bradSteals: 0, crunchWins: 0, crunchFails: 0, warnings: 0 },
+      taskStreak: 0, deadEyedToday: 0,
       rngState: (seed == null ? 1 : seed) | 0
     };
     g.plan = planDay(g);
@@ -251,6 +252,10 @@ const NineToSurvive = (() => {
     couch:      { s:-1, so:+6 },   // seen lounging; worth it
     coffee:     { s: 0, so:+2 }
   };
+  // Dead-eyed productivity: ship GRIND_STREAK tasks in a row with no recovery
+  // (coffee / couch / chat) and every further consecutive task bills 1 extra Soul.
+  const GRIND_STREAK = 3;
+  const GRIND_SOUL   = 1;
   function applyWorldEffect(g, kind){
     const e = WORLD_EFFECTS[kind];
     if(!e) return null;
@@ -258,9 +263,20 @@ const NineToSurvive = (() => {
     const b = { s: g.standing, so: g.soul };
     g.standing = clamp(g.standing + (e.s || 0));
     g.soul     = clamp(g.soul + (e.so || 0));
+    let deadEyed = false;
+    if(kind === 'taskDone'){
+      g.taskStreak = (g.taskStreak || 0) + 1;
+      if(g.taskStreak > GRIND_STREAK){
+        g.soul = clamp(g.soul - GRIND_SOUL);
+        g.deadEyedToday = (g.deadEyedToday || 0) + 1;
+        deadEyed = true;
+      }
+    } else if(kind === 'couch' || kind === 'chatGood' || kind === 'chatMeh' || kind === 'chatBad' || kind === 'coffee'){
+      g.taskStreak = 0;   // you looked up; the streak forgives
+    }
     if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
     else if(g.soul <= 0 && !g.failed){ g.failed = 'soul'; g.over = true; }
-    return { kind, ds: g.standing - b.s, dso: g.soul - b.so };
+    return { kind, ds: g.standing - b.s, dso: g.soul - b.so, deadEyed };
   }
 
   // Advance past a resolved card. Cards no longer end the day — 5 PM does.
@@ -286,6 +302,7 @@ const NineToSurvive = (() => {
     const report = { day: g.day, week: g.week, title: jobTitle(g), pay, burn, drain,
                      tasksDone: stats.tasksDone, tasksTotal: stats.tasksTotal,
                      missed, decay: DECAY_S,
+                     deadEyed: g.deadEyedToday || 0,
                      broke: false, promoted: false, warned: false, newTitle: null };
     // the treadmill: yesterday's hero + whatever died in the inbox
     g.standing = clamp(g.standing - DECAY_S - missed * TASK_MISS_S);
@@ -307,10 +324,11 @@ const NineToSurvive = (() => {
     return g.failed ? 'gameover' : 'dayend';
   }
 
-  // The morning after a survived day: new date, fresh plan.
+  // The morning after a survived day: new date, fresh plan, the night forgives.
   function nextDay(g){
     g.day++; g.week = Math.floor((g.day - 1) / 5) + 1;
     g.idxInDay = 0; g.plan = planDay(g); g.dayReport = null;
+    g.taskStreak = 0; g.deadEyedToday = 0;
   }
 
   // Fire drill (a crunch, not a fire): deliver under a timer or eat a Standing hit.
@@ -328,6 +346,7 @@ const NineToSurvive = (() => {
   function applyCoffee(g){
     if(g.coffeeDay === g.day) return null;
     g.coffeeDay = g.day;
+    g.taskStreak = 0;   // a mercy counts as looking up
     const before = g.soul;
     g.soul = clamp(g.soul + COFFEE_SOUL);
     return { dso: g.soul - before };
@@ -370,6 +389,7 @@ const NineToSurvive = (() => {
     FU_TARGET, DAY_ENCOUNTERS, BURN_BASE, BURN_STEP,
     PROMOTE_AT, PROMOTE_RESET, PROMOTE_SOUL, WARN_AT, WARN_SOUL, BROKE_SOUL,
     CRUNCH_WIN, CRUNCH_LOSE, COFFEE_SOUL, DECAY_S, TASK_MISS_S, WORLD_EFFECTS,
+    GRIND_STREAK, GRIND_SOUL,
     clamp, fmt, burnFor, soulDrainFor,
     newGame, planDay, currentEncounter, isFinalEncounter, jobTitle,
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,

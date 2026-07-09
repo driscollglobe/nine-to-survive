@@ -138,6 +138,28 @@ const ge3 = G.newGame(4); ge3.standing = 5;
 G.applyWorldEffect(ge3, 'bossCatch');
 ok('a world effect can end the run', ge3.failed==='standing' && ge3.over);
 ok('unknown effect is a no-op', G.applyWorldEffect(ge2, 'nope')===null);
+// dead-eyed productivity: tasks 4+ in an unbroken streak bill extra soul
+const gde = G.newGame(8);
+const dsos = [];
+for(let i = 0; i < 5; i++) dsos.push(G.applyWorldEffect(gde, 'taskDone').dso);
+ok('first ' + G.GRIND_STREAK + ' tasks cost normal soul', dsos[0] === -1 && dsos[2] === -1, dsos.join(','));
+ok('tasks past the streak bill +' + G.GRIND_SOUL + ' extra', dsos[3] === -2 && dsos[4] === -2, dsos.join(','));
+ok('the day counts its dead-eyed tasks', gde.deadEyedToday === 2 && gde.taskStreak === 5);
+G.applyWorldEffect(gde, 'chatMeh');
+ok('a chat resets the streak', gde.taskStreak === 0);
+ok('post-recovery task is full price again', G.applyWorldEffect(gde, 'taskDone').dso === -1);
+G.applyWorldEffect(gde, 'couch');
+ok('the couch resets it too', gde.taskStreak === 0);
+for(let i = 0; i < 4; i++) G.applyWorldEffect(gde, 'taskDone');
+G.applyCoffee(gde);
+ok('coffee resets it (via applyCoffee)', gde.taskStreak === 0);
+const gde2 = G.newGame(8);
+for(let i = 0; i < 4; i++) G.applyWorldEffect(gde2, 'taskDone');
+G.closeDay(gde2, {tasksDone: 4, tasksTotal: 8});
+ok('closeDay reports the toll', gde2.dayReport.deadEyed === 1);
+G.nextDay(gde2);
+ok('the night forgives: streak and toll reset', gde2.taskStreak === 0 && gde2.deadEyedToday === 0);
+
 // run counters (feed the share card; live on g so they serialize)
 const gst = G.newGame(6);
 G.applyWorldEffect(gst, 'bradSteal');

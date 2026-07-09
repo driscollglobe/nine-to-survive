@@ -303,6 +303,9 @@ const soakA = soakSweep(false);
 ok('soak/desk-only ×' + SOAK_SEEDS + ': no hangs, no stuck actors, no exceptions',
   soakA.issues.length === 0, soakA.issues.slice(0, 3).join(' | '));
 ok('soak/desk-only: every career terminal', soakA.outcomes.timeout === 0, JSON.stringify(soakA.outcomes));
+// dead-eyed productivity: pure desk-camping must not escape (the grind collects)
+ok('soak/desk-only: camping the desk with zero recovery never escapes',
+  soakA.outcomes.escaped === 0, JSON.stringify(soakA.outcomes));
 const soakB = soakSweep(true);
 ok('soak/recovery ×' + SOAK_SEEDS + ': no hangs, no stuck actors, no exceptions',
   soakB.issues.length === 0, soakB.issues.slice(0, 3).join(' | '));
