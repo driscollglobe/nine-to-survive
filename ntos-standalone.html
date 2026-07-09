@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nine to Survive — Your Number</title>
+<meta name="description" content="A real-time office-survival game. Ship the work, dodge the Boss, guard your inbox from Brad, bank $2,500, and walk out with your soul.">
+<meta property="og:title" content="Nine to Survive — Your Number">
+<meta property="og:description" content="Bank $2,500. Keep your soul. Walk out. A real-time office-survival game.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Nine to Survive — Your Number">
+<meta name="twitter:description" content="Bank $2,500. Keep your soul. Walk out.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2341E3D6'/%3E%3Ccircle cx='22' cy='20' r='7' fill='%236e4620'/%3E%3Ccircle cx='42' cy='20' r='7' fill='%236e4620'/%3E%3Ccircle cx='32' cy='36' r='18' fill='%238a5a2b'/%3E%3Ccircle cx='26' cy='33' r='2.5' fill='%2315120D'/%3E%3Ccircle cx='38' cy='33' r='2.5' fill='%2315120D'/%3E%3Cellipse cx='32' cy='42' rx='6' ry='4.5' fill='%23E8C39E'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -1269,6 +1277,7 @@ button{touch-action:manipulation;}
 .statuspop .sx{position:absolute;top:6px;right:10px;font-size:14px;color:var(--muted2);cursor:pointer;}
 .toast{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);font-family:'JetBrains Mono',monospace;font-size:11.5px;border-radius:100px;padding:9px 18px;opacity:0;transition:opacity .25s;z-index:15;pointer-events:none;white-space:nowrap;}
 .toast.show{opacity:1;}
+.mute{position:absolute;bottom:12px;right:14px;z-index:6;font-size:17px;background:rgba(244,237,218,.85);border:1px solid var(--line);border-radius:100px;width:38px;height:38px;line-height:1;}
 /* fire drill */
 .crunchcard .tag{color:var(--danger);border-color:var(--danger);}
 .crunchbar{height:14px;background:var(--panel3);border-radius:100px;overflow:hidden;margin:6px 0 8px;}
@@ -1349,6 +1358,7 @@ button{touch-action:manipulation;}
     </div>
 
     <div class="hint">Click the floor to walk · Work happens AT your desk · Watch for ❗ · Coffee/couch/chats refill Soul</div>
+    <button id="mutebtn" class="mute" onclick="toggleMute()">🔊</button>
     <div id="statuspop" class="statuspop hidden"></div>
     <div id="toast" class="toast"></div>
 
@@ -1572,6 +1582,34 @@ function toast(msg){
   toastT = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+/* ---- sound: tiny WebAudio blips, no asset files. Mute persists. ---- */
+let audioCtx = null, muted = false;
+try { muted = localStorage.getItem('ntos-muted') === '1'; } catch(e){}
+function blip(freq, dur, type, vol){
+  if(muted) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const o = audioCtx.createOscillator(), gn = audioCtx.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    gn.gain.setValueAtTime(vol || 0.07, audioCtx.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + (dur || 0.15));
+    o.connect(gn); gn.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + (dur || 0.15) + 0.02);
+  } catch(e){}
+}
+const SFX = {
+  task(){ blip(880, 0.1); blip(1318, 0.16); },                     // shipped: a small ding
+  bosscatch(){ blip(196, 0.35, 'sawtooth', 0.09); blip(185, 0.4, 'sawtooth', 0.07); },
+  drill(){ blip(660, 0.11, 'square', 0.08); setTimeout(() => blip(660, 0.11, 'square', 0.08), 150); }
+};
+function toggleMute(){
+  muted = !muted;
+  try { localStorage.setItem('ntos-muted', muted ? '1' : '0'); } catch(e){}
+  $id('mutebtn').textContent = muted ? '🔇' : '🔊';
+}
+if(muted) $id('mutebtn').textContent = '🔇';
+
 /* ---- run persistence: g + runSeed in localStorage. The world (mid-day
    positions/tasks) is NOT saved — a mid-day save resumes at that morning with
    meters intact; a post-closeDay save resumes onto the 5:01 report so payday
@@ -1675,6 +1713,7 @@ function handleSignal(s){
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskdone':
       worldEffect('taskDone');
+      SFX.task();
       toast('Task shipped. Standing +2. ' + (s.pending ? s.pending + ' to go.' : 'Inbox zero. For now.'));
       break;
     case 'bosswalk':
@@ -1688,6 +1727,7 @@ function handleSignal(s){
       break;
     case 'bosscatch':
       worldEffect(s.bad ? 'bossCatchBad' : 'bossCatch');
+      SFX.bosscatch();
       toast(s.bad
         ? '“WHERE were you?” Wrong day for an empty chair. Standing −9.'
         : '“Where were you?” The Boss walked by an empty chair. Standing −6.');
@@ -1871,6 +1911,7 @@ const CRUNCH_CLICKS = 12, CRUNCH_SECS = 8;
 let crunchState = null;
 function openCrunch(){
   hideStatus();
+  SFX.drill();
   crunchState = { clicks: 0, deadline: performance.now() + CRUNCH_SECS * 1000, done: false };
   $id('crunchmodal').classList.remove('hidden');
   $id('crunchresult').classList.add('hidden');
