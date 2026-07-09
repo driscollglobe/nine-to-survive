@@ -110,8 +110,17 @@ ok('the stolen task is gone', wr.tasks.pending === steal.pending);
 const wf = W.newDay(17, 1, [9]);
 wf.bradRaids = [{ atMin: 545, status: 'pending' }];
 wf.bossWalks = []; wf.crunch = null;
-const foil = stepUntil(wf, 60, ['bradsteal', 'bradfoiled']);
+const foil = stepUntil(wf, 60, ['bradsteal', 'bradfoiled', 'bradempty']);
 ok('brad foiled when you are sitting there', foil && foil.type === 'bradfoiled', foil && foil.type);
+// away AND nothing to take: its own signal, not a fake "you were sitting right there"
+const wn = W.newDay(17, 1, [9]);
+wn.bradRaids = [{ atMin: 545, status: 'pending' }];
+wn.bossWalks = []; wn.crunch = null;
+wn.tasks.spawnAt = wn.tasks.spawnAt.map(() => 1019);   // inbox stays empty all morning
+W.movePlayer(wn, { x: 25, y: 22 });
+const empty = stepUntil(wn, 60, ['bradsteal', 'bradfoiled', 'bradempty']);
+ok('brad finds an empty desk + empty inbox → bradempty', empty && empty.type === 'bradempty',
+  empty && empty.type);
 
 // ---- 7. recovery verbs -------------------------------------------------------------
 const wk = W.newDay(19, 1, [9]);

@@ -424,13 +424,17 @@ function bossArrives(w, boss, you){
 function bradArrives(w, brad, you){
   const raid = w.bradRaids.find(b => b.status === 'out');
   if(raid) raid.status = 'done';
-  if(!playerAtDesk(w) && w.tasks.pending > 0){
-    // he lifts the file you were furthest through
-    w.tasks.pending--;
-    w.tasks.progress = 0;
-    w.sig.push({ type:'bradsteal', pending: w.tasks.pending });
+  if(!playerAtDesk(w)){
+    if(w.tasks.pending > 0){
+      // he lifts the file you were furthest through
+      w.tasks.pending--;
+      w.tasks.progress = 0;
+      w.sig.push({ type:'bradsteal', pending: w.tasks.pending });
+    } else {
+      w.sig.push({ type:'bradempty' });   // empty chair, empty inbox: nothing to take
+    }
   } else {
-    w.sig.push({ type:'bradfoiled' });
+    w.sig.push({ type:'bradfoiled' });    // you were sitting right there
   }
   sendTo(w, brad, brad.home, 'returning');
 }

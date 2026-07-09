@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="ntos-game.js?v=n6"></script>
-<script src="ntos-world.js?v=w4"></script>
+<script src="ntos-world.js?v=w5"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -546,6 +546,9 @@ function handleSignal(s){
     case 'bradfoiled':
       worldEffect('bradFoiled');
       toast('Brad hovered by your desk. You were sitting right there. He left.');
+      break;
+    case 'bradempty':
+      toast('Brad cased your empty desk. Empty inbox, nothing to take. He left disappointed in you specifically.');
       break;
     case 'chat': {
       const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';
