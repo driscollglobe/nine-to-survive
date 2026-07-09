@@ -247,3 +247,86 @@ real min), **ladder pay 260/420/640/820/1000** (was 180/300/450/620/800). Burn u
   run outpaces the grind drain. The no-recovery thesis now expresses through the hollow
   ending tier rather than death. Revisit only if the hollow ending feels too soft in play.
 - Overdraft unit test moved to week 7 (intern pay $260 vs burn $280) — same rule, new pay.
+
+### Session 5 final write-up (TASKS.md run, all 12 tasks completed)
+
+**Git**: repo initialized this session; every task is its own commit (`git log --oneline`),
+tree never left broken, nothing pushed. TASKS.md holds the brief verbatim.
+
+**TASK 1 — zero-path arrival deadlock (ntos-world.js, w3).** Real bug: sendTo could leave
+an actor in a transit state with an empty path (already on the target tile); the movement
+loop only processed actors with path.length, so the actor never "arrived" — a card owner
+already adjacent to you would freeze the day forever. Fixed via handleArrival() shared by
+the walked-there and already-there paths; dispatchers now only advance event/walk/raid
+status once sendTo succeeds (a failed path retries next tick instead of stranding).
+3 regression tests.
+
+**TASK 2 — soak test (world-test.js §12).** soakRun() plays entire careers through the
+real pipeline (newDay → step 0.1 → signals → closeDay → nextDay) with a 20k-step/day cap,
+60-sim-sec stuck-actor watchdog, exception capture; 50 seeds × two policies (desk-only and
+recovery). Zero hangs, zero stuck actors, zero exceptions, every career terminal. Found no
+further bugs beyond Task 1's (which it was designed to catch — it passes on first run
+because Task 1 landed first). Runtime ~60s; world-test now takes ~1 min.
+
+**TASK 3 — shell stuck watchdog.** 5s interval; if play is visible, no modal open, and
+clockMin frozen 20s → console.warn structured dump (day, clock, events, per-actor
+id/state/pathLen/xy), re-arming while stuck. window.g/window.world exposed. Proven live:
+it fired during Task 4 verification and produced exactly the dump needed.
+
+**TASK 4 — movie mode (?movie=1).** Interval-driven autopilot: auto-start, desk-holding,
+choice-2 card play, fire-drill mashing, per-day log line, GAME OVER log; greeds past the
+walkout so it runs indefinitely. Inert without the flag. Two real fixes surfaced during
+live verification: (1) background tabs suspend rAF entirely — movie mode now drives
+W.step() itself when the render loop is starved >1s; (2) an rAF-starved fire-drill
+countdown could sit expired forever — a WORK click now settles it. LIMIT (honest): this
+preview environment suspends background pages so hard that a multi-day movie run could not
+be observed end-to-end here; mechanism verified through day progression (clock 540→754
+across wakes, cards+crunch auto-resolved). A real foreground tab runs it properly.
+
+**TASK 5 — persistence.** {runSeed, phase, g} in localStorage on start/card/crunch/
+closeDay/clockIn; cleared on game over/new run; Resume button (green, labeled with day +
+bank) on the start screen. phase='dayend' resumes onto the 5:01 report (payday cannot
+replay); mid-day saves restart that morning with meters intact (world isn't serialized —
+deliberate). Tests: JSON round-trip preserves every field; resumed career bit-identical.
+Live-verified: button, restore, clear.
+
+**TASK 6 — rebalance.** See sweep block above. FU $2,500 / clock 3.2 / pay
+260-420-640-820-1000 → 11-day, ~27.5-min median win, permanent-Intern win impossible
+($2,325 peak, test-guarded), suck-up and rebel fail as before.
+
+**TASK 7 — touch.** Pointer events (tap/drag/pinch), wheel kept, touch-action none on
+canvas + manipulation on buttons, <420px compact HUD. Verified: synthetic tap/drag/pinch
++ wheel + mobile-viewport CSS. Fix along the way: media query had to move to the end of
+the stylesheet (specificity tie); setPointerCapture try/catch'd.
+
+**TASK 8 — encounter depth (four commits).** (a) card choices shuffle display order,
+data-idx preserves rule mapping (movie autopilot updated to pick by data-idx — it would
+have silently randomized its policy). (b) planDay novelty cycle on g.seen: tours all ten
+cards before any repeat, seeded, serializes; policy sims shifted within tolerance (suck-up
+day 4, rebel day 4). (c) bradempty signal: away + empty inbox is no longer "you were
+sitting right there". (d) off-screen patrol/raid arrows at the screen edge (render-only),
+verified by screenshot.
+
+**TASK 9 — the walkout door.** EXIT furniture at the west edge; armed by the shell when a
+day begins with the number banked (glow + toast); clicking walks you over; arrival emits
+'walkout' → existing walkOut/verdict flow. Day-end button retained. 4 tests.
+
+**TASK 10 — share card.** g.stats counters (bradSteals/crunchWins/crunchFails/warnings)
+incremented in the brain, serialize with the save; share buttons on day-end + end screens
+copy a receipts-driven plain-text card (clipboard API + execCommand fallback). Text
+verified in preview; counter test added.
+
+**TASK 11 — polish.** description/OG/Twitter metas, inline SVG bear favicon, WebAudio
+blips (task ding / boss-catch sting / fire-drill alarm) with persisted mute — no asset
+files, all file://-safe. Verified on the standalone build; zero console errors.
+
+**TASK 12 — final verification.** game-test **67/67**, world-test **56/56** (includes the
+100-career soak: desk-only 50/50 escaped, recovery 50/50 escaped day 11, no issues),
+standalone rebuilt (99,596 bytes), preview loaded the final build and played the opening
+beats with **zero console errors**.
+
+**Deliberately left undone**: nothing from the required list. Stretch items all landed.
+Known open threads for next session: desk-only runs now escape hollow rather than die
+(acceptable per timebox, revisit if too soft); movie-mode multi-hour run should be done
+once in a real foreground tab; PIP/Dennis/meetings remain the next world mechanics
+(HANDOFF). The `?v=` history this session: game n4→n7, world w2→w7.

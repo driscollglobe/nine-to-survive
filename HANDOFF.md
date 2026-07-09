@@ -2,7 +2,23 @@
 
 Pick up here. This is the active game (MARQUE is retired/intact at `/Desktop/marque/` — reuse
 its *patterns* only). Everything lives in `/Users/kevindriscoll/Desktop/nine to survive/`.
-It RUNS and TESTS GREEN (52/52 game + 33/33 world).
+It RUNS and TESTS GREEN (**67 game + 56 world**, incl. a 100-career soak). The folder is now
+a **git repo** (Session 5): one commit per task, nothing pushed, `TASKS.md` holds that
+session's brief. Read SESSION_LOG Session 5 for the stability/persistence/balance details.
+
+## Session 5 quick facts (2026-07-09, autonomous)
+- **Balance**: your number is **$2,500**; a day = 2.5 real min (CLOCK_SPEED 3.2); pay
+  260/420/640/820/1000; median win = day 11 ≈ 27 min. Permanent-Intern win is impossible
+  (bank peaks $2,325) and test-guarded. Desk-only (no recovery) play escapes HOLLOW now.
+- **Persistence**: localStorage save/resume (`ntos-save-v1`, phase-aware). Clear on
+  game over / new run.
+- **Soak**: `world-test.js` §12 plays 100 full careers headlessly; keep it green.
+- **Dev tools**: `?movie=1` autopilot (survives rAF-starved tabs); shell stuck-watchdog
+  console.warns a state dump if the clock freezes; `window.g`/`window.world` exposed.
+- **World additions**: EXIT door (armed when the number is banked → walk out through it),
+  off-screen BOSS/BRAD arrows, honest brad outcomes (steal/foiled/empty), choice display
+  shuffle (data-idx = rule index), planDay novelty cycle (g.seen), share buttons, WebAudio
+  blips + mute, pointer/touch input with pinch zoom, mobile HUD.
 
 ## The resolved design (user's calls, 2026-07-09 — evolved across the day)
 - **WIN: F-you money.** Bank **$6,000** ("your number") and walk out before the place
@@ -66,8 +82,10 @@ All floor outcomes flow through ONE table: `NineToSurvive.WORLD_EFFECTS` via
   rAF loop → `handleSignal()`. Start / dayend (5:01 report + walk-out) / end screens.
 - `ntos-standalone.html` — fully-inlined shareable; `build_standalone.py` inlines BOTH
   modules. **Rebuild after any change.**
-- `game-test.js` (59) + `world-test.js` (44) — `osascript -l JavaScript <file>` (JSC, no
-  node). Policy sims are now full days-on-the-floor — keep green when tuning the economy.
+- `game-test.js` (67) + `world-test.js` (56, ~1 min — includes the 100-career soak) —
+  `osascript -l JavaScript <file>` (JSC, no node). Policy sims are full days-on-the-floor
+  and the soak drives the real pipeline — keep BOTH green when tuning anything.
+- `TASKS.md` — Session 5 brief (verbatim), kept for reference.
 - `assets/` — **drop the bear mascot as `assets/mascot.png`** (start screen falls back to 🤷).
 - Preview config `nine-to-survive` in `/Desktop/untitled folder 2/.claude/launch.json` —
   `autoPort: true` (another chat may hold 4186).
