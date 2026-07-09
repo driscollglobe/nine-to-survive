@@ -222,6 +222,43 @@ ok('permanent Intern can never bank the number', internPeak < G.FU_TARGET, 'peak
 const rerun = runCareer(7, 2, 6, 2, 'bossPass');
 ok('careers replay identically from a seed', rerun.day===third.day && rerun.money===third.money && rerun.soul===third.soul);
 
+// ---- 10b. the display shuffle cannot bleed into the rules -----------------------
+// Mimics the shell's presentation shuffle (local mulberry32 on runSeed/day/idxInDay)
+// and plays "through" it by clicking the button whose data-idx is the wanted rule
+// index. The career must be byte-identical to picking rule indices directly.
+function shellShuffleOrder(seed, day, idxInDay, n){
+  let s = ((seed | 0) ^ Math.imul(day, 2654435761) ^ Math.imul(idxInDay + 1, 40503)) | 0;
+  const r = () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const order = [];
+  for(let i = 0; i < n; i++) order.push(i);
+  for(let i = n - 1; i > 0; i--){
+    const j = Math.floor(r() * (i + 1));
+    const t2 = order[i]; order[i] = order[j]; order[j] = t2;
+  }
+  return order;
+}
+ok('shuffle order is a true permutation', shellShuffleOrder(1, 3, 1, 3).slice().sort().join('') === '012');
+ok('shuffle is deterministic per card slot',
+  JSON.stringify(shellShuffleOrder(9, 4, 0, 3)) === JSON.stringify(shellShuffleOrder(9, 4, 0, 3)));
+const gA2 = G.newGame(77), gB2 = G.newGame(77);
+for(let d = 0; d < 5 && !gA2.over; d++){
+  for(let e = 0; e < gA2.plan.length; e++){
+    G.applyChoice(gA2, 2); G.advance(gA2);                       // A: rules directly
+    const order = shellShuffleOrder(77, gB2.day, gB2.idxInDay, 3); // B: through the display
+    const displayPos = order.indexOf(2);                          // where "the third way" landed
+    G.applyChoice(gB2, order[displayPos]); G.advance(gB2);        // data-idx contract → still 2
+  }
+  G.closeDay(gA2, {tasksDone: 8, tasksTotal: 8}); G.closeDay(gB2, {tasksDone: 8, tasksTotal: 8});
+  if(!gA2.over){ G.nextDay(gA2); G.nextDay(gB2); }
+}
+ok('career is byte-identical with and without the display shuffle',
+  JSON.stringify(gA2) === JSON.stringify(gB2));
+
 // ---- 11. persistence: a JSON round-trip resumes identically --------------------
 const gLive = G.newGame(11);
 careerLoop(gLive, 2, 6, 2, 'bossPass', 8);        // play the first 8 days
