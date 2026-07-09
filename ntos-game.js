@@ -437,6 +437,53 @@ const NineToSurvive = (() => {
     g.feed.push({ m: min | 0, text });
   }
 
+  // Morning gossip: only when a mood is actually notable — the feed reports the
+  // office, it does not decorate it. Boss news is mechanical intel and always
+  // leads; then at most two more lines, picked deterministically.
+  const MOOD_FEED = {
+    'boss|bad':      'The corner office calendar went private.',
+    'meredith|good': 'Meredith renamed #layoff-rumors to #culture-questions.',
+    'dennis|bad':    'Dennis changed the filename convention again.',
+    'priya|bad':     'Priya has been in the kitchen for 11 minutes.',
+    'priya|meh':     'Priya booked a focus block. Three people booked over it.',
+    'kayla|good':    'Kayla has been smiling at her phone all morning. Nobody asks. Everybody knows.',
+    'marcus|good':   'Marcus reacted with the eyes emoji to the all-hands invite.',
+    'brad|good':     'Brad posted “thrilled to share” at 9:04 AM.'
+  };
+  function moodFeed(g, moods){
+    if(g.feedMoodDay === g.day) return false;   // once per morning, resume-safe
+    g.feedMoodDay = g.day;
+    const cands = [];
+    (moods || []).forEach(mm => {
+      const id = mm.id === 'hr' ? 'meredith' : mm.id;   // world id → cast id
+      const line = MOOD_FEED[id + '|' + mm.mood];
+      if(line) cands.push({ id, line });
+    });
+    const bossLine = cands.find(c => c.id === 'boss');
+    const rest = cands.filter(c => c.id !== 'boss');
+    const r = arcRand(g, 'feed', 'morning');
+    const picks = bossLine ? [bossLine] : [];
+    while(rest.length && picks.length < (bossLine ? 3 : 2))
+      picks.push(rest.splice(Math.floor(r() * rest.length), 1)[0]);
+    picks.forEach((p, i) => pushFeed(g, 542 + i * 2, p.line));
+    return true;
+  }
+
+  // Floor events worth gossiping about. The shell calls this next to
+  // applyWorldEffect; the brain decides what's feed-worthy and how it reads.
+  const EVENT_FEED = {
+    bradSteal:    'Brad moved a file of yours into a folder called “Team Wins.”',
+    bossCatchBad: 'Everyone heard it. Everyone kept typing.',
+    crunch:       '“Quick fire drill, all hands on deck.” The deck is you.',
+    couch:        'Someone updated the wellness dashboard. It counts.'
+  };
+  function feedWorldEvent(g, kind, min){
+    const line = EVENT_FEED[kind];
+    if(!line) return false;
+    pushFeed(g, min, line);
+    return true;
+  }
+
   // ---- Receipts: evidence is a resource ----------------------------------------
   // Named flags + counts on g (serializes with the save). `count` = held now,
   // `earned` = lifetime — awards and share copy read both.
@@ -730,9 +777,11 @@ const NineToSurvive = (() => {
       if(g.standing >= PROMOTE_AT && g.jobIdx < LADDER.length - 1){
         g.jobIdx++; g.standing = PROMOTE_RESET; soulHit(g, PROMOTE_SOUL);
         report.promoted = true; report.newTitle = jobTitle(g);
+        pushFeed(g, 1020, 'A promotion was announced. The word “journey” was used twice.');
       } else if(g.standing < WARN_AT){
         soulHit(g, WARN_SOUL); report.warned = true;
         if(g.stats) g.stats.warnings++;
+        pushFeed(g, 1020, 'Meredith created a document. The filename contains your name and the word “alignment.”');
       }
     }
     report.money = g.money;
@@ -820,7 +869,7 @@ const NineToSurvive = (() => {
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,
     applyCrunch, applyCoffee, applyWorldEffect,
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
-    pushFeed, addReceipt, hasReceipt, burnReceipt,
+    pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed
   };

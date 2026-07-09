@@ -302,6 +302,7 @@ function soakRun(seed, opts){
   while(!g.over && g.day <= maxDays){
     const flags = G.worldFlagsFor(g);
     const w = W.newDay(seed, g.day, g.plan, flags);
+    G.moodFeed(g, w.actors.map(a => ({ id: a.id, mood: a.mood })));   // as the shell does
     const stuck = {};
     // arc-day bookkeeping: staged story beats must all land before 5 PM
     const incidentsStaged = flags.incidents.length;
@@ -389,6 +390,14 @@ function soakRun(seed, opts){
   }
   return { g, issues };
 }
+
+// the feed is deterministic through the real pipeline: two identical careers,
+// identical office gossip (the run above ends on some day with a full feed)
+const feedA = soakRun(4321, { recover: true });
+const feedB = soakRun(4321, { recover: true });
+ok('same seed = same feed, end to end', feedA.g.day === feedB.g.day
+  && JSON.stringify(feedA.g.feed) === JSON.stringify(feedB.g.feed)
+  && feedA.g.feed.length > 0, feedA.g.feed.length + ' lines on day ' + feedA.g.day);
 
 const SOAK_SEEDS = 50;
 function soakSweep(recover){

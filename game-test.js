@@ -381,6 +381,38 @@ ok('burnReceipt spends it, lifetime count keeps score',
 ok('cannot burn what you never had', !G.burnReceipt(gr, 'dennis_approval_timestamp'));
 ok('receipts JSON round-trip clean', JSON.stringify(JSON.parse(JSON.stringify(gr.receipts))) === JSON.stringify(gr.receipts));
 
+// ---- 13b. the office feed (brain side) --------------------------------------------
+const gf = G.newGame(33);
+const moods = [{id:'boss',mood:'bad'},{id:'hr',mood:'good'},{id:'dennis',mood:'bad'},
+               {id:'priya',mood:'bad'},{id:'kayla',mood:'meh'},{id:'marcus',mood:'good'},{id:'brad',mood:'meh'}];
+ok('moodFeed posts the morning gossip', G.moodFeed(gf, moods) === true && gf.feed.length >= 1 && gf.feed.length <= 3);
+ok('boss news always leads when his day is bad', gf.feed[0].text === 'The corner office calendar went private.');
+const lenAfter = gf.feed.length;
+ok('moodFeed runs once per morning (resume-safe)', G.moodFeed(gf, moods) === false && gf.feed.length === lenAfter);
+ok('moodFeed is deterministic', (() => {
+  const a = G.newGame(33), b = G.newGame(33);
+  G.moodFeed(a, moods); G.moodFeed(b, moods);
+  return JSON.stringify(a.feed) === JSON.stringify(b.feed);
+})());
+ok('quiet moods make no lines', (() => {
+  const q = G.newGame(34);
+  G.moodFeed(q, [{id:'boss',mood:'good'},{id:'dennis',mood:'meh'},{id:'kayla',mood:'bad'}]);
+  return q.feed.length === 0;
+})());
+ok('feedWorldEvent: real events only', G.feedWorldEvent(gf, 'bradSteal', 700) === true
+  && G.feedWorldEvent(gf, 'notAThing', 700) === false
+  && gf.feed[gf.feed.length - 1].text.indexOf('Team Wins') >= 0);
+ok('a warning writes the feed', (() => {
+  const gw2 = G.newGame(35); gw2.day = 5; gw2.standing = 22;
+  G.closeDay(gw2, { tasksDone: 8, tasksTotal: 8 });
+  return gw2.feed.some(f => /alignment/.test(f.text) && f.m === 1020);
+})());
+ok('nextDay clears the day\'s feed', (() => {
+  const gn = G.newGame(36);
+  G.pushFeed(gn, 600, 'x'); G.closeDay(gn, { tasksDone: 8, tasksTotal: 8 }); G.nextDay(gn);
+  return gn.feed.every(f => f.text !== 'x');
+})());
+
 // ---- 14. the Brad second-job arc: every branch ----------------------------------
 // march a fresh career to the discovery morning (meters pinned so nothing dies)
 function toDiscovery(seed){

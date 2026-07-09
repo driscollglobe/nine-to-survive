@@ -139,6 +139,19 @@ button{touch-action:manipulation;}
 .toast{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);font-family:'Poppins',sans-serif;font-size:11.5px;border-radius:100px;padding:9px 18px;opacity:0;transition:opacity .25s;z-index:15;pointer-events:none;white-space:nowrap;}
 .toast.show{opacity:1;}
 .mute{position:absolute;bottom:12px;right:14px;z-index:6;font-size:17px;background:rgba(244,237,218,.85);border:1px solid var(--line);border-radius:100px;width:38px;height:38px;line-height:1;}
+/* the office feed: a small collapsible ticker, latest 3 lines */
+.feedbox{position:absolute;bottom:12px;left:14px;z-index:6;width:min(320px,calc(100vw - 90px));background:rgba(244,237,218,.92);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.feedhead{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font-family:'Poppins',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);cursor:pointer;user-select:none;}
+.feedhead b{color:var(--ink);}
+#feedlines{padding:0 12px 8px;}
+.feedbox.closed #feedlines{display:none;}
+.fline{font-size:11.5px;line-height:1.45;color:#3a352a;padding:3px 0;border-top:1px dashed var(--line);}
+.fline:first-child{border-top:none;}
+.fline .ft{font-family:'Poppins',sans-serif;font-size:9px;color:var(--muted2);margin-right:6px;}
+/* full-day log on the 5:01 report */
+.feedlog{margin:2px 0 16px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--panel2);}
+.feedlog summary{font-family:'Poppins',sans-serif;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);cursor:pointer;}
+.feedlog .fline{font-size:12px;}
 /* fire drill */
 .crunchcard .tag{color:var(--danger);border-color:var(--danger);}
 .crunchbar{height:14px;background:var(--panel3);border-radius:100px;overflow:hidden;margin:6px 0 8px;}
@@ -220,6 +233,10 @@ button{touch-action:manipulation;}
 
     <div class="hint">Click the floor to walk · Work happens AT your desk · Watch for ❗ · Coffee/couch/chats refill Soul</div>
     <button id="mutebtn" class="mute" onclick="toggleMute()">🔊</button>
+    <div id="feedbox" class="feedbox">
+      <div class="feedhead" onclick="toggleFeed()"><span><b>#office</b> · live</span><span id="feedcaret">▾</span></div>
+      <div id="feedlines"></div>
+    </div>
     <div id="statuspop" class="statuspop hidden"></div>
     <div id="toast" class="toast"></div>
 
@@ -257,6 +274,7 @@ button{touch-action:manipulation;}
       <div class="tag" id="detag">5:01 PM · Day 1</div>
       <div class="etitle" id="detitle">Day 1: survived.</div>
       <div class="report" id="report"></div>
+      <div id="dayfeed"></div>
       <div class="bankline" id="bankline"></div>
       <button class="walkout hidden" id="walkoutbtn" onclick="doWalkOut()">Walk out — you have your number</button>
       <button class="next" id="clockinbtn" onclick="clockIn()">Clock in — Day 2</button>
@@ -434,6 +452,29 @@ function startChat(id){
   if(W.requestChat(world, id)) toast('Walking over…');
 }
 
+/* ---- the office feed (render only — the brain writes g.feed) ---- */
+let feedShown = 0;
+let feedClosed = false;
+try { feedClosed = localStorage.getItem('ntos-feed-closed') === '1'; } catch(e){}
+function toggleFeed(){
+  feedClosed = !feedClosed;
+  try { localStorage.setItem('ntos-feed-closed', feedClosed ? '1' : '0'); } catch(e){}
+  applyFeedCollapse();
+}
+function applyFeedCollapse(){
+  $id('feedbox').classList.toggle('closed', feedClosed);
+  $id('feedcaret').textContent = feedClosed ? '▸' : '▾';
+}
+applyFeedCollapse();
+function feedLineHtml(f){
+  return '<div class="fline"><span class="ft">' + W.minToClock(f.m) + '</span>' + f.text + '</div>';
+}
+function renderFeed(){
+  feedShown = g.feed.length;
+  $id('feedlines').innerHTML = g.feed.slice(-3).map(feedLineHtml).join('')
+    || '<div class="fline">No messages. Suspicious in itself.</div>';
+}
+
 let toastT = null, deadEyedToastDay = 0;
 function toast(msg){
   const t = $id('toast');
@@ -526,6 +567,8 @@ function beginDay(){
   setMoney(true);
   updateJobline();
   hideStatus();
+  G.moodFeed(g, world.actors.map(a => ({ id: a.id, mood: a.mood })));
+  renderFeed();
   if(G.canWalkOut(g)){
     W.armWalkout(world);
     toast('Your number is banked. The EXIT is right there. Any time.');
@@ -550,6 +593,7 @@ function loop(t){
   })();
   $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
   $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
+  if(g.feed.length !== feedShown) renderFeed();
   W.render(world, ctx, cam, window.innerWidth, window.innerHeight);
   rafId = requestAnimationFrame(loop);
 }
@@ -612,6 +656,7 @@ function handleSignal(s){
       break;
     case 'bosscatch':
       worldEffect(s.bad ? 'bossCatchBad' : 'bossCatch');
+      if(s.bad) G.feedWorldEvent(g, 'bossCatchBad', Math.floor(world.clockMin));
       SFX.bosscatch();
       toast(s.bad
         ? '“WHERE were you?” Wrong day for an empty chair. Standing −9.'
@@ -619,6 +664,7 @@ function handleSignal(s){
       break;
     case 'bradsteal':
       worldEffect('bradSteal');
+      G.feedWorldEvent(g, 'bradSteal', Math.floor(world.clockMin));
       toast('Brad lifted a file off your empty desk. That task is his now. Standing −3.');
       break;
     case 'bradfoiled':
@@ -640,6 +686,7 @@ function handleSignal(s){
     }
     case 'couch':
       worldEffect('couch');
+      G.feedWorldEvent(g, 'couch', Math.floor(world.clockMin));
       toast('Couch. Soul +6. Someone from HR definitely saw. Standing −1.');
       break;
     case 'coffee': {
@@ -878,6 +925,7 @@ const CRUNCH_CLICKS = 12, CRUNCH_SECS = 8;
 let crunchState = null;
 function openCrunch(){
   hideStatus();
+  G.feedWorldEvent(g, 'crunch', Math.floor(world.clockMin));
   SFX.drill();
   crunchState = { clicks: 0, deadline: performance.now() + CRUNCH_SECS * 1000, done: false };
   $id('crunchmodal').classList.remove('hidden');
@@ -945,6 +993,10 @@ function showDayEnd(){
   $id('report').innerHTML = rows.map(r =>
     '<div class="rrow"><span class="rk">' + r[0] + '</span><span class="rv ' + r[2] + '">' + r[1] + '</span></div>'
   ).join('');
+  $id('dayfeed').innerHTML = g.feed.length
+    ? '<details class="feedlog"><summary>#office — today’s full log (' + g.feed.length + ')</summary>'
+      + g.feed.map(feedLineHtml).join('') + '</details>'
+    : '';
   $id('bankline').innerHTML = 'Banked: <b>' + G.fmt(g.money) + '</b> / your number: ' + G.fmt(G.FU_TARGET);
   $id('walkoutbtn').classList.toggle('hidden', !G.canWalkOut(g));
   $id('clockinbtn').textContent = G.canWalkOut(g) ? 'One more day (greed)' : 'Clock in — Day ' + (g.day + 1);
