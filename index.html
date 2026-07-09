@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="ntos-game.js?v=n6"></script>
-<script src="ntos-world.js?v=w6"></script>
+<script src="ntos-world.js?v=w7"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -391,6 +391,11 @@ function handleWorldClick(sx, sy){
     else if(W.goForCouch(world)) toast('Five minutes. You’ve earned nothing, take it anyway.');
     return;
   }
+  if(W.isExitAt(t.x, t.y)){
+    if(world.walkoutArmed){ if(W.goForExit(world)) toast('Walking to the door. Don’t look back.'); }
+    else toast('Not yet. You have a number, and this isn’t it.');
+    return;
+  }
   // plain floor: walk there
   W.movePlayer(world, t);
 }
@@ -478,6 +483,10 @@ function beginDay(){
   setMoney(true);
   updateJobline();
   hideStatus();
+  if(G.canWalkOut(g)){
+    W.armWalkout(world);
+    toast('Your number is banked. The EXIT is right there. Any time.');
+  }
   lastT = 0;
   if(rafId) cancelAnimationFrame(rafId);
   rafId = requestAnimationFrame(loop);
@@ -549,6 +558,9 @@ function handleSignal(s){
       break;
     case 'bradempty':
       toast('Brad cased your empty desk. Empty inbox, nothing to take. He left disappointed in you specifically.');
+      break;
+    case 'walkout':
+      doWalkOut();
       break;
     case 'chat': {
       const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';

@@ -173,6 +173,16 @@ bossZ2.x = 8; bossZ2.y = 16;            // already on the patrol target tile
 const passZ = stepUntil(wz2, 30, ['bosspass', 'bosscatch']);
 ok('already-adjacent boss patrol still resolves', !!passZ, passZ ? passZ.type : 'DEADLOCK');
 
+// ---- 9c. the walkout is a door ----------------------------------------------------------
+const wx = W.newDay(41, 1, [9]);
+wx.bossWalks = []; wx.bradRaids = []; wx.crunch = null;
+ok('exit door tiles are blocked furniture', !W.isWalkable(wx, 0, 16) && W.isExitAt(0, 17));
+ok('door refuses the unarmed', W.goForExit(wx) === false);
+W.armWalkout(wx);
+ok('armed door accepts the walk', wx.walkoutArmed && W.goForExit(wx) === true);
+const wo = stepUntil(wx, 60, ['walkout']);
+ok('reaching the door emits the walkout signal', wo && wo.type === 'walkout');
+
 // ---- 10. 5 PM hands the day to the rules ----------------------------------------------
 const wd = W.newDay(31, 1, []);
 wd.bossWalks = []; wd.bradRaids = []; wd.crunch = null;

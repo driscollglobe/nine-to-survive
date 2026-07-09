@@ -48,10 +48,12 @@ const FURNITURE = [
   { id:'plant-1',     label:null,        x:11, y:11, w:1, d:1, h:0.9,  color:'#4e7a4e' },
   { id:'plant-2',     label:null,        x:30, y:10, w:1, d:1, h:0.9,  color:'#4e7a4e' },
   { id:'plant-3',     label:null,        x:2,  y:12, w:1, d:1, h:0.9,  color:'#4e7a4e' },
-  { id:'couch',       label:'COUCH',     x:2,  y:22, w:3, d:1, h:0.5,  color:'#b56a4f' }
+  { id:'couch',       label:'COUCH',     x:2,  y:22, w:3, d:1, h:0.5,  color:'#b56a4f' },
+  { id:'exit',        label:'EXIT',      x:0,  y:16, w:1, d:2, h:1.1,  color:'#2E9E63' }
 ];
 const COFFEE_SPOT = { x:22, y:9 };
 const COUCH_SPOT  = { x:3,  y:21 };
+const EXIT_SPOT   = { x:1,  y:17 };
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -212,8 +214,9 @@ function newDay(seed, day, plan){
     crunch: null,            // {atMin, status}
     // recovery economy (once a day each)
     coffeeUsed: false, couchUsed: false, chatted: {},
-    playerErrand: null,      // {type:'coffee'|'couch'|'chat', id?, repaths}
+    playerErrand: null,      // {type:'coffee'|'couch'|'chat'|'exit', id?, repaths}
     moveMarker: null,
+    walkoutArmed: false,     // the shell arms this when the number is banked
     dayOver: false
   };
   // seed wander timers + daily moods deterministically
@@ -397,6 +400,9 @@ function arriveErrand(w, you){
   } else if(e.type === 'couch'){
     w.playerErrand = null;
     w.sig.push({ type:'couch' });
+  } else if(e.type === 'exit'){
+    w.playerErrand = null;
+    w.sig.push({ type:'walkout' });   // you reached the door with your number banked
   } else if(e.type === 'chat'){
     const target = getActor(w, e.id);
     if(Math.hypot(target.x - you.x, target.y - you.y) <= 2.2){
@@ -484,6 +490,15 @@ function goForCouch(w){
   w.moveMarker = COUCH_SPOT;
   return true;
 }
+function armWalkout(w){ w.walkoutArmed = true; }
+function goForExit(w){
+  if(!w.walkoutArmed) return false;
+  const you = getActor(w, 'you');
+  if(!sendTo(w, you, EXIT_SPOT, 'errand')) return false;
+  w.playerErrand = { type:'exit', repaths: 0 };
+  w.moveMarker = EXIT_SPOT;
+  return true;
+}
 function requestChat(w, id){
   const target = getActor(w, id);
   if(!target || !target.chat || w.chatted[id]) return false;
@@ -520,6 +535,10 @@ function isCoffeeAt(gx, gy){
 function isCouchAt(gx, gy){
   const f = furnitureAt(gx, gy);
   return !!f && f.id === 'couch';
+}
+function isExitAt(gx, gy){
+  const f = furnitureAt(gx, gy);
+  return !!f && f.id === 'exit';
 }
 function statusOf(w, actor){
   if(actor.id === 'you') return { name:'You', role: actor.role, mood: null,
@@ -644,9 +663,15 @@ function drawBox(ctx, cam, f, w){
   ctx.beginPath(); ctx.moveTo(dx, dy - hpx); ctx.lineTo(cx, cy - hpx);
   ctx.lineTo(cx, cy); ctx.lineTo(dx, dy); ctx.closePath();
   ctx.fillStyle = shade(f.color, 0.55); ctx.fill();
+  // the armed EXIT glows: your number is banked, the door is live
+  if(f.id === 'exit' && w && w.walkoutArmed){
+    ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
+    ctx.lineTo(cx, cy - hpx); ctx.lineTo(dx, dy - hpx); ctx.closePath();
+    ctx.strokeStyle = '#7CF5B4'; ctx.lineWidth = 3 * z; ctx.stroke();
+  }
   if(f.label){
     const [lx, ly] = proj(cam, f.x + f.w / 2 - 0.5, f.y + f.d / 2 - 0.5);
-    ctx.fillStyle = 'rgba(21,18,13,0.8)';
+    ctx.fillStyle = (f.id === 'exit' && w && w.walkoutArmed) ? '#0e5e35' : 'rgba(21,18,13,0.8)';
     ctx.font = '700 ' + Math.max(8, 9 * z) + 'px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText(f.label, lx, ly - hpx - 6 * z);
@@ -718,8 +743,9 @@ return {
   TASKS_PER_DAY, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
+  armWalkout, goForExit,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
-  pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, statusOf, clockToMin, minToClock,
+  pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile
 };
 })();
