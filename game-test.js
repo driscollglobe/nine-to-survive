@@ -9,7 +9,8 @@
  * Ends with whole-career policy sims that assert the game's thesis is playable.
  */
 ObjC.import('Foundation');
-const DIR = '/Users/kevindriscoll/Desktop/nine to survive';
+// run from inside the project folder: cd into it, then osascript -l JavaScript <this file>
+const DIR = ObjC.unwrap($.NSFileManager.defaultManager.currentDirectoryPath);
 function readFile(p){ return ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(p,$.NSUTF8StringEncoding,null)); }
 const G = (0,eval)(readFile(DIR+'/ntos-game.js')+'\n;NineToSurvive;');
 

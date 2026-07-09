@@ -2,8 +2,8 @@
 """Rebuild ntos-standalone.html = index.html with both module <script src> tags
 (ntos-game.js, ntos-world.js) replaced by the raw modules inlined. Everything
 else in index.html is preserved."""
-import io, re, sys
-BASE = '/Users/kevindriscoll/Desktop/nine to survive'
+import io, os, re, sys
+BASE = os.path.dirname(os.path.abspath(__file__))
 def read(p): return io.open(p, encoding='utf-8').read()
 
 index = read(f'{BASE}/index.html')

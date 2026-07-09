@@ -11,7 +11,8 @@
  * and the 5 PM dayover handoff.
  */
 ObjC.import('Foundation');
-const DIR = '/Users/kevindriscoll/Desktop/nine to survive';
+// run from inside the project folder: cd into it, then osascript -l JavaScript <this file>
+const DIR = ObjC.unwrap($.NSFileManager.defaultManager.currentDirectoryPath);
 function readFile(p){ return ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(p,$.NSUTF8StringEncoding,null)); }
 const G = (0,eval)(readFile(DIR+'/ntos-game.js')+'\n;NineToSurvive;');
 const W = (0,eval)(readFile(DIR+'/ntos-world.js')+'\n;NtosWorld;');
