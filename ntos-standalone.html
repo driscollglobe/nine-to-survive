@@ -440,7 +440,8 @@ const NineToSurvive = (() => {
     if(!e) return null;
     if(kind === 'bradSteal' && g.stats) g.stats.bradSteals++;
     const b = { s: g.standing, so: g.soul };
-    const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad') ? bossCatchMod(g) : 0;
+    const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad')
+      ? bossCatchMod(g) + consumeCatchShield(g) : 0;
     g.standing = clamp(g.standing + (e.s || 0) + sMod);
     g.soul     = clamp(g.soul + (e.so || 0));
     let deadEyed = false;
@@ -633,6 +634,23 @@ const NineToSurvive = (() => {
           }
         }
       }
+    },
+
+    // MARCUS HAS SEEN EVERYTHING. The survivor: funny, useful, slightly
+    // spiritually dead, never a fraud. Stages: 0 dormant · 1 mentor (permanent —
+    // coasting does not resolve). Once live, chatting with him delivers a tip.
+    marcus_survivor: {
+      npc: 'marcus',
+      advance(g, a){
+        if(a.stage === 0){
+          if(a.startDay == null)
+            a.startDay = 3 + Math.floor(localRand((g.runSeed ^ hashStr('marcus_start')) | 0)() * 3);
+          if(g.day >= a.startDay){
+            a.stage = 1;
+            pushFeed(g, 546, 'Marcus set his status to “surviving.” It has been his status since 2019.');
+          }
+        }
+      }
     }
   };
 
@@ -700,6 +718,7 @@ const NineToSurvive = (() => {
     if(id === 'brad_discovery'){
       const a = g.arcs.brad_second_job;
       brad.counters.discoveries = (brad.counters.discoveries || 0) + 1;
+      brad.counters.discoveryDay = g.day;
       if(c.key === 'screenshot'){
         addReceipt(g, 'screenshot_brad_deck');
         brad.stress = 3; a.stage = 5;
@@ -716,6 +735,7 @@ const NineToSurvive = (() => {
     if(id === 'boss_quick_call'){
       const boss = g.npcState.boss;
       boss.counters.quickCalls = (boss.counters.quickCalls || 0) + 1;
+      boss.counters.callDay = g.day;
       if(c.key === 'sympathize'){
         boss.trust += 1;
         boss.flags.sympathetic = true; boss.flags.softCatch = true;
@@ -729,6 +749,42 @@ const NineToSurvive = (() => {
     }
     g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: c.o };
     return g.lastChoice;
+  }
+
+  // ---- Marcus's coasting tips: delivered through chats once his arc is live -----
+  // Some help mechanically; roughly one in four miscalibrates, because detachment
+  // is a skill with error bars. Seeded per (run, day); once per day via the
+  // existing one-chat-per-peer rule.
+  const MARCUS_TIPS = [
+    { kind:'bosswalk', text:'Marcus, without looking up: “He does his second lap after lunch. Be a chair.”',
+      feed:'Marcus has seen this exact all-hands before, including the typo.' },
+    { kind:'delay', text:'“That one in your stack? Nobody reads it before Thursday. Let it breathe.” One missed task forgiven at 5 PM.',
+      feed:'Marcus says the reorg will be reversed by October.' },
+    { kind:'shield', text:'“When he asks where you were, say ‘load-bearing deliverable.’ Works exactly once.” Next catch softened.',
+      feed:'Marcus declined a meeting so calmly it became philosophical.' },
+    { kind:'miscal', text:'“The 2:30 is skippable. Trust me.” It was not skippable. Standing −2.',
+      feed:'Marcus said “this too shall pass.” It has not passed.' }
+  ];
+  function marcusTip(g, min){
+    const m = g.npcState.marcus;
+    if(((g.arcs || {}).marcus_survivor || { stage: 0 }).stage < 1) return null;
+    if(m.counters.tipDay === g.day) return null;
+    m.counters.tipDay = g.day;
+    m.counters.tips = (m.counters.tips || 0) + 1;
+    const r = arcRand(g, 'marcus', 'tip');
+    const tip = r() < 0.25 ? MARCUS_TIPS[3] : MARCUS_TIPS[Math.floor(r() * 3)];
+    if(tip.kind === 'delay') g.taskForgivenessToday = true;
+    else if(tip.kind === 'shield') m.flags.shield = true;
+    else if(tip.kind === 'miscal'){ applyStoryDelta(g, -2, 0); m.counters.miscals = (m.counters.miscals || 0) + 1; }
+    pushFeed(g, min, tip.feed);
+    return { kind: tip.kind, text: tip.text };
+  }
+  // Marcus's phrase deflects exactly one catch (consumed on use).
+  function consumeCatchShield(g){
+    const m = g.npcState && g.npcState.marcus;
+    if(!m || !m.flags.shield) return 0;
+    delete m.flags.shield;
+    return +2;
   }
 
   // Never found time for the quick call: the office reads that as an answer.
@@ -788,6 +844,7 @@ const NineToSurvive = (() => {
   function bradFiredReport(g, min){
     const brad = g.npcState.brad;
     brad.flags.fired = true; brad.flags.walkedOut = true;
+    brad.counters.firedDay = g.day;
     if(g.arcs.brad_second_job && g.arcs.brad_second_job.stage === 6) g.arcs.brad_second_job.stage = 7;
     pushFeed(g, min, 'Meredith walked Brad to the door holding a box he was not allowed to carry himself. “We wish him well,” she said, in the past tense, while he was still in the room.');
   }
@@ -836,10 +893,12 @@ const NineToSurvive = (() => {
     const pay = LADDER[g.jobIdx].pay;
     const burn = burnFor(g.week);
     const drain = soulDrainFor(g.week);
-    const missed = Math.max(0, stats.tasksTotal - stats.tasksDone);
+    let missed = Math.max(0, stats.tasksTotal - stats.tasksDone);
+    let forgiven = false;
+    if(g.taskForgivenessToday && missed > 0){ missed--; forgiven = true; }   // Marcus was right
     const report = { day: g.day, week: g.week, title: jobTitle(g), pay, burn, drain,
                      tasksDone: stats.tasksDone, tasksTotal: stats.tasksTotal,
-                     missed, decay: DECAY_S,
+                     missed, forgiven, decay: DECAY_S,
                      deadEyed: g.deadEyedToday || 0,
                      broke: false, promoted: false, warned: false, newTitle: null };
     // the treadmill: yesterday's hero + whatever died in the inbox
@@ -864,6 +923,41 @@ const NineToSurvive = (() => {
     return g.failed ? 'gameover' : 'dayend';
   }
 
+  // ---- The day's headline + award: drawn from what actually happened -----------
+  // Deterministic, first-match priority, no invented events. The fallbacks are
+  // the only lines allowed to admit nothing happened.
+  function dayHeadline(g){
+    const rep = g.dayReport || {};
+    const d = 'Day ' + (rep.day || g.day) + ': ';
+    const brad = g.npcState.brad, boss = g.npcState.boss;
+    if(brad.counters.firedDay === rep.day)
+      return d + 'Brad was walked out holding a box he was not allowed to carry.';
+    if(brad.counters.discoveryDay === rep.day)
+      return d + 'a laptop faced the wrong direction for four full seconds.';
+    if(boss.counters.callDay === rep.day && boss.flags.sympathetic)
+      return d + 'you became the corner office’s emotional support animal.';
+    if(boss.counters.callDay === rep.day)
+      return d + 'a quick call was survived at async speed.';
+    if(rep.promoted) return d + 'promoted. The bar moved. It saw you coming.';
+    if(rep.warned) return d + 'HR opened a document with your name in the filename.';
+    if(rep.deadEyed >= 2) return d + 'three tasks in a row without blinking. HR calls it “flow.”';
+    if(rep.forgiven) return d + 'Marcus was right about Thursday.';
+    if(rep.broke) return d + 'the ATM asked if you were sure.';
+    return d + 'survived.';
+  }
+  function dayAward(g){
+    const rep = g.dayReport || {};
+    const brad = g.npcState.brad, boss = g.npcState.boss;
+    if(brad.counters.firedDay === rep.day || brad.counters.discoveryDay === rep.day)
+      return 'Main Character of the Day';
+    if(g.receipts && g.receipts.count > 0) return 'Least Legally Defensible';
+    if(rep.deadEyed >= 1) return 'Most Dead Inside';
+    if(boss.counters.callDay === rep.day && boss.flags.sympathetic)
+      return 'Office Emotional Support Animal';
+    if(rep.tasksTotal > 0 && rep.tasksDone >= rep.tasksTotal) return 'Best Supporting Spreadsheet';
+    return 'Employee of the Month (Not This Month)';
+  }
+
   // The morning after a survived day: new date, fresh plan, the night forgives.
   // Arcs advance FIRST — a fired Brad changes what planDay may pick — and they
   // use local generators, so the g.rngState stream planDay consumes is untouched.
@@ -871,6 +965,7 @@ const NineToSurvive = (() => {
     g.day++; g.week = Math.floor((g.day - 1) / 5) + 1;
     g.idxInDay = 0; g.dayReport = null;
     g.taskStreak = 0; g.deadEyedToday = 0;
+    g.taskForgivenessToday = false;
     g.feed = []; g.todayIncidents = [];
     advanceArcs(g);
     g.plan = planDay(g);
@@ -947,7 +1042,8 @@ const NineToSurvive = (() => {
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
-    bossSummonsDodged, bossHumanBeat, bossCatchMod
+    bossSummonsDodged, bossHumanBeat, bossCatchMod,
+    marcusTip, consumeCatchShield, dayHeadline, dayAward
   };
 })();
 
@@ -2618,7 +2714,16 @@ function handleSignal(s){
     case 'chat': {
       const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';
       const res = worldEffect(kind);
-      toast(s.name.split(' ')[0] + ': five minutes of being human. Soul +' + (res ? res.dso : ''));
+      const tip = s.who === 'marcus' ? G.marcusTip(g, Math.floor(world.clockMin)) : null;
+      if(tip){
+        if(tip.kind === 'miscal'){ setMeter('standing', g.standing); applyDelta('standing', -2); }
+        if(tip.kind === 'bosswalk'){
+          const nw = world.bossWalks.find(b => b.status === 'pending');
+          toast(tip.text + (nw ? ' (Next walk ≈ ' + W.minToClock(nw.atMin) + '.)' : ' (He’s done walking today.)'));
+        } else toast(tip.text);
+      } else {
+        toast(s.name.split(' ')[0] + ': five minutes of being human. Soul +' + (res ? res.dso : ''));
+      }
       W.playerGoHome(world);
       break;
     }
@@ -2918,15 +3023,17 @@ function showDayEnd(){
   const rep = g.dayReport;
   screens('dayend');
   $id('detag').textContent = '5:01 PM · Day ' + rep.day + (rep.day % 5 === 0 ? ' · Friday review' : '');
-  $id('detitle').textContent = 'Day ' + rep.day + ': survived.';
+  $id('detitle').textContent = G.dayHeadline(g);
   const rows = [
+    ['🏆 Award: ' + G.dayAward(g), 'accepted on your behalf', 'big'],
     ['Tasks shipped', rep.tasksDone + ' / ' + rep.tasksTotal, rep.tasksDone >= rep.tasksTotal ? 'plus' : 'minus'],
     ['“What have you done for them lately”', 'Standing −' + rep.decay, 'minus'],
     ['Pay — ' + rep.title, '+' + G.fmt(rep.pay), 'plus'],
     ['Cost of living — week ' + rep.week, '−' + G.fmt(rep.burn), 'minus'],
     ['The grind', 'Soul −' + rep.drain, 'soulhit']
   ];
-  if(rep.missed) rows.splice(1, 0, ['Died in the inbox (' + rep.missed + ')', 'Standing −' + rep.missed * G.TASK_MISS_S, 'minus']);
+  if(rep.missed) rows.splice(2, 0, ['Died in the inbox (' + rep.missed + ')', 'Standing −' + rep.missed * G.TASK_MISS_S, 'minus']);
+  if(rep.forgiven) rows.push(['Marcus was right — nobody read it before Thursday', 'one missed task forgiven', 'plus']);
   if(rep.deadEyed) rows.push(['Dead-eyed productivity — ' + rep.deadEyed + ' task' + (rep.deadEyed > 1 ? 's' : '') + ' shipped without looking up', 'Soul −' + rep.deadEyed * G.GRIND_SOUL + ' (already billed)', 'soulhit']);
   if(rep.broke) rows.push(['Overdraft. The fear at the ATM.', 'Soul −' + G.BROKE_SOUL, 'soulhit']);
   if(rep.promoted) rows.push(['PROMOTED → ' + rep.newTitle, 'Standing → ' + G.PROMOTE_RESET + ' · Soul −' + G.PROMOTE_SOUL, 'big']);

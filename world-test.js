@@ -408,6 +408,7 @@ function soakRun(seed, opts){
         case 'couch':      G.applyWorldEffect(g, 'couch'); W.playerGoHome(w); break;
         case 'chat':
           G.applyWorldEffect(g, s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh');
+          if(s.who === 'marcus') G.marcusTip(g, Math.floor(w.clockMin));   // as the shell does
           W.playerGoHome(w); break;
         case 'dayover': {
           // arcs must never deadlock or strand a day's staged story beats

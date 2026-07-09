@@ -626,6 +626,89 @@ ok('human beat: a line, a feed entry, once only', typeof beat === 'string'
 ok('bossHuman world effect: +2 Soul, no Standing', G.WORLD_EFFECTS.bossHuman.so === 2
   && G.WORLD_EFFECTS.bossHuman.s === 0);
 
+// ---- 16. Marcus the survivor + headlines & awards ----------------------------------
+const gM = G.newGame(401);
+ok('no tips before the arc is live', G.marcusTip(gM, 700) === null);
+function marchDays(g2, n){
+  for(let d = 0; d < n; d++){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+}
+marchDays(gM, 6);
+ok('Marcus goes mentor by week two', gM.arcs.marcus_survivor.stage === 1);
+const tip1 = G.marcusTip(gM, 700);
+ok('a chat delivers a tip, once a day', tip1 !== null && G.marcusTip(gM, 710) === null);
+ok('tips are seed-deterministic', (() => {
+  const a = G.newGame(401), b = G.newGame(401);
+  marchDays(a, 6); marchDays(b, 6);
+  const ta = G.marcusTip(a, 700), tb = G.marcusTip(b, 700);
+  return ta.kind === tb.kind && ta.text === tb.text;
+})());
+// the four kinds all exist in the rotation, and each does what it says
+const kinds = {};
+const gK = G.newGame(402);
+marchDays(gK, 6);
+for(let d = 0; d < 30; d++){
+  const t = G.marcusTip(gK, 700);
+  if(t) kinds[t.kind] = true;
+  marchDays(gK, 1);
+}
+ok('the rotation covers help and miscalibration', kinds.miscal
+  && Object.keys(kinds).length >= 3, Object.keys(kinds).join(','));
+// delay: one missed task forgiven at 5 PM
+const gDel = G.newGame(403);
+gDel.taskForgivenessToday = true;
+G.closeDay(gDel, { tasksDone: 5, tasksTotal: 8 });
+ok('delay tip: a missed task is forgiven, named in the report',
+  gDel.dayReport.missed === 2 && gDel.dayReport.forgiven === true
+  && gDel.standing === 50 - G.DECAY_S - 2 * G.TASK_MISS_S);
+G.nextDay(gDel);
+ok('forgiveness does not carry overnight', gDel.taskForgivenessToday === false);
+// shield: exactly one catch softened
+const gSh = G.newGame(404);
+gSh.npcState.marcus.flags.shield = true;
+const rSh1 = G.applyWorldEffect(gSh, 'bossCatch');
+const rSh2 = G.applyWorldEffect(gSh, 'bossCatch');
+ok('shield tip: softens exactly one catch', rSh1.ds === -4 && rSh2.ds === -6
+  && !gSh.npcState.marcus.flags.shield);
+// miscal already applied −2 inside marcusTip (tested via meters)
+const gMis = G.newGame(405);
+marchDays(gMis, 6);
+gMis.standing = 50;
+let sawMiscal = false;
+for(let d = 0; d < 40 && !sawMiscal; d++){
+  const before = gMis.standing;
+  const t = G.marcusTip(gMis, 700);
+  if(t && t.kind === 'miscal'){ sawMiscal = gMis.standing === before - 2; break; }
+  marchDays(gMis, 1); gMis.standing = 50;
+}
+ok('miscalibrated tip costs Standing −2 on the spot', sawMiscal);
+
+// headlines + awards: drawn from the day's real events, first-match, fallback last
+const gH = G.newGame(406);
+G.closeDay(gH, { tasksDone: 8, tasksTotal: 8 });
+ok('quiet day: plain headline, spreadsheet award', /survived\.$/.test(G.dayHeadline(gH))
+  && G.dayAward(gH) === 'Best Supporting Spreadsheet');
+const gH2 = G.newGame(406);
+gH2.npcState.brad.counters.firedDay = 1;
+G.closeDay(gH2, { tasksDone: 3, tasksTotal: 8 });
+ok('the firing owns the headline and the award', /walked out holding a box/.test(G.dayHeadline(gH2))
+  && G.dayAward(gH2) === 'Main Character of the Day');
+const gH3 = G.newGame(406);
+G.addReceipt(gH3, 'screenshot_brad_deck');
+gH3.deadEyedToday = 2;
+G.closeDay(gH3, { tasksDone: 3, tasksTotal: 8 });
+ok('receipts outrank dead-eyed in the award order', /without blinking/.test(G.dayHeadline(gH3))
+  && G.dayAward(gH3) === 'Least Legally Defensible');
+const gH4 = G.newGame(406);
+gH4.deadEyedToday = 1;
+G.closeDay(gH4, { tasksDone: 8, tasksTotal: 8 });
+ok('dead-eyed day: Most Dead Inside', G.dayAward(gH4) === 'Most Dead Inside');
+ok('headline/award are pure functions of run state', G.dayHeadline(gH4) === G.dayHeadline(gH4)
+  && G.dayAward(gH4) === G.dayAward(gH4));
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');

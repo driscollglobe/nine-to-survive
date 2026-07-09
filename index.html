@@ -708,7 +708,16 @@ function handleSignal(s){
     case 'chat': {
       const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';
       const res = worldEffect(kind);
-      toast(s.name.split(' ')[0] + ': five minutes of being human. Soul +' + (res ? res.dso : ''));
+      const tip = s.who === 'marcus' ? G.marcusTip(g, Math.floor(world.clockMin)) : null;
+      if(tip){
+        if(tip.kind === 'miscal'){ setMeter('standing', g.standing); applyDelta('standing', -2); }
+        if(tip.kind === 'bosswalk'){
+          const nw = world.bossWalks.find(b => b.status === 'pending');
+          toast(tip.text + (nw ? ' (Next walk ≈ ' + W.minToClock(nw.atMin) + '.)' : ' (He’s done walking today.)'));
+        } else toast(tip.text);
+      } else {
+        toast(s.name.split(' ')[0] + ': five minutes of being human. Soul +' + (res ? res.dso : ''));
+      }
       W.playerGoHome(world);
       break;
     }
@@ -1008,15 +1017,17 @@ function showDayEnd(){
   const rep = g.dayReport;
   screens('dayend');
   $id('detag').textContent = '5:01 PM · Day ' + rep.day + (rep.day % 5 === 0 ? ' · Friday review' : '');
-  $id('detitle').textContent = 'Day ' + rep.day + ': survived.';
+  $id('detitle').textContent = G.dayHeadline(g);
   const rows = [
+    ['🏆 Award: ' + G.dayAward(g), 'accepted on your behalf', 'big'],
     ['Tasks shipped', rep.tasksDone + ' / ' + rep.tasksTotal, rep.tasksDone >= rep.tasksTotal ? 'plus' : 'minus'],
     ['“What have you done for them lately”', 'Standing −' + rep.decay, 'minus'],
     ['Pay — ' + rep.title, '+' + G.fmt(rep.pay), 'plus'],
     ['Cost of living — week ' + rep.week, '−' + G.fmt(rep.burn), 'minus'],
     ['The grind', 'Soul −' + rep.drain, 'soulhit']
   ];
-  if(rep.missed) rows.splice(1, 0, ['Died in the inbox (' + rep.missed + ')', 'Standing −' + rep.missed * G.TASK_MISS_S, 'minus']);
+  if(rep.missed) rows.splice(2, 0, ['Died in the inbox (' + rep.missed + ')', 'Standing −' + rep.missed * G.TASK_MISS_S, 'minus']);
+  if(rep.forgiven) rows.push(['Marcus was right — nobody read it before Thursday', 'one missed task forgiven', 'plus']);
   if(rep.deadEyed) rows.push(['Dead-eyed productivity — ' + rep.deadEyed + ' task' + (rep.deadEyed > 1 ? 's' : '') + ' shipped without looking up', 'Soul −' + rep.deadEyed * G.GRIND_SOUL + ' (already billed)', 'soulhit']);
   if(rep.broke) rows.push(['Overdraft. The fear at the ATM.', 'Soul −' + G.BROKE_SOUL, 'soulhit']);
   if(rep.promoted) rows.push(['PROMOTED → ' + rep.newTitle, 'Standing → ' + G.PROMOTE_RESET + ' · Soul −' + G.PROMOTE_SOUL, 'big']);
