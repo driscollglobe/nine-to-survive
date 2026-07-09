@@ -230,3 +230,20 @@ red ×N on the desk, task HUD line, progress bar.
 - Folder was NOT a git repo → `git init`, commit `pre-session baseline` (c1f19fa), .gitignore for .DS_Store.
 - game-test.js: **59 passed, 0 failed** (ran via osascript, verified).
 - world-test.js: **44 passed, 0 failed** (ran via osascript, verified).
+
+### TASK 6 — balance sweep results (one pass, timeboxed, final)
+Constants chosen: **FU_TARGET $6,000 → $2,500**, **CLOCK_SPEED 2.2 → 3.2** (a day = 2.5
+real min), **ladder pay 260/420/640/820/1000** (was 180/300/450/620/800). Burn untouched
+(130 + 25/wk) — deliberately, because burn creep is what caps a permanent Intern.
+- 50-seed recovery-bot sweep: escapes **50/50, day 11 every seed** (money is deterministic
+  given weekly promotions; threats don't touch income). Winning run ≈ **11 × 2.5 ≈ 27.5
+  real min** + modal time → lands mid-window of the 20–30 min target.
+- Permanent-Intern guard (new test): pinned meters, 60 days, bank peaks **$2,325 < $2,500**
+  — the no-promotion win is mathematically impossible.
+- Policy sims after retune: third-way escapes day 11 (assertion updated 12–45 → 8–20);
+  suck-up dies by soul day 3 (unchanged); rebel fired day 5 (unchanged).
+- Known consequence, accepted within the timebox: the desk-only soak bot now escapes
+  hollow (48/50, soul ≈ 10 → "Out. Technically.") instead of dying mid-run — an 11-day
+  run outpaces the grind drain. The no-recovery thesis now expresses through the hollow
+  ending tier rather than death. Revisit only if the hollow ending feels too soft in play.
+- Overdraft unit test moved to week 7 (intern pay $260 vs burn $280) — same rule, new pay.

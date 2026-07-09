@@ -105,10 +105,11 @@ G.closeDay(gw, {tasksDone:8, tasksTotal:8});
 ok('low standing at review → warning, soul −'+G.WARN_SOUL,
   gw.dayReport.warned && gw.soul === 63 - G.soulDrainFor(1) - G.WARN_SOUL, 'soul='+gw.soul);
 // overdraft: burn beyond pay floors money at 0 and takes soul
-const gb = G.newGame(3); gb.day=22; gb.week=5; gb.money=10; gb.soul=63;
+// (burn creep passes intern pay of $260 in week 7: 130 + 25×6 = $280)
+const gb = G.newGame(3); gb.day=32; gb.week=7; gb.money=10; gb.soul=63;
 G.closeDay(gb, {tasksDone:8, tasksTotal:8});
 ok('overdraft: money floors at 0, soul −'+G.BROKE_SOUL,
-  gb.money===0 && gb.dayReport.broke && gb.soul === 63 - G.soulDrainFor(5) - G.BROKE_SOUL, 'money='+gb.money+' soul='+gb.soul);
+  gb.money===0 && gb.dayReport.broke && gb.soul === 63 - G.soulDrainFor(7) - G.BROKE_SOUL, 'money='+gb.money+' soul='+gb.soul);
 
 // ---- 7b. the world-effects economy --------------------------------------------
 const ge2 = G.newGame(4);
@@ -169,7 +170,8 @@ function runCareer(seed, pick, tasksDone, chats, bossOutcome){
 // The third way: do the work, take the breaks, hold your lines → escape whole.
 const third = runCareer(7, 2, 6, 2, 'bossPass');
 ok('third-way policy escapes with F-U money', third.escaped, 'day='+third.day+' $'+third.money+' failed='+third.failed);
-ok('third-way escape lands in a sane run length (12–45 days)', third.day>=12 && third.day<=45, 'day='+third.day);
+// balance target (session 5): ~2.5-min days × escape around day 10-12 ≈ a 25-30 min win
+ok('third-way escape lands in the tuned run length (8–20 days)', third.day>=8 && third.day<=20, 'day='+third.day);
 ok('third-way escapes with soul intact', third.soul >= 50, 'soul='+third.soul);
 // The suck-up: all the work, all the compliance, no recovery → hollowed out fast.
 const suckup = runCareer(7, 0, 8, 0, 'bossPass');
@@ -178,6 +180,18 @@ ok('suck-up policy dies by soul, fast', suckup.failed==='soul' && suckup.day<=6,
 const rebel = runCareer(7, 1, 2, 3, 'bossCatch');
 ok('pure-rebel policy never escapes', !rebel.escaped, 'day='+rebel.day+' failed='+rebel.failed);
 ok('pure-rebel run is ended by the org', rebel.failed==='standing', 'failed='+rebel.failed+' day='+rebel.day);
+
+// the number is sized so climbing is mandatory: pin meters, block promotion,
+// and even a maximally diligent permanent Intern's bank must peak below it
+const gi = G.newGame(21);
+let internPeak = gi.money;
+for(let d = 0; d < 60 && !gi.over; d++){
+  gi.standing = 50; gi.soul = 80;      // pinned: no promotion, no death — pure money math
+  G.closeDay(gi, {tasksDone: 8, tasksTotal: 8});
+  internPeak = Math.max(internPeak, gi.money);
+  if(!gi.over) G.nextDay(gi);
+}
+ok('permanent Intern can never bank the number', internPeak < G.FU_TARGET, 'peak $'+internPeak);
 
 // determinism: same seed + same policy = identical career
 const rerun = runCareer(7, 2, 6, 2, 'bossPass');

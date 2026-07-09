@@ -24,7 +24,7 @@ const NtosWorld = (() => {
 const GRID_W = 40, GRID_H = 26;   // a floor bigger than the screen — panning matters
 const TW = 64, TH = 32;           // iso tile size at zoom 1
 const WALK_SPEED = 3.2;           // tiles/sec (summoned NPCs + your errands hustle ×1.9)
-const CLOCK_SPEED = 2.2;          // game-minutes per real second → a day ≈ 3.6 real min
+const CLOCK_SPEED = 3.2;          // game-minutes per real second → a day = 2.5 real min
 const TASK_WORK_SECS = 11;        // real seconds at your desk to ship one task
 const TASKS_PER_DAY = 8;
 const CRUNCH_CHANCE = 0.45;       // odds a day contains a fire drill

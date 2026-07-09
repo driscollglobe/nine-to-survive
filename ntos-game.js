@@ -128,13 +128,15 @@ const NineToSurvive = (() => {
 
   // ---- The career ------------------------------------------------------------
   const LADDER = [
-    { title:'Intern',    pay:180 },
-    { title:'Associate', pay:300 },
-    { title:'Senior',    pay:450 },
-    { title:'Manager',   pay:620 },
-    { title:'Director',  pay:800 }
+    { title:'Intern',    pay:260 },
+    { title:'Associate', pay:420 },
+    { title:'Senior',    pay:640 },
+    { title:'Manager',   pay:820 },
+    { title:'Director',  pay:1000 }
   ];
-  const FU_TARGET      = 6000;  // your number: bank this and you can walk out (the win)
+  // Your number. Sized so a permanent Intern can NEVER reach it: intern net income
+  // peaks around $2,325 lifetime as burn creep overtakes pay — you must climb.
+  const FU_TARGET      = 2500;
   const DAY_ENCOUNTERS = 2;     // cards are spice now; the real-time office is the game
   const BURN_BASE      = 130;   // daily cost of living, week 1
   const BURN_STEP      = 25;    // lifestyle creep: burn rises this much per week

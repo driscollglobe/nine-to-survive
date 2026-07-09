@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n4"></script>
-<script src="ntos-world.js?v=w3"></script>
+<script src="ntos-game.js?v=n5"></script>
+<script src="ntos-world.js?v=w4"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -155,12 +155,12 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
     <div class="mascot"><img src="assets/mascot.png" alt="Nine to Survive" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span class="fallback" style="display:none">🤷</span></div>
     <div class="badge">Nine to Survive presents</div>
     <h1 class="big">Your <span class="blue">Num</span><span class="amber">ber</span></h1>
-    <div class="tagline">Bank $6,000. Keep your soul. Walk out.</div>
-    <p class="lede">Everyone in this building has a number — the bank balance where they stand up, say the thing, and never come back. Yours is $6,000. It's a real office out there: tasks pile on your desk, the Boss walks the floor, Brad circles your inbox, and every trip to the coffee machine is a gamble. Click. Move. Survive. Get out.</p>
+    <div class="tagline">Bank $2,500. Keep your soul. Walk out.</div>
+    <p class="lede">Everyone in this building has a number — the bank balance where they stand up, say the thing, and never come back. Yours is $2,500. It's a real office out there: tasks pile on your desk, the Boss walks the floor, Brad circles your inbox, and every trip to the coffee machine is a gamble. Click. Move. Survive. Get out.</p>
     <div class="legend">
       <div class="leg"><span class="k s">Standing</span><div>How the org sees you. <span>Ship tasks at your desk to earn it — it decays every single day. Zero = managed out. Fridays decide promotions.</span></div></div>
       <div class="leg"><span class="k so">Soul</span><div>How much of you is left. <span>Work drains it. Coffee, the couch, and real conversations refill it — away from your desk, on the clock.</span></div></div>
-      <div class="leg"><span class="k m">Money</span><div>Your walk-out fund. <span>Paid daily, rent relentless, promotions pay better. Hit $6,000 and you're free.</span></div></div>
+      <div class="leg"><span class="k m">Money</span><div>Your walk-out fund. <span>Paid daily, rent relentless, promotions pay better. Hit $2,500 and you're free.</span></div></div>
     </div>
     <button class="cta" onclick="startGame()">Clock in — Day 1</button>
     <button class="cta resumebtn hidden" id="resumebtn" onclick="resumeGame()"></button>
@@ -188,7 +188,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
           <div class="mtrack"><div class="mfill" id="f-soul" style="width:65%"></div></div>
         </div>
         <div class="meter money">
-          <div class="mrow"><div><span class="mname">Your Number</span> <span class="msub">bank $6,000 · walk out</span></div><div class="mval" id="v-money">$300<span class="delta" id="d-money"></span></div></div>
+          <div class="mrow"><div><span class="mname">Your Number</span> <span class="msub">bank $2,500 · walk out</span></div><div class="mval" id="v-money">$300<span class="delta" id="d-money"></span></div></div>
           <div class="mtrack"><div class="mfill" id="f-money" style="width:5%"></div></div>
         </div>
       </div>
