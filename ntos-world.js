@@ -593,7 +593,7 @@ function render(w, ctx, cam, vw, vh){
     ctx.closePath(); ctx.fillStyle = zn.color; ctx.fill();
     const [lx, ly] = proj(cam, zn.x + zn.w / 2 - 0.5, zn.y + zn.d / 2 - 0.5);
     ctx.fillStyle = 'rgba(21,18,13,0.34)';
-    ctx.font = '700 ' + Math.max(9, 11 * z) + 'px "JetBrains Mono", monospace';
+    ctx.font = '700 ' + Math.max(9, 11 * z) + 'px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(zn.label, lx, ly);
   });
@@ -646,7 +646,7 @@ function render(w, ctx, cam, vw, vh){
     ctx.strokeStyle = 'rgba(21,18,13,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
     ctx.fillStyle = '#D8443F';
-    ctx.font = '800 10px "JetBrains Mono", monospace';
+    ctx.font = '800 10px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(a.id === 'boss' ? 'BOSS' : 'BRAD', ex, ey + 22);
   });
@@ -696,7 +696,7 @@ function drawBox(ctx, cam, f, w){
   if(f.label){
     const [lx, ly] = proj(cam, f.x + f.w / 2 - 0.5, f.y + f.d / 2 - 0.5);
     ctx.fillStyle = (f.id === 'exit' && w && w.walkoutArmed) ? '#0e5e35' : 'rgba(21,18,13,0.8)';
-    ctx.font = '700 ' + Math.max(8, 9 * z) + 'px "JetBrains Mono", monospace';
+    ctx.font = '700 ' + Math.max(8, 9 * z) + 'px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(f.label, lx, ly - hpx - 6 * z);
   }
@@ -713,7 +713,7 @@ function drawBox(ctx, cam, f, w){
       ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     ctx.fillStyle = '#D8443F';
-    ctx.font = '800 ' + Math.max(9, 11 * z) + 'px "JetBrains Mono", monospace';
+    ctx.font = '800 ' + Math.max(9, 11 * z) + 'px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('×' + w.tasks.pending, ix, iy - hpx - Math.min(8, w.tasks.pending) * 3.2 * z - 6 * z);
   }
@@ -769,7 +769,7 @@ function drawActor(ctx, cam, a, w){
     else if(Math.hypot(a.x - COUCH_SPOT.x, a.y - COUCH_SPOT.y) < 0.8){ chip = 'FIVE MINUTES'; cc = '#E8814C'; }
     else { chip = 'NOT WORKING'; cc = '#8A8371'; }
     if(chip){
-      ctx.font = '700 ' + Math.max(8, 9 * z) + 'px "JetBrains Mono", monospace';
+      ctx.font = '700 ' + Math.max(8, 9 * z) + 'px Poppins, sans-serif';
       const tw = ctx.measureText(chip).width;
       const cy2 = py - 48 * z, pad = 6 * z;
       ctx.fillStyle = 'rgba(244,237,218,0.92)';
@@ -784,7 +784,7 @@ function drawActor(ctx, cam, a, w){
     }
   }
   ctx.fillStyle = 'rgba(21,18,13,0.65)';
-  ctx.font = '700 ' + Math.max(8, 8.5 * z) + 'px "JetBrains Mono", monospace';
+  ctx.font = '700 ' + Math.max(8, 8.5 * z) + 'px Poppins, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(a.id === 'you' ? 'YOU' : a.name.split(' ')[0].toUpperCase(), px, py + 12 * z);
 }
