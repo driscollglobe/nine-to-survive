@@ -169,13 +169,34 @@ const NineToSurvive = (() => {
   }
 
   // Sample DAY_ENCOUNTERS distinct encounters for the day, replayed in clock order.
+  // Prefers cards not yet seen this cycle (tracked on g.seen, so it serializes),
+  // so a run tours the whole pool before anything repeats; then the cycle resets.
+  // Seeded and deterministic: same seed = same tour.
   function planDay(g){
-    const pool = ENCOUNTERS.map((_, i) => i);
-    for(let i = pool.length - 1; i > 0; i--){
-      const j = Math.floor(rand(g) * (i + 1));
-      const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    if(!g.seen) g.seen = [];
+    const pickFrom = (cands, n) => {
+      const pool = cands.slice();
+      for(let i = pool.length - 1; i > 0; i--){
+        const j = Math.floor(rand(g) * (i + 1));
+        const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+      }
+      return pool.slice(0, n);
+    };
+    const fresh = [];
+    for(let i = 0; i < ENCOUNTERS.length; i++) if(g.seen.indexOf(i) < 0) fresh.push(i);
+    let plan;
+    if(fresh.length >= DAY_ENCOUNTERS){
+      plan = pickFrom(fresh, DAY_ENCOUNTERS);
+      plan.forEach(i => g.seen.push(i));
+      if(g.seen.length >= ENCOUNTERS.length) g.seen = [];  // toured the pool: reset
+    } else {
+      plan = fresh.slice();                                // odd remainder: finish the cycle...
+      const rest = [];
+      for(let i = 0; i < ENCOUNTERS.length; i++) if(plan.indexOf(i) < 0) rest.push(i);
+      plan = plan.concat(pickFrom(rest, DAY_ENCOUNTERS - plan.length));
+      g.seen = plan.slice();                               // ...and start the next with today
     }
-    return pool.slice(0, DAY_ENCOUNTERS).sort((a, b) => a - b);
+    return plan.sort((a, b) => a - b);
   }
 
   // Fresh career. Day 1, Intern, seeded plan for the first day.

@@ -55,6 +55,23 @@ ok('day plan entries are distinct + clock-ordered', g0.plan.every((v,i,a)=> i===
 const g0b = G.newGame(42);
 ok('same seed = same day plan (deterministic)', JSON.stringify(g0.plan)===JSON.stringify(g0b.plan));
 
+// the novelty cycle: five 2-card days tour all ten encounters before any repeat
+const gt = G.newGame(31);
+let tour = gt.plan.slice();
+for(let d = 0; d < 4; d++){ G.nextDay(gt); tour = tour.concat(gt.plan); }
+ok('first five days show all ten encounters exactly once',
+  JSON.stringify(tour.slice().sort((a,b)=>a-b)) === JSON.stringify([0,1,2,3,4,5,6,7,8,9]), tour.join(','));
+G.nextDay(gt);
+ok('day 6 opens a fresh cycle', gt.plan.length === G.DAY_ENCOUNTERS && gt.seen.length === G.DAY_ENCOUNTERS);
+ok('the tour is seed-deterministic', (() => {
+  const a = G.newGame(31), b = G.newGame(31);
+  for(let d = 0; d < 6; d++){
+    if(JSON.stringify(a.plan) !== JSON.stringify(b.plan)) return false;
+    G.nextDay(a); G.nextDay(b);
+  }
+  return true;
+})());
+
 // ---- 4. applyChoice moves meters + reports deltas ---------------------------
 const g1 = G.newGame(1); g1.plan=[0,1,2,3]; g1.idxInDay=0;   // pin the plan for exact deltas
 const r = G.applyChoice(g1, 0);   // enc0 choice0: s+8, so-6 → 58/59
