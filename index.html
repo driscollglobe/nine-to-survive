@@ -644,10 +644,12 @@ function updateJobline(){
    clocks in every morning (greed button included — it never walks out), and
    logs one line per day. Completely inert without the flag. Works from file://
    too: location.search is populated for file URLs. ---- */
-const MOVIE = /[?&]movie=1/.test(window.location.search);
+const MOVIE_MODE = (window.location.search.match(/[?&]movie=([^&]+)/) || [])[1] || null;
+const MOVIE = !!MOVIE_MODE;
+const MOVIE_GREED = MOVIE_MODE === 'greed';   // ?movie=1 walks out at the number; ?movie=greed never leaves
 let movieLoggedDay = 0;
 if(MOVIE){
-  console.log('[MOVIE] autopilot on');
+  console.log('[MOVIE] autopilot on — mode: ' + (MOVIE_GREED ? 'greed (play past the number to a terminal failure)' : 'walkout (leave the moment the number is banked)'));
   setInterval(() => {
     // background tabs suspend rAF entirely — if the render loop is starved,
     // drive the simulation from here so an hours-long soak never freezes
@@ -663,8 +665,10 @@ if(MOVIE){
     if(!$id('end').classList.contains('hidden')){
       if(movieLoggedDay !== -1){
         movieLoggedDay = -1;
-        console.log('[MOVIE] GAME OVER — day', g.day, 'standing', g.standing,
+        const v = G.verdict(g);
+        console.log('[MOVIE] RUN OVER — day', g.day, 'standing', g.standing,
           'soul', g.soul, 'bank $' + g.money, g.escaped ? 'ESCAPED' : ('failed: ' + g.failed));
+        console.log('[MOVIE] VERDICT: ' + v.tag + ' — ' + v.title + ' — ' + v.body);
       }
       return;
     }
@@ -673,7 +677,11 @@ if(MOVIE){
         movieLoggedDay = g.day;
         console.log('[MOVIE] day', g.day, '· standing', g.standing, '· soul', g.soul,
           '· $' + g.money, '· tasks', g.dayReport.tasksDone + '/' + g.dayReport.tasksTotal,
-          G.canWalkOut(g) ? '· COULD WALK OUT (greeding on)' : '');
+          G.canWalkOut(g) ? (MOVIE_GREED ? '· AT THE NUMBER (greeding on)' : '· AT THE NUMBER — walking out') : '');
+      }
+      if(!MOVIE_GREED && G.canWalkOut(g) && !$id('walkoutbtn').classList.contains('hidden')){
+        $id('walkoutbtn').click();   // the day-end walkout path
+        return;
       }
       clockIn();
       return;
@@ -689,6 +697,10 @@ if(MOVIE){
     }
     if(!$id('crunchmodal').classList.contains('hidden')){
       $id('workbtn').click();   // mashes to a win, then the same button closes it
+      return;
+    }
+    if(!MOVIE_GREED && world && world.running && world.walkoutArmed && !world.playerErrand){
+      if(W.goForExit(world)) console.log('[MOVIE] number banked mid-day — heading for the EXIT door');
       return;
     }
     if(world && world.running && !world.playerErrand && !W.playerAtDesk(world)){
