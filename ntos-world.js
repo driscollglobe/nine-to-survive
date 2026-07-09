@@ -231,6 +231,11 @@ function newDay(seed, day, plan, flags){
     // Brad-arc staging: the deck detour and the firing you can watch
     bradDeck: flags.bradDeckAt ? { atMin: flags.bradDeckAt, status: 'pending' } : null,
     firing: flags.bradFiredToday ? { phase: 'wait' } : null,
+    // Boss-arc staging: the quick-call summons (walk over, or let it expire)
+    summons: flags.bossSummonsAt
+      ? { atMin: flags.bossSummonsAt, expireAt: flags.bossSummonsAt + 90, status: 'pending' }
+      : null,
+    bossHumanDone: false,
     // recovery economy (once a day each)
     coffeeUsed: false, couchUsed: false, chatted: {},
     playerErrand: null,      // {type:'coffee'|'couch'|'chat'|'exit', id?, repaths}
@@ -400,6 +405,30 @@ function step(w, dt){
     }
   }
 
+  // ---- the quick-call summons: answer with your feet, or let it expire ----
+  if(w.summons){
+    if(w.summons.status === 'pending' && w.clockMin >= w.summons.atMin){
+      w.summons.status = 'open';
+      w.sig.push({ type: 'summons' });
+    } else if(w.summons.status === 'open' && w.clockMin >= w.summons.expireAt){
+      w.summons.status = 'missed';
+      w.sig.push({ type: 'summonsmissed' });
+    }
+  }
+
+  // ---- the human beat: crossing his path off-schedule while the arc is hot ----
+  if(w.flags.bossArcHot && !w.bossHumanDone
+     && !(w.summons && w.summons.status === 'open')
+     && !(w.playerErrand && w.playerErrand.type === 'quickcall')){
+    const bossH = getActor(w, 'boss');
+    if(bossH && bossH.state === 'idle' && !playerAtDesk(w)
+       && Math.hypot(bossH.x - you.x, bossH.y - you.y) < 2.0
+       && Math.hypot(bossH.x - bossH.home.x, bossH.y - bossH.home.y) < 2.5){
+      w.bossHumanDone = true;
+      w.sig.push({ type: 'bosshuman' });
+    }
+  }
+
   // ---- the day's cards + arc incidents (owner walks over at the minute) ----
   if(w.nextEvent < w.events.length){
     const ev = w.events[w.nextEvent];
@@ -496,6 +525,21 @@ function arriveErrand(w, you){
     } else {
       w.playerErrand = null;   // they got away; no harm
     }
+  } else if(e.type === 'quickcall'){
+    const boss = getActor(w, 'boss');
+    if(!w.summons || w.summons.status !== 'open'){
+      w.playerErrand = null;             // it expired while you walked; nothing here
+    } else if(Math.hypot(boss.x - you.x, boss.y - you.y) <= 2.5){
+      w.playerErrand = null;
+      w.summons.status = 'taken';
+      w.running = false;                 // the door closes; the card opens
+      w.sig.push({ type:'quickcall' });
+    } else if(e.repaths < 3){
+      e.repaths++;
+      sendTo(w, you, adjacentTo(w, boss), 'errand');
+    } else {
+      w.playerErrand = null;
+    }
   }
 }
 
@@ -581,6 +625,19 @@ function goForExit(w){
   w.moveMarker = EXIT_SPOT;
   return true;
 }
+function goForBossCall(w){
+  if(!w.summons || w.summons.status !== 'open') return false;
+  const boss = getActor(w, 'boss');
+  const you = getActor(w, 'you');
+  if(!boss || !sendTo(w, you, adjacentTo(w, boss), 'errand')) return false;
+  w.playerErrand = { type: 'quickcall', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function resolveQuickCall(w){
+  if(w.summons) w.summons.status = 'done';
+  w.running = true;
+}
 function requestChat(w, id){
   const target = getActor(w, id);
   if(!target || !target.chat || w.chatted[id]) return false;
@@ -636,7 +693,8 @@ function statusOf(w, actor){
     name: actor.name, role: actor.role, mood: actor.mood,
     face: MOOD_FACE[actor.mood],
     line: actor.lines ? actor.lines[actor.mood] : '',
-    chat: !!actor.chat && !w.chatted[actor.id]
+    chat: !!actor.chat && !w.chatted[actor.id],
+    quickcall: actor.id === 'boss' && !!(w.summons && w.summons.status === 'open')
   };
 }
 
@@ -900,7 +958,7 @@ return {
   TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
-  armWalkout, goForExit,
+  armWalkout, goForExit, goForBossCall, resolveQuickCall,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile

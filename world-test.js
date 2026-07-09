@@ -286,6 +286,34 @@ ok('he is off the floor, not clickable', W.getActor(wFire, 'brad').off === true
 const sOver = stepUntil(wFire, 400, ['dayover']);
 ok('the firing never strands the day: 5 PM still arrives', !!sOver && sOver.type === 'dayover');
 
+// ---- 11e. the Boss spiral, staged --------------------------------------------------------
+ok('arc-hot day stages an extra floor walk', W.newDay(61, 9, [9], { extraBossWalks: 1 }).bossWalks.length === 3);
+ok('crunch boost raises the odds (boost 1 = certainty)', !!W.newDay(61, 9, [9], { crunchBoost: 1 }).crunch);
+const wSum = W.newDay(61, 9, [], { bossSummonsAt: 560 });
+wSum.bossWalks = []; wSum.bradRaids = []; wSum.crunch = null;
+const sumSig = stepUntil(wSum, 30, ['summons']);
+ok('the summons announces itself at its minute', !!sumSig && wSum.summons.status === 'open');
+ok('status popup offers the quick call while open', W.statusOf(wSum, W.getActor(wSum, 'boss')).quickcall === true);
+ok('goForBossCall walks you over', W.goForBossCall(wSum) === true);
+const qcSig = stepUntil(wSum, 90, ['quickcall']);
+ok('arrival at the corner office opens the call, world paused', !!qcSig && !wSum.running
+  && wSum.summons.status === 'taken');
+W.resolveQuickCall(wSum);
+ok('resolving the call resumes the day', wSum.running && wSum.summons.status === 'done');
+const wMiss = W.newDay(61, 10, [], { bossSummonsAt: 560 });
+wMiss.bossWalks = []; wMiss.bradRaids = []; wMiss.crunch = null;
+stepUntil(wMiss, 30, ['summons']);
+const missSig = stepUntil(wMiss, 60, ['summonsmissed']);
+ok('an unanswered summons expires after 90 game-min', !!missSig && wMiss.summons.status === 'missed'
+  && wMiss.clockMin >= 650);
+// the human beat: cross his path off-schedule while the arc is hot
+const wHum = W.newDay(61, 9, [], { bossArcHot: true });
+wHum.bossWalks = []; wHum.bradRaids = []; wHum.crunch = null;
+W.movePlayer(wHum, { x: 33, y: 6 });   // wander over toward the corner office
+const humSig = stepUntil(wHum, 60, ['bosshuman']);
+ok('crossing his path off-schedule fires the human beat, once', !!humSig
+  && wHum.bossHumanDone && stepUntil(wHum, 20, ['bosshuman']) === null);
+
 // ---- 12. SOAK: full careers through the real pipeline ---------------------------------
 // A bot plays whole days exactly the way the shell does: newDay each morning,
 // step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.
@@ -356,6 +384,17 @@ function soakRun(seed, opts){
         case 'bradallhands':G.bradAllHands(g, Math.floor(w.clockMin)); break;
         case 'bradfired':   firedSeen = true; G.bradFiredReport(g, Math.floor(w.clockMin)); break;
         case 'bradtasks':   G.bradTasksAbsorbed(g, Math.floor(w.clockMin)); break;
+        case 'summons':
+          if((seed + g.day) % 2 === 0) W.goForBossCall(w);   // odd parity: dodge it
+          break;
+        case 'quickcall':
+          G.applyIncidentChoice(g, 'boss_quick_call', g.day % 2, Math.floor(w.clockMin));
+          if(g.over){ dayDone = true; break; }
+          W.resolveQuickCall(w); W.playerGoHome(w); break;
+        case 'summonsmissed': G.bossSummonsDodged(g, Math.floor(w.clockMin)); break;
+        case 'bosshuman':
+          if(G.bossHumanBeat(g, Math.floor(w.clockMin))) G.applyWorldEffect(g, 'bossHuman');
+          break;
         case 'crunch':
           G.applyCrunch(g, true);
           if(g.over){ dayDone = true; break; }

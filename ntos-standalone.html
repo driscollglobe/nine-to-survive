@@ -418,8 +418,19 @@ const NineToSurvive = (() => {
     chatMeh:    { s: 0, so:+3 },
     chatBad:    { s: 0, so:+2 },   // you listened to them vent; still counts
     couch:      { s:-1, so:+6 },   // seen lounging; worth it
-    coffee:     { s: 0, so:+2 }
+    coffee:     { s: 0, so:+2 },
+    bossHuman:  { s: 0, so:+2 }    // he was, briefly, a person
   };
+  // The Boss-spiral trap, priced: his confidant gets softer catches; the one
+  // who deflected gets harder ones — for the arc's duration only (the arc
+  // engine clears both flags when the spiral resolves).
+  function bossCatchMod(g){
+    const boss = g.npcState && g.npcState.boss;
+    if(!boss) return 0;
+    if(boss.flags.softCatch) return +2;
+    if(boss.flags.hardCatch) return -2;
+    return 0;
+  }
   // Dead-eyed productivity: ship GRIND_STREAK tasks in a row with no recovery
   // (coffee / couch / chat) and every further consecutive task bills 1 extra Soul.
   const GRIND_STREAK = 3;
@@ -429,7 +440,8 @@ const NineToSurvive = (() => {
     if(!e) return null;
     if(kind === 'bradSteal' && g.stats) g.stats.bradSteals++;
     const b = { s: g.standing, so: g.soul };
-    g.standing = clamp(g.standing + (e.s || 0));
+    const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad') ? bossCatchMod(g) : 0;
+    g.standing = clamp(g.standing + (e.s || 0) + sMod);
     g.soul     = clamp(g.soul + (e.so || 0));
     let deadEyed = false;
     if(kind === 'taskDone'){
@@ -493,7 +505,8 @@ const NineToSurvive = (() => {
     bradSteal:    'Brad moved a file of yours into a folder called “Team Wins.”',
     bossCatchBad: 'Everyone heard it. Everyone kept typing.',
     crunch:       '“Quick fire drill, all hands on deck.” The deck is you.',
-    couch:        'Someone updated the wellness dashboard. It counts.'
+    couch:        'Someone updated the wellness dashboard. It counts.',
+    summons:      '“got a sec” — the Boss, to you, with no agenda attached.'
   };
   function feedWorldEvent(g, kind, min){
     const line = EVENT_FEED[kind];
@@ -651,6 +664,17 @@ const NineToSurvive = (() => {
         { key:'ride', t:'See nothing. Sip your coffee. Let it ride.', s:0, so:+1,
           o:'You turn back to your monitor and let the universe keep its own books. Whatever happens to Brad now was always going to happen. You are merely no longer load-bearing.' }
       ]
+    },
+    boss_quick_call: {
+      tag: 'Incident · The Quick Call',
+      title: '“You free? Quick call.”',
+      scene: 'The door closes. The Boss asks how you’re “finding the quarter,” then answers it himself for six minutes. On his monitor: an org chart with red outlines on some boxes. One of the red outlines is around his own box. He notices you noticing. “Realignment planning,” he says. “Anyway.”',
+      choices: [
+        { key:'sympathize', t:'“That sounds like a lot. How are YOU holding up?”', s:+3, so:-4,
+          o:'He talks for nineteen minutes. You learn about the reorg, a nemesis in Finance, and a boat he did not buy. You are his person now. The rate is one quick call per day until whichever ends first: the spiral, or you.' },
+        { key:'deflect', t:'“Happy to pick this up async — I’ve got a deliverable at two.”', s:-1, so:+2,
+          o:'“Right. Of course. Deliverables.” The door opens with a punctuation you will hear again the next time he passes your empty chair. The summons stop. The ledger doesn’t.' }
+      ]
     }
   };
 
@@ -689,8 +713,41 @@ const NineToSurvive = (() => {
         pushFeed(g, min, 'Brad turned his desk eleven degrees away from the aisle. Feng shui, he said.');
       }
     }
+    if(id === 'boss_quick_call'){
+      const boss = g.npcState.boss;
+      boss.counters.quickCalls = (boss.counters.quickCalls || 0) + 1;
+      if(c.key === 'sympathize'){
+        boss.trust += 1;
+        boss.flags.sympathetic = true; boss.flags.softCatch = true;
+        delete boss.flags.deflected; delete boss.flags.hardCatch;
+        pushFeed(g, min, 'The corner office door was closed for nineteen minutes. You were on the wrong side of it. Or the right side. Unclear.');
+      } else {
+        boss.flags.deflected = true; boss.flags.hardCatch = true;
+        delete boss.flags.sympathetic; delete boss.flags.softCatch;
+        pushFeed(g, min, 'The quick call was quick. The silence after it wasn’t.');
+      }
+    }
     g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: c.o };
     return g.lastChoice;
+  }
+
+  // Never found time for the quick call: the office reads that as an answer.
+  function bossSummonsDodged(g, min){
+    const boss = g.npcState.boss;
+    if(boss.flags.deflected || boss.flags.sympathetic) return false;
+    boss.flags.deflected = true; boss.flags.hardCatch = true;
+    pushFeed(g, min, '“got a sec” expired unanswered. It has been noted somewhere with columns.');
+    return true;
+  }
+
+  // The one genuinely human beat, off-schedule, once per run. World moment, not
+  // a card: the world spots the proximity, the brain owns the words and the gate.
+  function bossHumanBeat(g, min){
+    const boss = g.npcState.boss;
+    if(boss.flags.humanBeat) return null;
+    boss.flags.humanBeat = true;
+    pushFeed(g, min, 'The Boss stood at the window for four minutes. The window does not have KPIs.');
+    return 'You catch the Boss rehearsing “streamlining is a kindness” at the window. He nods. Human, briefly.';
   }
 
   // The receipt play: holding the screenshot gives Brad's Credit-Reassigned card
@@ -889,7 +946,8 @@ const NineToSurvive = (() => {
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
-    BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed
+    BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
+    bossSummonsDodged, bossHumanBeat, bossCatchMod
   };
 })();
 
@@ -1131,6 +1189,11 @@ function newDay(seed, day, plan, flags){
     // Brad-arc staging: the deck detour and the firing you can watch
     bradDeck: flags.bradDeckAt ? { atMin: flags.bradDeckAt, status: 'pending' } : null,
     firing: flags.bradFiredToday ? { phase: 'wait' } : null,
+    // Boss-arc staging: the quick-call summons (walk over, or let it expire)
+    summons: flags.bossSummonsAt
+      ? { atMin: flags.bossSummonsAt, expireAt: flags.bossSummonsAt + 90, status: 'pending' }
+      : null,
+    bossHumanDone: false,
     // recovery economy (once a day each)
     coffeeUsed: false, couchUsed: false, chatted: {},
     playerErrand: null,      // {type:'coffee'|'couch'|'chat'|'exit', id?, repaths}
@@ -1300,6 +1363,30 @@ function step(w, dt){
     }
   }
 
+  // ---- the quick-call summons: answer with your feet, or let it expire ----
+  if(w.summons){
+    if(w.summons.status === 'pending' && w.clockMin >= w.summons.atMin){
+      w.summons.status = 'open';
+      w.sig.push({ type: 'summons' });
+    } else if(w.summons.status === 'open' && w.clockMin >= w.summons.expireAt){
+      w.summons.status = 'missed';
+      w.sig.push({ type: 'summonsmissed' });
+    }
+  }
+
+  // ---- the human beat: crossing his path off-schedule while the arc is hot ----
+  if(w.flags.bossArcHot && !w.bossHumanDone
+     && !(w.summons && w.summons.status === 'open')
+     && !(w.playerErrand && w.playerErrand.type === 'quickcall')){
+    const bossH = getActor(w, 'boss');
+    if(bossH && bossH.state === 'idle' && !playerAtDesk(w)
+       && Math.hypot(bossH.x - you.x, bossH.y - you.y) < 2.0
+       && Math.hypot(bossH.x - bossH.home.x, bossH.y - bossH.home.y) < 2.5){
+      w.bossHumanDone = true;
+      w.sig.push({ type: 'bosshuman' });
+    }
+  }
+
   // ---- the day's cards + arc incidents (owner walks over at the minute) ----
   if(w.nextEvent < w.events.length){
     const ev = w.events[w.nextEvent];
@@ -1396,6 +1483,21 @@ function arriveErrand(w, you){
     } else {
       w.playerErrand = null;   // they got away; no harm
     }
+  } else if(e.type === 'quickcall'){
+    const boss = getActor(w, 'boss');
+    if(!w.summons || w.summons.status !== 'open'){
+      w.playerErrand = null;             // it expired while you walked; nothing here
+    } else if(Math.hypot(boss.x - you.x, boss.y - you.y) <= 2.5){
+      w.playerErrand = null;
+      w.summons.status = 'taken';
+      w.running = false;                 // the door closes; the card opens
+      w.sig.push({ type:'quickcall' });
+    } else if(e.repaths < 3){
+      e.repaths++;
+      sendTo(w, you, adjacentTo(w, boss), 'errand');
+    } else {
+      w.playerErrand = null;
+    }
   }
 }
 
@@ -1481,6 +1583,19 @@ function goForExit(w){
   w.moveMarker = EXIT_SPOT;
   return true;
 }
+function goForBossCall(w){
+  if(!w.summons || w.summons.status !== 'open') return false;
+  const boss = getActor(w, 'boss');
+  const you = getActor(w, 'you');
+  if(!boss || !sendTo(w, you, adjacentTo(w, boss), 'errand')) return false;
+  w.playerErrand = { type: 'quickcall', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function resolveQuickCall(w){
+  if(w.summons) w.summons.status = 'done';
+  w.running = true;
+}
 function requestChat(w, id){
   const target = getActor(w, id);
   if(!target || !target.chat || w.chatted[id]) return false;
@@ -1536,7 +1651,8 @@ function statusOf(w, actor){
     name: actor.name, role: actor.role, mood: actor.mood,
     face: MOOD_FACE[actor.mood],
     line: actor.lines ? actor.lines[actor.mood] : '',
-    chat: !!actor.chat && !w.chatted[actor.id]
+    chat: !!actor.chat && !w.chatted[actor.id],
+    quickcall: actor.id === 'boss' && !!(w.summons && w.summons.status === 'open')
   };
 }
 
@@ -1800,7 +1916,7 @@ return {
   TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
-  armWalkout, goForExit,
+  armWalkout, goForExit, goForBossCall, resolveQuickCall,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile
@@ -2236,7 +2352,8 @@ function showStatus(actor, sx, sy){
     + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
     + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
     + '<div class="sline">' + s.line + '</div>'
-    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">Walk over & chat</span>' : '');
+    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">Walk over & chat</span>' : '')
+    + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -2245,6 +2362,10 @@ function hideStatus(){ $id('statuspop').classList.add('hidden'); }
 function startChat(id){
   hideStatus();
   if(W.requestChat(world, id)) toast('Walking over…');
+}
+function startQuickCall(){
+  hideStatus();
+  if(W.goForBossCall(world)) toast('Walking to the corner office. Bring a face.');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -2430,6 +2551,25 @@ function handleSignal(s){
       G.bradTasksAbsorbed(g, Math.floor(world.clockMin));
       toast('Two of Brad’s tasks land in YOUR inbox. “Congratulations on the growth opportunity.”');
       break;
+    case 'summons':
+      G.feedWorldEvent(g, 'summons', Math.floor(world.clockMin));
+      toast('The Boss: “you free? quick call.” No topic. Click him to go — or don’t.');
+      break;
+    case 'summonsmissed':
+      if(G.bossSummonsDodged(g, Math.floor(world.clockMin)))
+        toast('The quick call expired unanswered. His next catches will not be quick.');
+      break;
+    case 'quickcall':
+      openIncident('boss_quick_call');
+      break;
+    case 'bosshuman': {
+      const line = G.bossHumanBeat(g, Math.floor(world.clockMin));
+      if(line){
+        const res = worldEffect('bossHuman');
+        toast(line + (res && res.dso ? ' Soul +' + res.dso + '.' : ''));
+      }
+      break;
+    }
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskdone': {
@@ -2557,7 +2697,8 @@ if(MOVIE){
     }
     if(!$id('cardoverlay').classList.contains('hidden')){
       if(!$id('enc').classList.contains('hidden')){
-        const c = document.querySelector('#choices .choice[data-idx="2"]');
+        const c = document.querySelector('#choices .choice[data-idx="2"]')
+               || document.querySelector('#choices .choice');   // 2-choice incidents
         if(c) c.click();
       } else {
         $id('nextbtn').click();
@@ -2706,9 +2847,11 @@ function choose(i){
 function advance(){
   $id('cardoverlay').classList.add('hidden');
   if(activeIncident){
+    const wasQuickCall = activeIncident === 'boss_quick_call' && !world.activeEvent;
     activeIncident = null;           // incident cards don't advance the deck index
     if(g.failed) return endGame();
-    W.resolveEncounter(world);
+    if(wasQuickCall){ W.resolveQuickCall(world); W.playerGoHome(world); }
+    else W.resolveEncounter(world);
     saveRun('day');
     return;
   }

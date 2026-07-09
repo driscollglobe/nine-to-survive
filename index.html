@@ -442,7 +442,8 @@ function showStatus(actor, sx, sy){
     + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
     + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
     + '<div class="sline">' + s.line + '</div>'
-    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">Walk over & chat</span>' : '');
+    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">Walk over & chat</span>' : '')
+    + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -451,6 +452,10 @@ function hideStatus(){ $id('statuspop').classList.add('hidden'); }
 function startChat(id){
   hideStatus();
   if(W.requestChat(world, id)) toast('Walking over…');
+}
+function startQuickCall(){
+  hideStatus();
+  if(W.goForBossCall(world)) toast('Walking to the corner office. Bring a face.');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -636,6 +641,25 @@ function handleSignal(s){
       G.bradTasksAbsorbed(g, Math.floor(world.clockMin));
       toast('Two of Brad’s tasks land in YOUR inbox. “Congratulations on the growth opportunity.”');
       break;
+    case 'summons':
+      G.feedWorldEvent(g, 'summons', Math.floor(world.clockMin));
+      toast('The Boss: “you free? quick call.” No topic. Click him to go — or don’t.');
+      break;
+    case 'summonsmissed':
+      if(G.bossSummonsDodged(g, Math.floor(world.clockMin)))
+        toast('The quick call expired unanswered. His next catches will not be quick.');
+      break;
+    case 'quickcall':
+      openIncident('boss_quick_call');
+      break;
+    case 'bosshuman': {
+      const line = G.bossHumanBeat(g, Math.floor(world.clockMin));
+      if(line){
+        const res = worldEffect('bossHuman');
+        toast(line + (res && res.dso ? ' Soul +' + res.dso + '.' : ''));
+      }
+      break;
+    }
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskdone': {
@@ -763,7 +787,8 @@ if(MOVIE){
     }
     if(!$id('cardoverlay').classList.contains('hidden')){
       if(!$id('enc').classList.contains('hidden')){
-        const c = document.querySelector('#choices .choice[data-idx="2"]');
+        const c = document.querySelector('#choices .choice[data-idx="2"]')
+               || document.querySelector('#choices .choice');   // 2-choice incidents
         if(c) c.click();
       } else {
         $id('nextbtn').click();
@@ -912,9 +937,11 @@ function choose(i){
 function advance(){
   $id('cardoverlay').classList.add('hidden');
   if(activeIncident){
+    const wasQuickCall = activeIncident === 'boss_quick_call' && !world.activeEvent;
     activeIncident = null;           // incident cards don't advance the deck index
     if(g.failed) return endGame();
-    W.resolveEncounter(world);
+    if(wasQuickCall){ W.resolveQuickCall(world); W.playerGoHome(world); }
+    else W.resolveEncounter(world);
     saveRun('day');
     return;
   }

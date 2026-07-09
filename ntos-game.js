@@ -400,8 +400,19 @@ const NineToSurvive = (() => {
     chatMeh:    { s: 0, so:+3 },
     chatBad:    { s: 0, so:+2 },   // you listened to them vent; still counts
     couch:      { s:-1, so:+6 },   // seen lounging; worth it
-    coffee:     { s: 0, so:+2 }
+    coffee:     { s: 0, so:+2 },
+    bossHuman:  { s: 0, so:+2 }    // he was, briefly, a person
   };
+  // The Boss-spiral trap, priced: his confidant gets softer catches; the one
+  // who deflected gets harder ones — for the arc's duration only (the arc
+  // engine clears both flags when the spiral resolves).
+  function bossCatchMod(g){
+    const boss = g.npcState && g.npcState.boss;
+    if(!boss) return 0;
+    if(boss.flags.softCatch) return +2;
+    if(boss.flags.hardCatch) return -2;
+    return 0;
+  }
   // Dead-eyed productivity: ship GRIND_STREAK tasks in a row with no recovery
   // (coffee / couch / chat) and every further consecutive task bills 1 extra Soul.
   const GRIND_STREAK = 3;
@@ -411,7 +422,8 @@ const NineToSurvive = (() => {
     if(!e) return null;
     if(kind === 'bradSteal' && g.stats) g.stats.bradSteals++;
     const b = { s: g.standing, so: g.soul };
-    g.standing = clamp(g.standing + (e.s || 0));
+    const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad') ? bossCatchMod(g) : 0;
+    g.standing = clamp(g.standing + (e.s || 0) + sMod);
     g.soul     = clamp(g.soul + (e.so || 0));
     let deadEyed = false;
     if(kind === 'taskDone'){
@@ -475,7 +487,8 @@ const NineToSurvive = (() => {
     bradSteal:    'Brad moved a file of yours into a folder called “Team Wins.”',
     bossCatchBad: 'Everyone heard it. Everyone kept typing.',
     crunch:       '“Quick fire drill, all hands on deck.” The deck is you.',
-    couch:        'Someone updated the wellness dashboard. It counts.'
+    couch:        'Someone updated the wellness dashboard. It counts.',
+    summons:      '“got a sec” — the Boss, to you, with no agenda attached.'
   };
   function feedWorldEvent(g, kind, min){
     const line = EVENT_FEED[kind];
@@ -633,6 +646,17 @@ const NineToSurvive = (() => {
         { key:'ride', t:'See nothing. Sip your coffee. Let it ride.', s:0, so:+1,
           o:'You turn back to your monitor and let the universe keep its own books. Whatever happens to Brad now was always going to happen. You are merely no longer load-bearing.' }
       ]
+    },
+    boss_quick_call: {
+      tag: 'Incident · The Quick Call',
+      title: '“You free? Quick call.”',
+      scene: 'The door closes. The Boss asks how you’re “finding the quarter,” then answers it himself for six minutes. On his monitor: an org chart with red outlines on some boxes. One of the red outlines is around his own box. He notices you noticing. “Realignment planning,” he says. “Anyway.”',
+      choices: [
+        { key:'sympathize', t:'“That sounds like a lot. How are YOU holding up?”', s:+3, so:-4,
+          o:'He talks for nineteen minutes. You learn about the reorg, a nemesis in Finance, and a boat he did not buy. You are his person now. The rate is one quick call per day until whichever ends first: the spiral, or you.' },
+        { key:'deflect', t:'“Happy to pick this up async — I’ve got a deliverable at two.”', s:-1, so:+2,
+          o:'“Right. Of course. Deliverables.” The door opens with a punctuation you will hear again the next time he passes your empty chair. The summons stop. The ledger doesn’t.' }
+      ]
     }
   };
 
@@ -671,8 +695,41 @@ const NineToSurvive = (() => {
         pushFeed(g, min, 'Brad turned his desk eleven degrees away from the aisle. Feng shui, he said.');
       }
     }
+    if(id === 'boss_quick_call'){
+      const boss = g.npcState.boss;
+      boss.counters.quickCalls = (boss.counters.quickCalls || 0) + 1;
+      if(c.key === 'sympathize'){
+        boss.trust += 1;
+        boss.flags.sympathetic = true; boss.flags.softCatch = true;
+        delete boss.flags.deflected; delete boss.flags.hardCatch;
+        pushFeed(g, min, 'The corner office door was closed for nineteen minutes. You were on the wrong side of it. Or the right side. Unclear.');
+      } else {
+        boss.flags.deflected = true; boss.flags.hardCatch = true;
+        delete boss.flags.sympathetic; delete boss.flags.softCatch;
+        pushFeed(g, min, 'The quick call was quick. The silence after it wasn’t.');
+      }
+    }
     g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: c.o };
     return g.lastChoice;
+  }
+
+  // Never found time for the quick call: the office reads that as an answer.
+  function bossSummonsDodged(g, min){
+    const boss = g.npcState.boss;
+    if(boss.flags.deflected || boss.flags.sympathetic) return false;
+    boss.flags.deflected = true; boss.flags.hardCatch = true;
+    pushFeed(g, min, '“got a sec” expired unanswered. It has been noted somewhere with columns.');
+    return true;
+  }
+
+  // The one genuinely human beat, off-schedule, once per run. World moment, not
+  // a card: the world spots the proximity, the brain owns the words and the gate.
+  function bossHumanBeat(g, min){
+    const boss = g.npcState.boss;
+    if(boss.flags.humanBeat) return null;
+    boss.flags.humanBeat = true;
+    pushFeed(g, min, 'The Boss stood at the window for four minutes. The window does not have KPIs.');
+    return 'You catch the Boss rehearsing “streamlining is a kindness” at the window. He nods. Human, briefly.';
   }
 
   // The receipt play: holding the screenshot gives Brad's Credit-Reassigned card
@@ -871,7 +928,8 @@ const NineToSurvive = (() => {
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
-    BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed
+    BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
+    bossSummonsDodged, bossHumanBeat, bossCatchMod
   };
 })();
 

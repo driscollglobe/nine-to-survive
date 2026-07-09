@@ -541,6 +541,91 @@ ok('arc storyline is seed-deterministic end to end', (() => {
     && JSON.stringify(a.events) === JSON.stringify(b.events);
 })());
 
+// ---- 15. the Boss personal-spiral arc ---------------------------------------------
+function toBossHot(seed){
+  const g2 = G.newGame(seed);
+  let guard = 0;
+  while(!(g2.arcs.boss_spiral && g2.arcs.boss_spiral.stage === 1) && guard++ < 15){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return g2;
+}
+const gHot = toBossHot(301);
+ok('spiral goes hot in week two+, summons staged', gHot.day >= 6
+  && G.worldFlagsFor(gHot).bossArcHot && G.worldFlagsFor(gHot).bossSummonsAt >= 620
+  && G.worldFlagsFor(gHot).extraBossWalks === 1 && G.worldFlagsFor(gHot).crunchBoost > 0);
+ok('baseline catch while hot but unanswered: −6', G.bossCatchMod(gHot) === 0
+  && G.WORLD_EFFECTS.bossCatch.s === -6);
+// SYMPATHIZE: Standing climbs, Soul pays, catches soften, summons become daily
+const gSym = toBossHot(301);
+gSym.standing = 50; gSym.soul = 50;
+const rSym = G.applyIncidentChoice(gSym, 'boss_quick_call', 0, 700);
+ok('sympathize: +3 Standing / −4 Soul, his person now', rSym.ds === 3 && rSym.dso === -4
+  && gSym.npcState.boss.flags.sympathetic && gSym.npcState.boss.flags.softCatch);
+ok('sympathize: catches soften (−6 → −4, bad −9 → −7)', (() => {
+  const t = JSON.parse(JSON.stringify(gSym)); t.standing = 50;
+  const r1 = G.applyWorldEffect(t, 'bossCatch');
+  const t2 = JSON.parse(JSON.stringify(gSym)); t2.standing = 50;
+  const r2 = G.applyWorldEffect(t2, 'bossCatchBad');
+  return r1.ds === -4 && r2.ds === -7;
+})());
+ok('sympathize: the summons become daily while hot', (() => {
+  G.closeDay(gSym, { tasksDone: 8, tasksTotal: 8 });
+  gSym.standing = 60; gSym.soul = 70; gSym.failed = null; gSym.over = false;
+  G.nextDay(gSym);
+  const f = G.worldFlagsFor(gSym);
+  return !f.bossArcHot || f.bossSummonsAt >= 620;   // still-hot days keep summoning
+})());
+// DEFLECT: the summons stop; his catches harden for the duration
+const gDef = toBossHot(301);
+gDef.standing = 50; gDef.soul = 50;
+const rDef = G.applyIncidentChoice(gDef, 'boss_quick_call', 1, 700);
+ok('deflect: −1/+2, marked, hardened', rDef.ds === -1 && rDef.dso === 2
+  && gDef.npcState.boss.flags.deflected && gDef.npcState.boss.flags.hardCatch);
+ok('deflect: catches harden (−6 → −8, bad −9 → −11)', (() => {
+  const t = JSON.parse(JSON.stringify(gDef)); t.standing = 50;
+  const r1 = G.applyWorldEffect(t, 'bossCatch');
+  const t2 = JSON.parse(JSON.stringify(gDef)); t2.standing = 50;
+  const r2 = G.applyWorldEffect(t2, 'bossCatchBad');
+  return r1.ds === -8 && r2.ds === -11;
+})());
+ok('deflect: no more summons', (() => {
+  G.closeDay(gDef, { tasksDone: 8, tasksTotal: 8 });
+  gDef.standing = 60; gDef.soul = 70; gDef.failed = null; gDef.over = false;
+  G.nextDay(gDef);
+  return G.worldFlagsFor(gDef).bossSummonsAt === null;
+})());
+// DODGE: never going counts as an answer
+const gDodge = toBossHot(301);
+ok('dodging the call = deflecting it', G.bossSummonsDodged(gDodge, 800) === true
+  && gDodge.npcState.boss.flags.deflected && gDodge.npcState.boss.flags.hardCatch);
+ok('dodge is a no-op once answered', G.bossSummonsDodged(gSym, 800) === false);
+// RESOLUTION: the arc cools, the modifiers expire with it
+ok('the arc ends and the catch modifiers expire with it', (() => {
+  const g2 = toBossHot(301);
+  G.applyIncidentChoice(g2, 'boss_quick_call', 1, 700);       // hardened
+  for(let d = 0; d < 8; d++){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+    if(g2.arcs.boss_spiral.stage === 2) break;
+  }
+  if(g2.arcs.boss_spiral.stage !== 2) return false;
+  g2.standing = 50;
+  return G.bossCatchMod(g2) === 0 && G.applyWorldEffect(g2, 'bossCatch').ds === -6
+    && G.worldFlagsFor(g2).bossSummonsAt === null && !G.worldFlagsFor(g2).bossArcHot;
+})());
+// the human beat: once per run, words + a small mercy
+const gHum = toBossHot(301);
+const beat = G.bossHumanBeat(gHum, 750);
+ok('human beat: a line, a feed entry, once only', typeof beat === 'string'
+  && /streamlining/.test(beat) && G.bossHumanBeat(gHum, 760) === null
+  && gHum.feed.some(f => /window does not have KPIs/.test(f.text)));
+ok('bossHuman world effect: +2 Soul, no Standing', G.WORLD_EFFECTS.bossHuman.so === 2
+  && G.WORLD_EFFECTS.bossHuman.s === 0);
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');
