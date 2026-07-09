@@ -144,10 +144,9 @@ ok('verdicts carry the day count', /23/.test(vWhole.tag) && /23/.test(vFired.tag
 // ---- 10. whole-career policy sims (the thesis, playable) ----------------------
 // A "day" now = 2 cards + how you actually played the floor: tasks shipped, the
 // boss walk-by outcome, and how much soul you refilled (coffee/chats).
-function runCareer(seed, pick, tasksDone, chats, bossOutcome){
-  const g = G.newGame(seed);
+function careerLoop(g, pick, tasksDone, chats, bossOutcome, stopAfterDay){
   let guard = 0;
-  while(!g.over && g.day <= 60 && guard++ < 5000){
+  while(!g.over && g.day <= (stopAfterDay || 60) && guard++ < 5000){
     for(let e = 0; e < g.plan.length && !g.over; e++){
       G.applyChoice(g, pick);
       if(G.advance(g) === 'gameover') break;
@@ -163,6 +162,9 @@ function runCareer(seed, pick, tasksDone, chats, bossOutcome){
     G.nextDay(g);
   }
   return g;
+}
+function runCareer(seed, pick, tasksDone, chats, bossOutcome){
+  return careerLoop(G.newGame(seed), pick, tasksDone, chats, bossOutcome);
 }
 // The third way: do the work, take the breaks, hold your lines → escape whole.
 const third = runCareer(7, 2, 6, 2, 'bossPass');
@@ -180,6 +182,20 @@ ok('pure-rebel run is ended by the org', rebel.failed==='standing', 'failed='+re
 // determinism: same seed + same policy = identical career
 const rerun = runCareer(7, 2, 6, 2, 'bossPass');
 ok('careers replay identically from a seed', rerun.day===third.day && rerun.money===third.money && rerun.soul===third.soul);
+
+// ---- 11. persistence: a JSON round-trip resumes identically --------------------
+const gLive = G.newGame(11);
+careerLoop(gLive, 2, 6, 2, 'bossPass', 8);        // play the first 8 days
+ok('mid-run snapshot point is mid-run', !gLive.over && gLive.day === 9, 'day='+gLive.day);
+const gSaved = JSON.parse(JSON.stringify(gLive)); // what localStorage stores
+ok('round-trip preserves every field', JSON.stringify(gSaved) === JSON.stringify(gLive));
+careerLoop(gLive, 2, 6, 2, 'bossPass');           // both continue on the same policy
+careerLoop(gSaved, 2, 6, 2, 'bossPass');
+ok('resumed career is identical to the uninterrupted one',
+  gSaved.day === gLive.day && gSaved.money === gLive.money && gSaved.soul === gLive.soul
+  && gSaved.standing === gLive.standing && gSaved.escaped === gLive.escaped
+  && gSaved.failed === gLive.failed && gSaved.rngState === gLive.rngState,
+  'day '+gSaved.day+'/'+gLive.day+' $'+gSaved.money+'/'+gLive.money);
 
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));

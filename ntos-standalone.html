@@ -1168,6 +1168,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .leg span{color:var(--muted);}
 .cta{display:inline-block;padding:16px 42px;border-radius:100px;background:var(--ink);color:var(--panel);font-weight:600;font-size:16px;transition:transform .1s,opacity .2s;}
 .cta:hover{opacity:.9;} .cta:active{transform:translateY(2px);}
+.resumebtn{background:var(--money);color:#fff;display:block;margin:10px auto 0;}
 
 /* ---- the office world ---- */
 #play{position:fixed;inset:0;padding:0;}
@@ -1221,6 +1222,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
       <div class="leg"><span class="k m">Money</span><div>Your walk-out fund. <span>Paid daily, rent relentless, promotions pay better. Hit $6,000 and you're free.</span></div></div>
     </div>
     <button class="cta" onclick="startGame()">Clock in — Day 1</button>
+    <button class="cta resumebtn hidden" id="resumebtn" onclick="resumeGame()"></button>
     <div class="foot">Ungovernable. Unapologetic.</div>
   </section>
 
@@ -1429,10 +1431,46 @@ function toast(msg){
   toastT = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+/* ---- run persistence: g + runSeed in localStorage. The world (mid-day
+   positions/tasks) is NOT saved — a mid-day save resumes at that morning with
+   meters intact; a post-closeDay save resumes onto the 5:01 report so payday
+   can't be replayed. try/catch everywhere: file:// and private mode stay quiet. */
+const SAVE_KEY = 'ntos-save-v1';
+function saveRun(phase){
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ runSeed, phase, g })); } catch(e){}
+}
+function clearSave(){ try { localStorage.removeItem(SAVE_KEY); } catch(e){} }
+function loadSave(){
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    return (s && s.g && !s.g.over) ? s : null;
+  } catch(e){ return null; }
+}
+function offerResume(){
+  const s = loadSave();
+  const btn = $id('resumebtn');
+  btn.classList.toggle('hidden', !s);
+  if(s) btn.textContent = 'Resume — Day ' + s.g.day + ' · ' + G.fmt(s.g.money) + ' banked';
+}
+function resumeGame(){
+  const s = loadSave();
+  if(!s) return startGame();
+  runSeed = s.runSeed;
+  g = s.g;
+  window.g = g;
+  if(s.phase === 'dayend'){ screens('dayend'); showDayEnd(); return; }
+  g.idxInDay = 0;          // the day restarts; meters/money keep their saved values
+  g.lastChoice = null;
+  beginDay();
+}
+offerResume();
+
 /* ---- the day loop ---- */
 function startGame(){
+  clearSave();             // a new run abandons the old one
   runSeed = Date.now() % 2147483647;
   g = G.newGame(runSeed);
+  saveRun('day');
   beginDay();
 }
 
@@ -1537,7 +1575,8 @@ function handleSignal(s){
     }
     case 'dayover': {
       const r = G.closeDay(g, { tasksDone: s.tasksDone, tasksTotal: s.tasksTotal });
-      if(r === 'gameover') endGame(); else showDayEnd();
+      if(r === 'gameover') endGame();
+      else { saveRun('dayend'); showDayEnd(); }
       break;
     }
   }
@@ -1665,6 +1704,7 @@ function advance(){
   const r = G.advance(g);
   if(r === 'gameover') return endGame();
   W.resolveEncounter(world);
+  saveRun('day');
 }
 
 /* ---- fire drill ---- */
@@ -1713,6 +1753,7 @@ function closeCrunch(){
   crunchState = null;
   if(g.failed) return endGame();
   W.resolveCrunch(world);
+  saveRun('day');
 }
 
 function showDayEnd(){
@@ -1741,6 +1782,7 @@ function showDayEnd(){
 
 function clockIn(){
   G.nextDay(g);
+  saveRun('day');
   beginDay();
 }
 
@@ -1775,6 +1817,8 @@ function setMoney(instant){
 }
 
 function endGame(){
+  clearSave();
+  offerResume();
   screens('end');
   $id('fin-standing').textContent = g.standing;
   $id('fin-soul').textContent = g.soul;
