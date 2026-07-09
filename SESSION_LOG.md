@@ -366,3 +366,33 @@ tile ring at desk. Committed as one feedback round.
 - Policy sims updated deliberately: third-way now escapes day 12 (no crunches in the sim
   path), soul 87; suck-up dies day 3–4; rebel fired day 4. Intern guard re-verified vs
   the new target and the bonus gate (3 new tests).
+
+### Session 7 final write-up (all tasks + fonts complete)
+- **TASK 1**: HANDOFF.md reconciled — body no longer contradicts the Session 5 header
+  (was still claiming $6,000 / $180 ladder / day-23 / 4 cards / clock 2.2 / ?v=n4-w2 / bear).
+- **TASK 2**: display-shuffle determinism violation fixed — local mulberry32 on
+  (runSeed, day, idxInDay), never touches g.rngState. Test proves a career played through
+  the shuffled display is byte-identical to raw rule indices. Zero bare Math.random left
+  in index.html / ntos-game.js / ntos-world.js (grep-verified; only a comment mentions it).
+- **TASK 3**: movie mode proves the escape — ?movie=1 walks out at the number (day-end
+  button, or the EXIT door mid-day) and logs the full verdict; ?movie=greed plays to a
+  terminal failure; mode logged at start; inert without the flag. Live-verified: forced-
+  bank run exited through the door flow with the verdict logged. (Preview console capture
+  duplicates every entry ×6 — capture artifact, confirmed against parse-time logs.)
+- **TASK 4**: dead-eyed productivity — 3 tasks in a row without recovery → each further
+  task +1 Soul; coffee/couch/chat/night reset. Counters on g (serialize). Report row +
+  once-a-day toast. Soak: desk-camping flipped from 50/50 hollow escapes to 50/50 soul
+  deaths (now asserted); recovery play unaffected; third-way escapes soul 87 (was 97).
+- **TASK 5**: variance — see the sweep block above (10×8 / 11×36 / 12×6, median 11).
+- **FONTS** (brief directive): Poppins everywhere — CSS families, Google Fonts link, and
+  the canvas render fonts. Weights preserved (300/400 labels+body, 800/900 display).
+  Live-verified computed styles + font load.
+- **TASK 6**: pool 10 → 20, data + tests only. All ten requested territories covered, in
+  voice, clock-interleaved; OWNER_BY_ENC rebuilt with an index legend; novelty tour test
+  now spans ten days. Sims/soak unchanged.
+- **TASK 7**: final build green — game-test **82/82**, world-test **58/58** (100-career
+  soak: desk-only 0/50 escape by design, recovery 50/50 escape days 10–12), standalone
+  115 KB, preview loaded the final build, played through a NEW card (reply-all, owner
+  marcus) with seeded task load 7, Poppins rendering, **zero console errors**.
+- **Left undone, deliberately**: the 13–14 escape-day tail (needs promotion-level
+  variance — a new system; logged under TASK 5). Nothing else outstanding from the brief.

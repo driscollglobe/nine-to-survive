@@ -2,18 +2,20 @@
 
 Pick up here. This is the active game (MARQUE is retired/intact at `/Desktop/marque/` — reuse
 its *patterns* only). Everything lives in `/Users/kevindriscoll/Desktop/nine to survive/`.
-It RUNS and TESTS GREEN (**67 game + 56 world**, incl. a 100-career soak). The folder is now
+It RUNS and TESTS GREEN (**82 game + 58 world**, incl. a 100-career soak). The folder is now
 a **git repo** (Session 5): one commit per task, nothing pushed, `TASKS.md` holds that
 session's brief. Read SESSION_LOG Session 5 for the stability/persistence/balance details.
 
-## Session 5 quick facts (2026-07-09, autonomous)
-- **Balance**: your number is **$2,500**; a day = 2.5 real min (CLOCK_SPEED 3.2); pay
-  260/420/640/820/1000; median win = day 11 ≈ 27 min. Permanent-Intern win is impossible
-  (bank peaks $2,325) and test-guarded. Desk-only (no recovery) play escapes HOLLOW now.
+## Current quick facts (Sessions 5–7, 2026-07-09, autonomous)
+- **Balance**: your number is **$3,100**; a day = 2.5 real min (CLOCK_SPEED 3.2); pay
+  260/420/640/820/1000 + $250 crunch spot bonus (Associate+ only); seeded task load
+  6–10/day; escape days 10–12, median 11 ≈ 27 min. Permanent-Intern win is impossible
+  (bank peaks $2,325) and test-guarded. Desk-camping with no recovery DIES by Soul
+  (dead-eyed productivity).
 - **Persistence**: localStorage save/resume (`ntos-save-v1`, phase-aware). Clear on
   game over / new run.
 - **Soak**: `world-test.js` §12 plays 100 full careers headlessly; keep it green.
-- **Dev tools**: `?movie=1` autopilot (survives rAF-starved tabs); shell stuck-watchdog
+- **Dev tools**: `?movie=1` autopilot walks out at the number / `?movie=greed` plays to failure (survives rAF-starved tabs); shell stuck-watchdog
   console.warns a state dump if the clock freezes; `window.g`/`window.world` exposed.
 - **World additions**: EXIT door (armed when the number is banked → walk out through it),
   off-screen BOSS/BRAD arrows, honest brad outcomes (steal/foiled/empty), choice display
@@ -21,7 +23,7 @@ session's brief. Read SESSION_LOG Session 5 for the stability/persistence/balanc
   blips + mute, pointer/touch input with pinch zoom, mobile HUD.
 
 ## The resolved design (user's calls, 2026-07-09 — evolved across the day)
-- **WIN: F-you money.** Bank **$2,500** ("your number") and walk out before the place
+- **WIN: F-you money.** Bank **$3,100** ("your number") and walk out before the place
   finishes you — via the day-end button or by physically walking through the armed EXIT
   door. Title screen is "Your Number".
 - **FORM (final, after TWO course-corrections): a REAL-TIME game.** The user was emphatic:
@@ -44,23 +46,26 @@ Three meters:
   day end (−1 / −2 wk3+ / −3 wk5+), so you can't stall.
 - **Money** — start $300. Daily pay (Intern $260 → Associate $420 → Senior $640 → Manager
   $820 → Director $1,000) minus burn ($130 + $25/week creep). Overdraft = Soul −6.
-  **$2,500 = your number = the win.** Sized so a permanent Intern can NEVER reach it
-  (intern bank peaks $2,325 as burn creep overtakes pay — test-guarded). Endings: escape
+  **$3,100 = your number = the win.** Sized so a permanent Intern can NEVER reach it
+  (intern bank peaks $2,325; crunch spot bonuses are level-gated away from Interns —
+  both test-guarded). Endings: escape
   whole (Soul ≥ 50), escape hollow, fired, management.
 
-Balance (asserted by tests, seeds fixed): strong third-way play escapes **day 11**
-(~27 real minutes); always-comply dies by Soul day ~4; always-rebel is fired day ~4.
-Desk-camping with zero recovery currently escapes HOLLOW (soul ≈ 10). Thesis playable.
+Balance (asserted by tests, seeds fixed): strong recovery play escapes **days 10–12,
+median 11** (~27 real minutes); always-comply dies by Soul day ~3; always-rebel is fired
+day ~4. Desk-camping with zero recovery now DIES by Soul (dead-eyed productivity:
+3 tasks in a row without a break → each further task +1 Soul). Thesis playable.
 
 ## The real-time loop (Sessions 3–6 — see SESSION_LOG for detail)
 `ntos-world.js` (`NtosWorld`) owns the office: 40×26 iso grid, furniture + labeled zone rugs,
-cast of 8 (You = the badger, Brad, Dennis, The Boss, Meredith-HR, Kayla, Marcus, Priya) with
+cast of 8 (You = the badger, Brad, Dennis, The Boss, Meredith-HR, Kayla, Marcus, Priya —
+peers now also deliver cards) with
 seeded daily moods (emoji overhead; click for status popup; peers get a "Walk over & chat"
 button), BFS pathing, idle wandering, constant clock (**3.2 game-min/sec = 2.5-min days**).
 - **Click-to-move** (`movePlayer`) — click floor, the badger walks, blue marker. Interaction
   spots have pulsing rings; a status chip over your head says what standing there is doing
   (WORKING… / AT DESK · INBOX ZERO / COFFEE / FIVE MINUTES / NOT WORKING).
-- **Tasks**: 8/day drip into your inbox (paper stack + red ×N on your desk). Being at your
+- **Tasks**: seeded 6–10/day drip into your inbox (paper stack + red ×N on your desk). Being at your
   desk works them (~11s each, progress bar) → `taskDone` +2 Standing −1 Soul. `closeDay`
   applies daily Standing decay −6 and −1 per unfinished task.
 - **Boss floor-walks** ×2/day (❗ + toast telegraph, off-screen edge arrow): at desk = +2;
@@ -71,7 +76,8 @@ button), BFS pathing, idle wandering, constant clock (**3.2 game-min/sec = 2.5-m
   Kayla/Marcus/Priya +5/+3/+2 by mood — all require leaving your desk on the clock.
 - **Cards (2/day)**: owner NPC walks to your desk at the card's clock minute; world pauses.
   Choice display order shuffles (data-idx keeps the rule mapping).
-- **Fire drill** ~45% of days: 8s timer, mash WORK ×12 → `applyCrunch` +4 / −10.
+- **Fire drill** ~45% of days: 8s timer, mash WORK ×12 → `applyCrunch` +4 / −10; a win
+  pays a $250 spot bonus from Associate up ("Interns are paid in experience").
 - **EXIT door** (west edge): armed + glowing when the number is banked; walking through it
   ends the run via the normal verdict flow.
 - **5 PM** → `dayover` signal → `closeDay(g, stats)` → payday report → clock in tomorrow.
@@ -80,13 +86,13 @@ All floor outcomes flow through ONE table: `NineToSurvive.WORLD_EFFECTS` via
 `step(w, dt)`; the shell's `handleSignal()` applies effects + narrated toasts + SFX.
 
 ## Files (mirrors MARQUE's structure)
-- `ntos-game.js` (`?v=n7`) — the BRAIN (career rules; no DOM; seeded mulberry32, never bare
+- `ntos-game.js` (`?v=n10`) — the BRAIN (career rules; no DOM; seeded mulberry32, never bare
   `Math.random`). LADDER/FU_TARGET/burn/drains/DECAY_S/TASK_MISS_S, `newGame(seed)`,
   `planDay` (novelty cycle on g.seen), `applyChoice`, `advance` → `'ok'|'gameover'`,
   `closeDay(g, {tasksDone, tasksTotal})` → `'dayend'|'gameover'` (decay + inbox debt +
   payday + Friday review), `canWalkOut/walkOut`, `verdict`, `applyCrunch`, `applyCoffee`,
-  `WORLD_EFFECTS` + `applyWorldEffect`, run counters on `g.stats`.
-- `ntos-world.js` (`?v=w8`) — the OFFICE (above). Headless-safe: pure `step(w, dt)` returns
+  `WORLD_EFFECTS` + `applyWorldEffect`, run counters on `g.stats`, dead-eyed streak on `g.taskStreak`. Pool is **20 encounters**.
+- `ntos-world.js` (`?v=w11`) — the OFFICE (above). Headless-safe: pure `step(w, dt)` returns
   one queued signal per call; `render()`/`screenToTile()` are the only canvas code.
 - `index.html` — the SHELL. Play = full-viewport canvas + floating HUD (incl. INBOX line) +
   pointer/touch input (tap/drag/pinch) + card overlay + crunch modal + status popup +
@@ -94,7 +100,7 @@ All floor outcomes flow through ONE table: `NineToSurvive.WORLD_EFFECTS` via
   stuck-watchdog; `?movie=1` autopilot; localStorage save/resume. Start / dayend / end.
 - `ntos-standalone.html` — fully-inlined shareable; `build_standalone.py` inlines BOTH
   modules. **Rebuild after any change.**
-- `game-test.js` (67) + `world-test.js` (56, ~1 min — includes the 100-career soak) —
+- `game-test.js` (82) + `world-test.js` (58, ~1 min — includes the 100-career soak) —
   `osascript -l JavaScript <file>` (JSC, no node). Policy sims are full days-on-the-floor
   and the soak drives the real pipeline — keep BOTH green when tuning anything.
 - `TASKS.md` — the CURRENT session's brief (verbatim), overwritten each autonomous session.
