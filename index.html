@@ -215,6 +215,7 @@ button{touch-action:manipulation;}
       </div>
       <div class="jobline"><span id="jobline-l">Day 1 · Wk 1 · Intern</span><span class="pay" id="jobline-r">+$180/day</span></div>
       <div class="jobline taskline"><span id="tasks-l">INBOX · 0 waiting</span><span id="tasks-r">0/0 shipped</span></div>
+      <div class="jobline taskline hidden" id="receiptline"><span>🧾 Receipts</span><span id="receipts-r"></span></div>
       <div class="meters">
         <div class="meter standing">
           <div class="mrow"><div><span class="mname">Standing</span> <span class="msub">how they see you</span></div><div class="mval" id="v-standing">50<span class="delta" id="d-standing"></span></div></div>
@@ -594,6 +595,9 @@ function loop(t){
   $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
   $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
   if(g.feed.length !== feedShown) renderFeed();
+  const rc = g.receipts ? g.receipts.count : 0;
+  $id('receiptline').classList.toggle('hidden', rc === 0);
+  if(rc > 0) $id('receipts-r').textContent = rc + ' held · leverage, technically';
   W.render(world, ctx, cam, window.innerWidth, window.innerHeight);
   rafId = requestAnimationFrame(loop);
 }
@@ -1015,6 +1019,7 @@ function doWalkOut(){
 /* ---- share card: plain text to the clipboard, receipts included ---- */
 function shareFlavor(){
   const s = g.stats || {};
+  if(G.hasReceipt(g, 'screenshot_brad_deck')) return 'Holding one screenshot that could end Brad’s quarter.';
   if(s.bradSteals > 0) return 'Brad stole ' + s.bradSteals + ' of my files and presented them as growth.';
   if(s.crunchWins > 0) return 'Survived ' + s.crunchWins + ' fire drill' + (s.crunchWins > 1 ? 's' : '') + ' without learning anything.';
   if(s.warnings > 0) return s.warnings + ' formal warning' + (s.warnings > 1 ? 's' : '') + ', zero formal changes.';
