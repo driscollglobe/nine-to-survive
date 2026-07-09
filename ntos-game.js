@@ -618,6 +618,39 @@ const NineToSurvive = (() => {
       }
     },
 
+    // KAYLA'S BIG PRESENTATION. She's overwhelmed, and the office is a machine
+    // for making that worse. Staged spatially: she's in the kitchen, her status
+    // shifts, the feed notices. The comedy target is the webinar, the invite,
+    // and the system — never her. Stages: 0 dormant · 1 panic day ·
+    // 2 aftermath (webinar day if HR was "helpful") · 3 filed.
+    kayla_presentation: {
+      npc: 'kayla',
+      advance(g, a){
+        const k = g.npcState.kayla;
+        if(a.stage === 0){
+          if(a.startDay == null)
+            a.startDay = 5 + Math.floor(localRand((g.runSeed ^ hashStr('kayla_start')) | 0)() * 4);
+          if(g.day >= a.startDay){
+            a.stage = 1; k.counters.panicDay = g.day;
+            pushFeed(g, 543, 'Kayla presents to leadership at 4:00. The deck is on version 31.');
+            pushFeed(g, 570, 'Kayla is in the kitchen. She has been “getting water” for forty minutes.');
+          }
+        } else if(a.stage === 1){
+          a.stage = 2;
+          if(k.flags.toldHR){
+            a.webinarDay = g.day;
+            pushFeed(g, 540, 'Mandatory invite: “Resilience & You,” 90 minutes, camera expected. The system that caused the problem is hosting a seminar on surviving it.');
+          } else if(k.flags.satWith || k.flags.tookTask){
+            pushFeed(g, 545, 'Kayla’s presentation went fine. Leadership asked one question: “can we get this as an email?”');
+          } else {
+            pushFeed(g, 545, 'Kayla presented on three hours of sleep. Leadership praised the “hustle” and scheduled more of it.');
+          }
+        } else if(a.stage === 2){
+          a.stage = 3;
+        }
+      }
+    },
+
     // THE ANONYMOUS SURVEY IS NOT. Meredith launches a Pulse Survey; the next
     // day she starts identifying authors, for culture. Stages: 0 dormant ·
     // 1 survey day (the card comes) · 2 the hunt · 3 filed. The comedy target
@@ -837,6 +870,52 @@ const NineToSurvive = (() => {
     return +2;
   }
 
+  // ---- Kayla's panic day: the player's options, priced -----------------------------
+  function kaylaSitWith(g, min){
+    const k = g.npcState.kayla;
+    if(k.flags.satWith) return null;
+    k.flags.satWith = true; k.flags.bonded = true; k.trust += 2;
+    const d = applyStoryDelta(g, 0, +4);
+    pushFeed(g, min, 'Two chairs in the kitchen. No agenda. It helped more than the deck did.');
+    return { dso: d.dso, text: 'You sit with her. No advice, no pep talk, just company and a shared opinion about slide 14. The clock keeps billing you. Worth it.' };
+  }
+  function kaylaTaskTaken(g, min){
+    const k = g.npcState.kayla;
+    if(k.flags.tookTask) return null;
+    k.flags.tookTask = true; k.trust += 1;
+    const d = applyStoryDelta(g, 0, +1);
+    pushFeed(g, min, 'A deliverable quietly changed owners. No email announced it. That is how you know it was kind.');
+    return { dso: d.dso, text: 'You take the competitor summary off her stack and onto yours. Her deck loses a subplot; your inbox gains one.' };
+  }
+  function kaylaSentHome(g, min){
+    const k = g.npcState.kayla;
+    if(k.flags.toldHR) return null;
+    k.flags.toldHR = true; k.trust -= 2;
+    const d = applyStoryDelta(g, +1, 0);   // the org rewards "flagging a risk"
+    pushFeed(g, min, 'Meredith walked to the kitchen with her Concerned Face. Kayla is being sent home “out of an abundance of care.”');
+    pushFeed(g, (min || 0) + 4, 'The presentation was moved, not cancelled. The problem was moved, not solved.');
+    return { ds: d.ds, text: 'You mention it to Meredith, gently, meaning well. HR solves the person instead of the workload. Kayla is sent home. A calendar invite is already forming somewhere, like weather.' };
+  }
+  // The dead-eyed play: you watched and kept shipping. Priced at day end.
+  const WATCHED_SOUL = 3;
+  function kaylaWatchedPrice(g, report){
+    const a = (g.arcs || {}).kayla_presentation;
+    const k = g.npcState && g.npcState.kayla;
+    if(!a || a.stage !== 1 || !k) return;
+    if(k.flags.satWith || k.flags.tookTask || k.flags.toldHR) return;
+    soulHit(g, WATCHED_SOUL);
+    report.watchedKayla = true;
+    pushFeed(g, 1018, 'Productivity held steady today. The dashboard is very proud of everyone.');
+  }
+  // Sitting with her that day permanently improves what her chats give back.
+  function chatBonus(g, who){
+    if(who === 'kayla' && g.npcState.kayla.flags.bonded){
+      const d = applyStoryDelta(g, 0, +2);
+      return d.dso;
+    }
+    return 0;
+  }
+
   // Never found time for the quick call: the office reads that as an answer.
   function bossSummonsDodged(g, min){
     const boss = g.npcState.boss;
@@ -908,8 +987,12 @@ const NineToSurvive = (() => {
     const A  = g.arcs || {};
     const b  = A.brad_second_job || { stage: 0 };
     const bo = A.boss_spiral || { stage: 0 };
+    const ka = A.kayla_presentation || { stage: 0 };
     const brad = (g.npcState && g.npcState.brad) || { flags: {} };
+    const kayla = (g.npcState && g.npcState.kayla) || { flags: {} };
     return {
+      kaylaPanic:     ka.stage === 1 && !kayla.flags.toldHR,
+      webinarUntil:   (ka.stage === 2 && ka.webinarDay === g.day) ? 630 : null,
       bradLaptop:     b.stage >= 1 && b.stage <= 6,   // the second laptop, drawn
       bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
@@ -957,6 +1040,7 @@ const NineToSurvive = (() => {
     g.money += pay - burn;
     if(g.money < 0){ g.money = 0; report.broke = true; if(!g.failed) soulHit(g, BROKE_SOUL); }
     if(!g.failed) soulHit(g, drain);
+    if(!g.failed) kaylaWatchedPrice(g, report);
     if(!g.failed && g.day % 5 === 0){ // Friday review
       // the "anonymous" survey attends your review without you — once
       const mer = g.npcState && g.npcState.meredith;
@@ -1007,6 +1091,12 @@ const NineToSurvive = (() => {
       return d + 'a quick call was survived at async speed.';
     if(g.npcState.meredith.counters.surveyDay === rep.day)
       return d + 'HR discovered anonymity has a font.';
+    if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.toldHR)
+      return d + 'HR solved a person instead of a workload.';
+    if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.satWith)
+      return d + 'two chairs in the kitchen. It helped.';
+    if(((g.arcs || {}).kayla_presentation || {}).webinarDay === rep.day)
+      return d + '“Resilience & You” ate ninety minutes of resilience.';
     if(rep.warningDefused) return d + 'a warning met a metadata screenshot and blinked first.';
     if(rep.promoted) return d + 'promoted. The bar moved. It saw you coming.';
     if(rep.warned) return d + 'HR opened a document with your name in the filename.';
@@ -1159,6 +1249,7 @@ const NineToSurvive = (() => {
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
+    kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, shareText
   };
 })();

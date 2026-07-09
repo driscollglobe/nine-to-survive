@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n11"></script>
-<script src="ntos-world.js?v=w12"></script>
+<script src="ntos-game.js?v=n12"></script>
+<script src="ntos-world.js?v=w13"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -442,8 +442,10 @@ function showStatus(actor, sx, sy){
     + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
     + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
     + '<div class="sline">' + s.line + '</div>'
-    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">Walk over & chat</span>' : '')
-    + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '');
+    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">' + (s.sitWith ? 'Walk over & sit with her' : 'Walk over & chat') + '</span>' : '')
+    + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '')
+    + (s.kaylatask ? '<span class="schat" onclick="takeKaylaTask()">Take one of her tasks</span>' : '')
+    + (s.reportkayla ? '<span class="schat" onclick="reportKaylaToHR()">Mention Kayla to HR</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -456,6 +458,14 @@ function startChat(id){
 function startQuickCall(){
   hideStatus();
   if(W.goForBossCall(world)) toast('Walking to the corner office. Bring a face.');
+}
+function takeKaylaTask(){
+  hideStatus();
+  if(W.takeKaylaTask(world)) toast('Walking over to lighten her stack…');
+}
+function reportKaylaToHR(){
+  hideStatus();
+  if(W.reportKayla(world)) toast('You mention it to Meredith. Gently. Meaning well. Watch.');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -652,6 +662,21 @@ function handleSignal(s){
     case 'quickcall':
       openIncident('boss_quick_call');
       break;
+    case 'kaylatask': {
+      const kt = G.kaylaTaskTaken(g, Math.floor(world.clockMin));
+      if(kt){ setMeter('soul', g.soul); toast(kt.text); }
+      W.playerGoHome(world);
+      break;
+    }
+    case 'kaylasenthome': {
+      const kr = G.kaylaSentHome(g, Math.floor(world.clockMin));
+      if(kr){ setMeter('standing', g.standing); applyDelta('standing', kr.ds); toast(kr.text); }
+      break;
+    }
+    case 'webinar':
+      SFX.drill();
+      toast('MANDATORY: “Resilience & You,” 90 min, cameras expected. Your inbox will wait. It will not shrink.');
+      break;
     case 'bosshuman': {
       const line = G.bossHumanBeat(g, Math.floor(world.clockMin));
       if(line){
@@ -706,8 +731,19 @@ function handleSignal(s){
       doWalkOut();
       break;
     case 'chat': {
+      if(s.who === 'kayla' && world.flags.kaylaPanic){
+        const sit = G.kaylaSitWith(g, Math.floor(world.clockMin));
+        if(sit){
+          setMeter('soul', g.soul); applyDelta('soul', sit.dso);
+          toast(sit.text);
+          W.playerGoHome(world);
+          break;
+        }
+      }
       const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';
       const res = worldEffect(kind);
+      const bond = G.chatBonus(g, s.who);
+      if(bond){ setMeter('soul', g.soul); }
       const tip = s.who === 'marcus' ? G.marcusTip(g, Math.floor(world.clockMin)) : null;
       if(tip){
         if(tip.kind === 'miscal'){ setMeter('standing', g.standing); applyDelta('standing', -2); }
@@ -1028,6 +1064,7 @@ function showDayEnd(){
   ];
   if(rep.missed) rows.splice(2, 0, ['Died in the inbox (' + rep.missed + ')', 'Standing −' + rep.missed * G.TASK_MISS_S, 'minus']);
   if(rep.forgiven) rows.push(['Marcus was right — nobody read it before Thursday', 'one missed task forgiven', 'plus']);
+  if(rep.watchedKayla) rows.push(['You kept your head down. It stayed down.', 'Soul −' + G.WATCHED_SOUL, 'soulhit']);
   if(rep.deadEyed) rows.push(['Dead-eyed productivity — ' + rep.deadEyed + ' task' + (rep.deadEyed > 1 ? 's' : '') + ' shipped without looking up', 'Soul −' + rep.deadEyed * G.GRIND_SOUL + ' (already billed)', 'soulhit']);
   if(rep.broke) rows.push(['Overdraft. The fear at the ATM.', 'Soul −' + G.BROKE_SOUL, 'soulhit']);
   if(rep.promoted) rows.push(['PROMOTED → ' + rep.newTitle, 'Standing → ' + G.PROMOTE_RESET + ' · Soul −' + G.PROMOTE_SOUL, 'big']);

@@ -314,6 +314,45 @@ const humSig = stepUntil(wHum, 60, ['bosshuman']);
 ok('crossing his path off-schedule fires the human beat, once', !!humSig
   && wHum.bossHumanDone && stepUntil(wHum, 20, ['bosshuman']) === null);
 
+// ---- 11f. Kayla's panic day, staged spatially --------------------------------------------
+const wK = W.newDay(71, 7, [], { kaylaPanic: true });
+wK.bossWalks = []; wK.bradRaids = []; wK.crunch = null;
+const kayK = W.getActor(wK, 'kayla');
+ok('she is in the kitchen and staying there', Math.hypot(kayK.x - 24, kayK.y - 12) < 0.1 && kayK.pinned === true);
+const stK = W.statusOf(wK, kayK);
+ok('her status carries the physical options', /version 31/.test(stK.line)
+  && stK.sitWith === true && stK.kaylatask === true);
+ok('Meredith\'s popup offers the worst helpful option', W.statusOf(wK, W.getActor(wK, 'hr')).reportkayla === true);
+// sitting with her rides the chat errand
+ok('sit-with rides the chat errand', W.requestChat(wK, 'kayla') === true);
+const sitSig = stepUntil(wK, 90, ['chat']);
+ok('arrival emits the chat signal (shell routes it to sit-with)', !!sitSig && sitSig.who === 'kayla');
+// taking a task moves one onto your stack
+const wK2 = W.newDay(71, 7, [], { kaylaPanic: true });
+wK2.bossWalks = []; wK2.bradRaids = []; wK2.crunch = null;
+const totK = wK2.tasks.total;
+ok('takeKaylaTask walks you over', W.takeKaylaTask(wK2) === true);
+const ktSig = stepUntil(wK2, 90, ['kaylatask']);
+ok('her subplot lands on your stack: +1 task', !!ktSig && wK2.tasks.total === totK + 1
+  && W.takeKaylaTask(wK2) === false);
+// telling HR: Meredith collects her; she is sent home, visibly
+const wK3 = W.newDay(71, 7, [], { kaylaPanic: true });
+wK3.bossWalks = []; wK3.bradRaids = []; wK3.crunch = null;
+ok('reportKayla dispatches Meredith', W.reportKayla(wK3) === true && W.reportKayla(wK3) === false);
+const shSig = stepUntil(wK3, 200, ['kaylasenthome']);
+ok('Kayla is walked to the door and off the floor', !!shSig && W.getActor(wK3, 'kayla').off === true);
+const overK = stepUntil(wK3, 400, ['dayover']);
+ok('sending her home never strands the day', !!overK);
+// the webinar eats task time, mechanically
+const wW = W.newDay(73, 8, [], { webinarUntil: 630 });
+wW.bossWalks = []; wW.bradRaids = []; wW.crunch = null;
+const webSig = stepUntil(wW, 5, ['webinar']);
+ok('the webinar announces itself at 9:00', !!webSig && webSig.until === 630);
+stepUntil(wW, 27, ['taskdone']);   // ~28 real sec ≈ 90 game-min at the desk
+ok('no tasks ship during Resilience & You', wW.tasks.done === 0 && wW.clockMin < 632, 'clock=' + wW.clockMin.toFixed(0));
+const afterSig = stepUntil(wW, 60, ['taskdone']);
+ok('work resumes when the webinar ends', !!afterSig && wW.clockMin >= 630);
+
 // ---- 12. SOAK: full careers through the real pipeline ---------------------------------
 // A bot plays whole days exactly the way the shell does: newDay each morning,
 // step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.
@@ -408,9 +447,16 @@ function soakRun(seed, opts){
         case 'coffee':     G.applyCoffee(g); W.playerGoHome(w); break;
         case 'couch':      G.applyWorldEffect(g, 'couch'); W.playerGoHome(w); break;
         case 'chat':
+          if(s.who === 'kayla' && w.flags.kaylaPanic && G.kaylaSitWith(g, Math.floor(w.clockMin))){
+            W.playerGoHome(w); break;                                      // as the shell does
+          }
           G.applyWorldEffect(g, s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh');
+          G.chatBonus(g, s.who);
           if(s.who === 'marcus') G.marcusTip(g, Math.floor(w.clockMin));   // as the shell does
           W.playerGoHome(w); break;
+        case 'kaylatask':     G.kaylaTaskTaken(g, Math.floor(w.clockMin)); W.playerGoHome(w); break;
+        case 'kaylasenthome': G.kaylaSentHome(g, Math.floor(w.clockMin)); break;
+        case 'webinar': break;
         case 'dayover': {
           // arcs must never deadlock or strand a day's staged story beats
           if(incidentsFired < incidentsStaged)

@@ -56,6 +56,7 @@ const COFFEE_SPOT = { x:22, y:9 };
 const COUCH_SPOT  = { x:3,  y:21 };
 const EXIT_SPOT   = { x:1,  y:17 };
 const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
+const KITCHEN_CORNER = { x:24, y:12 };   // where Kayla "gets water" on the bad day
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -248,6 +249,14 @@ function newDay(seed, day, plan, flags){
     a.wanderT = 2 + rand(w) * 6;
     if(a.id !== 'you') a.mood = MOODS[Math.floor(rand(w) * 3)];
   });
+  // Kayla's panic day: she's in the kitchen, and she's staying there
+  if(flags.kaylaPanic){
+    const kayla = getActor(w, 'kayla');
+    if(kayla){ kayla.x = KITCHEN_CORNER.x; kayla.y = KITCHEN_CORNER.y; kayla.pinned = true; kayla.mood = 'bad'; }
+  }
+  w.kaylaTaskTaken = false;
+  w.kaylaReported = false;
+  w.webinarAnnounced = false;
   // task drip: seeded daily load, 3 waiting at 9:00, the rest spread to ~3:30
   w.tasks.total = TASKS_MIN + Math.floor(rand(w) * (TASKS_MAX - TASKS_MIN + 1));
   w.tasks.spawnAt = [540, 540, 540];
@@ -310,12 +319,19 @@ function step(w, dt){
 
   w.clockMin = Math.min(1020, w.clockMin + CLOCK_SPEED * dt);
 
+  // ---- the mandatory webinar: a calendar event that eats task time ----
+  if(w.flags.webinarUntil && !w.webinarAnnounced && w.clockMin >= 540){
+    w.webinarAnnounced = true;
+    w.sig.push({ type:'webinar', until: w.flags.webinarUntil });
+  }
+  const inWebinar = w.flags.webinarUntil && w.clockMin < w.flags.webinarUntil;
+
   // ---- task drip + working at your desk ----
   while(w.tasks.spawned < w.tasks.total && w.clockMin >= w.tasks.spawnAt[w.tasks.spawned]){
     w.tasks.spawned++; w.tasks.pending++;
     w.sig.push({ type:'task', pending: w.tasks.pending });
   }
-  if(w.tasks.pending > 0 && playerAtDesk(w) && !you.path.length){
+  if(w.tasks.pending > 0 && playerAtDesk(w) && !you.path.length && !inWebinar){
     w.tasks.progress += dt / TASK_WORK_SECS;
     if(w.tasks.progress >= 1){
       w.tasks.progress = 0; w.tasks.pending--; w.tasks.done++;
@@ -333,7 +349,7 @@ function step(w, dt){
     // already on the target tile — treat that as arrived, or the day deadlocks
     // (e.g. a card owner already adjacent never reaches 'atPlayer').
     if(a.state !== 'idle' && a.state !== 'atPlayer'){ handleArrival(w, a, you); return; }
-    if(a.state !== 'idle' || a.id === 'you' || a.off) return;
+    if(a.state !== 'idle' || a.id === 'you' || a.off || a.pinned) return;
     a.wanderT -= dt;
     if(a.wanderT <= 0){
       a.wanderT = 3 + rand(w) * 8;
@@ -489,6 +505,19 @@ function handleArrival(w, a, you){
     }
   }
   else if(a.state === 'escorting' && a.id === 'hr'){ sendTo(w, a, a.home, 'returning'); }
+  else if(a.state === 'hrvisit' && a.id === 'hr'){
+    // Meredith reaches the kitchen with her Concerned Face; Kayla is sent home
+    const kayla = getActor(w, 'kayla');
+    if(kayla && !kayla.off){
+      kayla.pinned = false; kayla.path = [];
+      sendTo(w, kayla, EXIT_SPOT, 'senthome');
+    }
+    sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'senthome' && a.id === 'kayla'){
+    a.off = true; a.state = 'idle';
+    w.sig.push({ type:'kaylasenthome' });
+  }
   else if(a.state === 'escorted' && a.id === 'brad'){
     // through the door. Off the floor, off payroll(s), out of the raid schedule —
     // and two of his deliverables land in your inbox before the door shuts.
@@ -524,6 +553,20 @@ function arriveErrand(w, you){
       sendTo(w, you, adjacentTo(w, target), 'errand');
     } else {
       w.playerErrand = null;   // they got away; no harm
+    }
+  } else if(e.type === 'kaylatask'){
+    const kayla = getActor(w, 'kayla');
+    if(!kayla || kayla.off || w.kaylaTaskTaken){ w.playerErrand = null; }
+    else if(Math.hypot(kayla.x - you.x, kayla.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.kaylaTaskTaken = true;
+      w.tasks.pending++; w.tasks.total++; w.tasks.spawned++;   // her subplot, your stack
+      w.sig.push({ type:'kaylatask', pending: w.tasks.pending });
+    } else if(e.repaths < 3){
+      e.repaths++;
+      sendTo(w, you, adjacentTo(w, kayla), 'errand');
+    } else {
+      w.playerErrand = null;
     }
   } else if(e.type === 'quickcall'){
     const boss = getActor(w, 'boss');
@@ -625,6 +668,25 @@ function goForExit(w){
   w.moveMarker = EXIT_SPOT;
   return true;
 }
+function takeKaylaTask(w){
+  if(!w.flags.kaylaPanic || w.kaylaTaskTaken) return false;
+  const kayla = getActor(w, 'kayla');
+  const you = getActor(w, 'you');
+  if(!kayla || kayla.off || !sendTo(w, you, adjacentTo(w, kayla), 'errand')) return false;
+  w.playerErrand = { type: 'kaylatask', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function reportKayla(w){
+  if(!w.flags.kaylaPanic || w.kaylaReported) return false;
+  const hr = getActor(w, 'hr');
+  const kayla = getActor(w, 'kayla');
+  if(!hr || !kayla || kayla.off) return false;
+  hr.path = [];
+  if(!sendTo(w, hr, adjacentTo(w, kayla), 'hrvisit')) return false;
+  w.kaylaReported = true;
+  return true;
+}
 function goForBossCall(w){
   if(!w.summons || w.summons.status !== 'open') return false;
   const boss = getActor(w, 'boss');
@@ -688,6 +750,20 @@ function statusOf(w, actor){
     return { name: actor.name, role: actor.role, mood: actor.mood, face: '📵',
       line: '“On a call.” It is the fourth call today. None of the calls have meeting links.',
       chat: false };
+  }
+  // Kayla's panic day: the popup carries the physical options
+  if(actor.id === 'kayla' && w.flags && w.flags.kaylaPanic && !actor.off){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '😶‍🌫️',
+      line: '“I’m fine. It’s fine. The deck is fine.” The deck is on version 31 and she is in the kitchen.',
+      chat: !w.chatted[actor.id],           // "chat" = walk over and sit with her
+      sitWith: !w.chatted[actor.id],
+      kaylatask: !w.kaylaTaskTaken };
+  }
+  if(actor.id === 'hr' && w.flags && w.flags.kaylaPanic && !w.kaylaReported){
+    return { name: actor.name, role: actor.role, mood: actor.mood,
+      face: MOOD_FACE[actor.mood],
+      line: actor.lines ? actor.lines[actor.mood] : '',
+      chat: false, reportkayla: true };
   }
   return {
     name: actor.name, role: actor.role, mood: actor.mood,
@@ -958,7 +1034,7 @@ return {
   TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
-  armWalkout, goForExit, goForBossCall, resolveQuickCall,
+  armWalkout, goForExit, goForBossCall, resolveQuickCall, takeKaylaTask, reportKayla,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile

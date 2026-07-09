@@ -754,6 +754,7 @@ ok('helping a coworker: seeded peer, trust +2', ['kayla','priya','marcus'].index
 const gMd = toSurvey(601);
 G.applyIncidentChoice(gMd, 'hr_survey', 3, 700);
 ok('metadata banked as a receipt', G.hasReceipt(gMd, 'hr_survey_metadata'));
+gMd.arcs.kayla_presentation = { stage: 3 };   // isolate: no overlapping panic-day price
 gMd.day = 10; gMd.standing = 25; gMd.soul = 60;
 G.closeDay(gMd, { tasksDone: 8, tasksTotal: 8 });
 ok('the receipt defuses one warning and is spent', gMd.dayReport.warningDefused === true
@@ -775,6 +776,68 @@ ok('survey day owns its headline', (() => {
   G.applyIncidentChoice(g2, 'hr_survey', 0, 700);
   G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
   return /anonymity has a font/.test(G.dayHeadline(g2));
+})());
+
+// ---- 16c. Kayla's presentation-panic day ---------------------------------------------
+function toPanic(seed){
+  const g2 = G.newGame(seed);
+  let guard = 0;
+  while(!G.worldFlagsFor(g2).kaylaPanic && guard++ < 12){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return g2;
+}
+const gP = toPanic(701);
+ok('panic day staged: flag + kitchen feed lines', G.worldFlagsFor(gP).kaylaPanic
+  && gP.feed.some(f => /version 31/.test(f.text))
+  && gP.feed.some(f => /getting water/.test(f.text)));
+// sit with her: Soul up, trust up, chats permanently better
+const gPs = toPanic(701); gPs.soul = 50;
+const sit = G.kaylaSitWith(gPs, 700);
+ok('sitting with her: Soul +4, trust +2, bonded, once', sit.dso === 4
+  && gPs.npcState.kayla.trust === 2 && gPs.npcState.kayla.flags.bonded
+  && G.kaylaSitWith(gPs, 710) === null);
+ok('bonded: her chats give +2 extra, forever', G.chatBonus(gPs, 'kayla') === 2
+  && G.chatBonus(gPs, 'priya') === 0);
+ok('not bonded: no bonus', G.chatBonus(toPanic(701), 'kayla') === 0);
+G.closeDay(gPs, { tasksDone: 8, tasksTotal: 8 });
+ok('helping means no dead-eyed price at 5 PM', !gPs.dayReport.watchedKayla);
+// take a task: hers becomes yours
+const gPt = toPanic(701); gPt.soul = 50;
+const took = G.kaylaTaskTaken(gPt, 700);
+ok('taking a task: +1 Soul, trust +1, once', took.dso === 1 && gPt.npcState.kayla.trust === 1
+  && G.kaylaTaskTaken(gPt, 710) === null);
+// tell HR: the worst helpful option
+const gPh = toPanic(701); gPh.standing = 50;
+const rep2 = G.kaylaSentHome(gPh, 700);
+ok('telling HR: org approves (+1 Standing), she does not (trust −2)', rep2.ds === 1
+  && gPh.npcState.kayla.trust === -2 && gPh.npcState.kayla.flags.toldHR);
+ok('panic flag drops once she is sent home', !G.worldFlagsFor(gPh).kaylaPanic);
+G.closeDay(gPh, { tasksDone: 8, tasksTotal: 8 });
+gPh.standing = 60; gPh.soul = 70; gPh.failed = null; gPh.over = false;
+G.nextDay(gPh);
+ok('next morning: the mandatory webinar eats 9:00–10:30', G.worldFlagsFor(gPh).webinarUntil === 630
+  && gPh.feed.some(f => /Resilience & You/.test(f.text)));
+ok('webinar day owns its headline', (() => {
+  G.closeDay(gPh, { tasksDone: 4, tasksTotal: 8 });
+  return /ate ninety minutes of resilience/.test(G.dayHeadline(gPh));
+})());
+// keep working: the dead-eyed play, priced
+const gPw = toPanic(701); gPw.soul = 50;
+G.closeDay(gPw, { tasksDone: 8, tasksTotal: 8 });
+ok('watching costs Soul −' + G.WATCHED_SOUL + ' at day end, named',
+  gPw.dayReport.watchedKayla === true
+  && gPw.soul === 50 - G.soulDrainFor(gPw.week) - G.WATCHED_SOUL, 'soul=' + gPw.soul);
+ok('helped runs pay no watch price ever after', (() => {
+  const g2 = toPanic(701);
+  G.kaylaSitWith(g2, 700);
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+  G.nextDay(g2);
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  return !g2.dayReport.watchedKayla;
 })());
 
 // ---- 17. share copy carries the story ------------------------------------------
