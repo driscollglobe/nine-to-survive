@@ -68,8 +68,8 @@ const ZONES = [
 
 // ── the cast ──────────────────────────────────────────────────────────────────
 const CAST = [
-  { id:'you',    name:'You',    role:'Trying to get out', color:'#8a5a2b', bear:true,
-    spot:{x:9, y:16} },
+  { id:'you',    name:'You',    role:'Trying to get out', color:'#4B4743', bear:true,
+    spot:{x:9, y:16} },   // the shrugging badger (brand mascot) — grays, not browns
   { id:'brad',   name:'Brad',   role:'Credit reallocation', color:'#2F6BE0',
     spot:{x:14, y:16},
     lines:{ good:'Just circled back on something that was yours.',
@@ -542,7 +542,7 @@ function isExitAt(gx, gy){
 }
 function statusOf(w, actor){
   if(actor.id === 'you') return { name:'You', role: actor.role, mood: null,
-    line:'Tasks ship at your desk. Soul refills everywhere else. Choose.', face:'🐻', chat:false };
+    line:'Tasks ship at your desk. Soul refills everywhere else. Choose.', face:'🦡', chat:false };
   return {
     name: actor.name, role: actor.role, mood: actor.mood,
     face: MOOD_FACE[actor.mood],
@@ -596,6 +596,15 @@ function render(w, ctx, cam, vw, vh){
     ctx.fillText(zn.label, lx, ly);
   });
 
+  // interaction-spot rings: the places where standing there DOES something.
+  // Pulse phase rides the game clock so it freezes politely with the world.
+  const phase = w.clockMin * 1.6;
+  const you0 = getActor(w, 'you');
+  drawSpotRing(ctx, cam, you0.home, 'rgba(47,107,224,0.6)', phase);
+  if(!w.coffeeUsed) drawSpotRing(ctx, cam, COFFEE_SPOT, 'rgba(62,158,94,0.55)', phase + 2);
+  if(!w.couchUsed)  drawSpotRing(ctx, cam, COUCH_SPOT, 'rgba(232,129,76,0.55)', phase + 4);
+  if(w.walkoutArmed) drawSpotRing(ctx, cam, { x: 1, y: 17 }, 'rgba(46,158,99,0.8)', phase + 1);
+
   // click-to-move marker
   if(w.moveMarker){
     const [mx, my] = proj(cam, w.moveMarker.x, w.moveMarker.y);
@@ -639,6 +648,19 @@ function render(w, ctx, cam, vw, vh){
     ctx.textAlign = 'center';
     ctx.fillText(a.id === 'boss' ? 'BOSS' : 'BRAD', ex, ey + 22);
   });
+}
+
+// A pulsing diamond outline on a floor tile: "standing here does something."
+function drawSpotRing(ctx, cam, tile, color, phase){
+  const [px, py] = proj(cam, tile.x, tile.y);
+  const z = cam.z, p = 0.72 + 0.12 * Math.sin(phase);
+  ctx.beginPath();
+  ctx.moveTo(px, py - (TH / 2) * z * p);
+  ctx.lineTo(px + (TW / 2) * z * p, py);
+  ctx.lineTo(px, py + (TH / 2) * z * p);
+  ctx.lineTo(px - (TW / 2) * z * p, py);
+  ctx.closePath();
+  ctx.strokeStyle = color; ctx.lineWidth = 2.6 * z; ctx.stroke();
 }
 
 function shade(hex, f){
@@ -707,11 +729,13 @@ function drawActor(ctx, cam, a, w){
   ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, 0, Math.PI * 2);
   ctx.fillStyle = a.color; ctx.fill();
   ctx.beginPath(); ctx.arc(px, py - 26 * z, 6.5 * z, 0, Math.PI * 2);
-  ctx.fillStyle = a.bear ? '#8a5a2b' : '#E8C39E'; ctx.fill();
+  ctx.fillStyle = a.bear ? '#7d7871' : '#E8C39E'; ctx.fill();   // badger gray
   if(a.bear){
     ctx.beginPath(); ctx.arc(px - 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
     ctx.arc(px + 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
-    ctx.fillStyle = '#6e4620'; ctx.fill();
+    ctx.fillStyle = '#35322e'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(px, py - 23.5 * z, 3.4 * z, 2.4 * z, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#d9d2c4'; ctx.fill();                       // the pale snout
   }
   if(a.lines){
     ctx.font = (11 * z) + 'px system-ui';
@@ -731,6 +755,31 @@ function drawActor(ctx, cam, a, w){
     ctx.fillRect(px - bw / 2, py - 40 * z, bw, 5 * z);
     ctx.fillStyle = '#2E9E63';
     ctx.fillRect(px - bw / 2, py - 40 * z, bw * Math.min(1, w.tasks.progress), 5 * z);
+  }
+  // your status chip: what standing HERE is doing, right now
+  if(a.id === 'you' && w && !a.path.length){
+    let chip = null, cc = '#2F6BE0';
+    if(playerAtDesk(w)){
+      chip = w.tasks.pending > 0 ? 'WORKING…' : 'AT DESK · INBOX ZERO';
+      cc = w.tasks.pending > 0 ? '#2E9E63' : '#5C5647';
+    }
+    else if(Math.hypot(a.x - COFFEE_SPOT.x, a.y - COFFEE_SPOT.y) < 0.8){ chip = 'COFFEE'; cc = '#2E9E63'; }
+    else if(Math.hypot(a.x - COUCH_SPOT.x, a.y - COUCH_SPOT.y) < 0.8){ chip = 'FIVE MINUTES'; cc = '#E8814C'; }
+    else { chip = 'NOT WORKING'; cc = '#8A8371'; }
+    if(chip){
+      ctx.font = '700 ' + Math.max(8, 9 * z) + 'px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(chip).width;
+      const cy2 = py - 48 * z, pad = 6 * z;
+      ctx.fillStyle = 'rgba(244,237,218,0.92)';
+      ctx.strokeStyle = cc; ctx.lineWidth = 1.2 * z;
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(px - tw / 2 - pad, cy2 - 8 * z, tw + pad * 2, 14 * z, 7 * z);
+      else ctx.rect(px - tw / 2 - pad, cy2 - 8 * z, tw + pad * 2, 14 * z);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = cc;
+      ctx.textAlign = 'center';
+      ctx.fillText(chip, px, cy2 + 3 * z);
+    }
   }
   ctx.fillStyle = 'rgba(21,18,13,0.65)';
   ctx.font = '700 ' + Math.max(8, 8.5 * z) + 'px "JetBrains Mono", monospace';

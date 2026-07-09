@@ -330,3 +330,20 @@ Known open threads for next session: desk-only runs now escape hollow rather tha
 (acceptable per timebox, revisit if too soft); movie-mode multi-hour run should be done
 once in a real foreground tab; PIP/Dennis/meetings remain the next world mechanics
 (HANDOFF). The `?v=` history this session: game n4→n7, world w2→w7.
+
+## Session 6 — Ting's playtest feedback (2026-07-09)
+First outside playtest (Ting, via iMessage screenshots). Feedback + fixes:
+1. **"Walking felt weird — needs something that shows standing at your desk triggers the
+   task (highlight the box you're standing on), same for kitchen etc."** → Added
+   interaction-spot rings (pulsing diamond on the desk-side tile, coffee, couch, armed
+   EXIT; pulse rides the game clock so it pauses with the world) and a **status chip over
+   your head**: WORKING… (green, while tasks grind), AT DESK · INBOX ZERO, COFFEE,
+   FIVE MINUTES, or NOT WORKING (gray, anywhere else — in the game's voice).
+2. **The mascot is a BADGER** (official ™ logo supplied). `assets/mascot.png` now holds a
+   crop of the logo from Ting's message (stopgap: replace with the original PNG when saved
+   from iMessage — same filename, no code change). Player sprite recolored to badger grays
+   + pale snout; status face 🐻 → 🦡.
+3. He played the pre-rebalance build ($6,000 / $180 pay) — run-length gripes already
+   addressed by Session 5's TASK 6.
+?v=w8. Both suites green (67 + 56). Verified in preview: logo on start screen, chip +
+tile ring at desk. Committed as one feedback round.
