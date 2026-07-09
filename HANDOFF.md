@@ -2,127 +2,142 @@
 
 Pick up here. This is the active game (MARQUE is retired/intact at `/Desktop/marque/` — reuse
 its *patterns* only). Everything lives in `/Users/kevindriscoll/Desktop/nine to survive/`.
-It RUNS and TESTS GREEN (**82 game + 58 world**, incl. a 100-career soak). The folder is now
-a **git repo** (Session 5): one commit per task, nothing pushed, `TASKS.md` holds that
-session's brief. Read SESSION_LOG Session 5 for the stability/persistence/balance details.
+It RUNS and TESTS GREEN (**178 game + 99 world**, incl. a 100-career soak with all five story
+arcs active). The folder is a **git repo**: one commit per task, nothing pushed, `TASKS.md`
+holds the current session's brief. Read SESSION_LOG Sessions 5–8 for how it got here.
 
-## Current quick facts (Sessions 5–7, 2026-07-09, autonomous)
+## Current quick facts (Sessions 5–8, 2026-07-09, autonomous)
 - **Balance**: your number is **$3,100**; a day = 2.5 real min (CLOCK_SPEED 3.2); pay
   260/420/640/820/1000 + $250 crunch spot bonus (Associate+ only); seeded task load
-  6–10/day; escape days 10–12, median 11 ≈ 27 min. Permanent-Intern win is impossible
-  (bank peaks $2,325) and test-guarded. Desk-camping with no recovery DIES by Soul
-  (dead-eyed productivity).
-- **Persistence**: localStorage save/resume (`ntos-save-v1`, phase-aware). Clear on
-  game over / new run.
-- **Soak**: `world-test.js` §12 plays 100 full careers headlessly; keep it green.
-- **Dev tools**: `?movie=1` autopilot walks out at the number / `?movie=greed` plays to failure (survives rAF-starved tabs); shell stuck-watchdog
-  console.warns a state dump if the clock freezes; `window.g`/`window.world` exposed.
-- **World additions**: EXIT door (armed when the number is banked → walk out through it),
-  off-screen BOSS/BRAD arrows, honest brad outcomes (steal/foiled/empty), choice display
-  shuffle (data-idx = rule index), planDay novelty cycle (g.seen), share buttons, WebAudio
-  blips + mute, pointer/touch input with pinch zoom, mobile HUD.
+  6–10/day; escape days 10–12, median 11 ≈ 27 min — **unchanged with all arcs live**
+  (soak-guarded). Permanent-Intern win impossible (bank peaks $2,325, test-guarded).
+  Desk-camping with no recovery DIES by Soul (dead-eyed productivity).
+- **The lore layer (Session 8)**: arc engine + npcState + incidents + feed + receipts +
+  headlines/awards + story share. See below.
+- **Persistence**: localStorage save/resume (`ntos-save-v1`, phase-aware) — npcState,
+  arcs, receipts, feed, and staged incidents all live on `g`, so they ride it free.
+- **Soak**: `world-test.js` §12 plays 100 full careers through the REAL pipeline (arcs,
+  incidents, feed, summons, firings) and asserts staged story beats always land before
+  5 PM. Keep it green.
+- **Dev tools**: `?movie=1` / `?movie=greed` autopilot (handles 2-choice incident cards);
+  shell stuck-watchdog; `window.g`/`window.world` exposed.
 
-## The resolved design (user's calls, 2026-07-09 — evolved across the day)
-- **WIN: F-you money.** Bank **$3,100** ("your number") and walk out before the place
-  finishes you — via the day-end button or by physically walking through the armed EXIT
-  door. Title screen is "Your Number".
-- **FORM (final, after TWO course-corrections): a REAL-TIME game.** The user was emphatic:
-  not a card game with a decorative world — "a fucking real life game like RollerCoaster
-  Tycoon where I'm interacting with the world." The world IS the game: you drive the badger
-  (click-to-move), work is physical (tasks pile on your desk; you ship them BY BEING THERE),
-  threats cross the floor in real time and you position against them, and soul recovery
-  means physically leaving your desk while the clock runs. Cards are rare spice (2/day),
-  fired by their owner NPC walking over. If a future feature is "a popup," ask whether it
-  can be a THING IN THE WORLD instead — that's the standing direction.
+## CHARACTER DIRECTION (non-negotiable, from the user)
+- **Marcus is the SURVIVOR** — the coasting master who has seen every reorg and believes
+  in none of it. Funny, useful, slightly spiritually dead, **never a fraud**.
+- **Brad is the SCANDAL** — ambitious, performative, insecure, already the credit thief;
+  the second-job arc belongs to him.
+- **Tone rule**: punch the company, the incentives, the fake language, the systems.
+  Never mock the person suffering (see the Kayla arc for the reference treatment: the
+  joke is the webinar, never her).
 
-## What the game is now
-A run = a career of workdays. Each day = **2 encounters** sampled by planDay's novelty
-cycle (tours the whole pool before repeats, seeded on g.rngState), played in clock order.
-Three meters:
-- **Standing** — org's view. 0 = managed out. Fridays (day % 5) it decides promotions:
-  ≥ 68 → promoted (pay up, Standing → 55, Soul −5); < 35 → warning (Soul −4). It also
-  **decays −6 every day** plus −1 per task left in the inbox — the treadmill.
-- **Soul** — what's left of you. 0 = promoted to management (bad end). Passive drain each
-  day end (−1 / −2 wk3+ / −3 wk5+), so you can't stall.
-- **Money** — start $300. Daily pay (Intern $260 → Associate $420 → Senior $640 → Manager
-  $820 → Director $1,000) minus burn ($130 + $25/week creep). Overdraft = Soul −6.
-  **$3,100 = your number = the win.** Sized so a permanent Intern can NEVER reach it
-  (intern bank peaks $2,325; crunch spot bonuses are level-gated away from Interns —
-  both test-guarded). Endings: escape
-  whole (Soul ≥ 50), escape hollow, fired, management.
+## The resolved design (user's calls — evolved across the day)
+- **WIN: F-you money.** Bank **$3,100** and walk out — day-end button or physically
+  through the armed EXIT door. Title: "Your Number".
+- **FORM: a REAL-TIME game** (after two course-corrections; the user was emphatic).
+  The world IS the game: drive the badger, work is physical, threats cross the floor,
+  recovery means leaving your desk. Cards are rare spice (2/day + arc incidents).
+  **World-first doctrine**: if a feature could be a popup, make it a thing in the world.
 
-Balance (asserted by tests, seeds fixed): strong recovery play escapes **days 10–12,
-median 11** (~27 real minutes); always-comply dies by Soul day ~3; always-rebel is fired
-day ~4. Desk-camping with zero recovery now DIES by Soul (dead-eyed productivity:
-3 tasks in a row without a break → each further task +1 Soul). Thesis playable.
+## The lore layer (Session 8) — how stories happen
+- **`ARCS` table + `advanceArcs(g)`** (brain): an arc = named multi-day storyline with
+  numbered stages, advanced every morning in `nextDay` BEFORE `planDay`. All arc
+  randomness = LOCAL mulberry32 off `g.runSeed` (never `g.rngState`, so plans and
+  balance never shift). **Adding an arc = one table entry + incident content +
+  world staging flags.** Five arcs live: `brad_second_job`, `boss_spiral`, `hr_survey`,
+  `kayla_presentation`, `marcus_survivor`.
+- **`g.npcState`** — all seven coworkers: stress/trust/arcStage/flags/counters.
+- **`worldFlagsFor(g)`** — the ONE bridge: plain data the shell passes to
+  `W.newDay(seed, day, plan, flags)`; the world stages clues physically from it
+  (Brad's second laptop is drawn; his idle time goes to the STAIRS; Kayla is pinned in
+  the kitchen; extra boss walks; the webinar freezes task work; the firing choreography).
+- **Arc incidents** — story cards outside the 20-card deck: staged on
+  `g.todayIncidents`, merged into the world event queue (kind 'card'|'incident'),
+  owner walks over, same overlay, resolved via `applyIncidentChoice`. They gate 5 PM
+  like cards and re-stage next morning if unanswered — a day can never strand.
+- **The feed** — `g.feed`, brain-owned, deterministic, real events only (`moodFeed`,
+  `feedWorldEvent`, arc/incident/review lines). Shell: collapsible `#office` ticker
+  (latest 3) + full-day log on the 5:01 report. Same seed = same feed (soak-proven).
+- **Receipts** — `g.receipts` named flags + held/lifetime counts. Sources:
+  `screenshot_brad_deck`, `hr_survey_metadata`. Spends: the Credit-Reassigned burn
+  (4th choice, +10/+8, reverses the theft); metadata auto-defuses ONE review warning.
+  HUD shows a one-line held count.
+- **Headlines/awards/share** — `dayHeadline(g)` + `dayAward(g)` on the day-end screen,
+  `shareText(g)` leads with the run's best REAL incident; all pure functions of run
+  state, all tested to never invent.
+
+### Arc cheat-sheet (stages the world reads)
+- **Brad**: 1 laptop → 2 "on a call"+stairs → 3 deck detour (`braddeck`) → 4 discovery
+  card (screenshot/cover/ride) → 5 waiting (0.5/morning ×3) → 6 FIRED TODAY (11:30
+  wrong-Zoom all-hands → noon Meredith escort → EXIT → +2 absorbed tasks) → 7 gone
+  (no raids, cards leave planDay) / 8 closed quietly. Cover = raids off for the run.
+- **Boss**: hot 4–6 days from day 6–9 (+1 walk, crunch +0.25, daily summons — walk to
+  the corner office or it's a dodge). Sympathize: catches soften, summons daily.
+  Deflect/dodge: summons stop, catches harden. Modifiers expire with the arc
+  (`bossCatchMod`). One off-schedule human beat (world moment, once/run).
+- **Survey**: launch → card (bland/truth/help/metadata) → the hunt → filed. Truth =
+  one-shot −5 Standing at your next review.
+- **Kayla**: panic day in the kitchen — sit with her (chat errand; bonded = her chats
+  +2 forever) / take a task (+1 on your stack) / keep working (Soul −3 at 5 PM) /
+  tell HR (she's sent home, you get +1 Standing, next morning "Resilience & You"
+  eats 9:00–10:30 of task time).
+- **Marcus**: mentor from day 3–5, one tip per chat/day: boss-walk read, task
+  forgiveness, one-shot catch shield, or a −2 Standing miscalibration (~25%).
 
 ## The real-time loop (Sessions 3–6 — see SESSION_LOG for detail)
-`ntos-world.js` (`NtosWorld`) owns the office: 40×26 iso grid, furniture + labeled zone rugs,
-cast of 8 (You = the badger, Brad, Dennis, The Boss, Meredith-HR, Kayla, Marcus, Priya —
-peers now also deliver cards) with
-seeded daily moods (emoji overhead; click for status popup; peers get a "Walk over & chat"
-button), BFS pathing, idle wandering, constant clock (**3.2 game-min/sec = 2.5-min days**).
-- **Click-to-move** (`movePlayer`) — click floor, the badger walks, blue marker. Interaction
-  spots have pulsing rings; a status chip over your head says what standing there is doing
-  (WORKING… / AT DESK · INBOX ZERO / COFFEE / FIVE MINUTES / NOT WORKING).
-- **Tasks**: seeded 6–10/day drip into your inbox (paper stack + red ×N on your desk). Being at your
-  desk works them (~11s each, progress bar) → `taskDone` +2 Standing −1 Soul. `closeDay`
-  applies daily Standing decay −6 and −1 per unfinished task.
-- **Boss floor-walks** ×2/day (❗ + toast telegraph, off-screen edge arrow): at desk = +2;
-  empty chair = −6 (−9 on his bad days — mood is mechanical).
-- **Brad raids** 1–2/day (off-screen arrow too): unattended inbox = task stolen −3;
-  sitting there = foiled +1/+1; away with an empty inbox = its own empty-handed line.
-- **Recovery is spatial, once/day each**: coffee +2, couch +6 Soul/−1 Standing, chats with
-  Kayla/Marcus/Priya +5/+3/+2 by mood — all require leaving your desk on the clock.
-- **Cards (2/day)**: owner NPC walks to your desk at the card's clock minute; world pauses.
-  Choice display order shuffles (data-idx keeps the rule mapping).
-- **Fire drill** ~45% of days: 8s timer, mash WORK ×12 → `applyCrunch` +4 / −10; a win
-  pays a $250 spot bonus from Associate up ("Interns are paid in experience").
-- **EXIT door** (west edge): armed + glowing when the number is banked; walking through it
-  ends the run via the normal verdict flow.
-- **5 PM** → `dayover` signal → `closeDay(g, stats)` → payday report → clock in tomorrow.
-All floor outcomes flow through ONE table: `NineToSurvive.WORLD_EFFECTS` via
-`applyWorldEffect(g, kind)` — tune the economy there. World emits a signal QUEUE from
-`step(w, dt)`; the shell's `handleSignal()` applies effects + narrated toasts + SFX.
+`ntos-world.js` (`NtosWorld`): 40×26 iso grid, furniture + zone rugs (+ STAIRS), cast
+of 8 with seeded daily moods, BFS pathing, constant clock (3.2 game-min/sec).
+Click-to-move; tasks drip 6–10/day and ship AT your desk (~11s each); `closeDay`
+decay −6 and −1/unfinished task; boss floor-walks (at desk +2 / caught −6, −9 bad
+days, ± arc modifiers); Brad raids (steal/foiled/empty — unless covered/fired);
+recovery = coffee/couch/chats, once each/day; fire drill ~45% (+arc boost), $250
+bonus Associate+; EXIT door armed at the number; 5 PM → dayover → payday report
+(now with headline, award, feed log) → clock in. All floor outcomes flow through
+`NineToSurvive.WORLD_EFFECTS` via `applyWorldEffect` (+ named rules `bossCatchMod`,
+`consumeCatchShield`); the world emits a signal queue from `step(w, dt)`; the
+shell's `handleSignal()` applies effects + toasts + SFX and forwards feed-worthy
+events to the brain.
 
 ## Files (mirrors MARQUE's structure)
-- `ntos-game.js` (`?v=n10`) — the BRAIN (career rules; no DOM; seeded mulberry32, never bare
-  `Math.random`). LADDER/FU_TARGET/burn/drains/DECAY_S/TASK_MISS_S, `newGame(seed)`,
-  `planDay` (novelty cycle on g.seen), `applyChoice`, `advance` → `'ok'|'gameover'`,
-  `closeDay(g, {tasksDone, tasksTotal})` → `'dayend'|'gameover'` (decay + inbox debt +
-  payday + Friday review), `canWalkOut/walkOut`, `verdict`, `applyCrunch`, `applyCoffee`,
-  `WORLD_EFFECTS` + `applyWorldEffect`, run counters on `g.stats`, dead-eyed streak on `g.taskStreak`. Pool is **20 encounters**.
-- `ntos-world.js` (`?v=w11`) — the OFFICE (above). Headless-safe: pure `step(w, dt)` returns
-  one queued signal per call; `render()`/`screenToTile()` are the only canvas code.
-- `index.html` — the SHELL. Play = full-viewport canvas + floating HUD (incl. INBOX line) +
-  pointer/touch input (tap/drag/pinch) + card overlay + crunch modal + status popup +
-  toasts + share buttons + WebAudio blips w/ persisted mute; rAF loop → `handleSignal()`;
-  stuck-watchdog; `?movie=1` autopilot; localStorage save/resume. Start / dayend / end.
-- `ntos-standalone.html` — fully-inlined shareable; `build_standalone.py` inlines BOTH
-  modules. **Rebuild after any change.**
-- `game-test.js` (82) + `world-test.js` (58, ~1 min — includes the 100-career soak) —
-  `osascript -l JavaScript <file>` (JSC, no node). Policy sims are full days-on-the-floor
-  and the soak drives the real pipeline — keep BOTH green when tuning anything.
-- `TASKS.md` — the CURRENT session's brief (verbatim), overwritten each autonomous session.
-- `assets/mascot.png` — the official ™ shrugging-badger logo (screenshot crop; swap in
-  Ting's original PNG under the same filename when saved from iMessage).
-- Preview config `nine-to-survive` in `/Desktop/untitled folder 2/.claude/launch.json` —
-  `autoPort: true` (another chat may hold 4186).
+- `ntos-game.js` (`?v=n12`) — the BRAIN. Career rules + the lore layer: `ARCS`,
+  `advanceArcs`, `worldFlagsFor`, `ARC_INCIDENTS`, `applyIncidentChoice`,
+  `extraChoicesFor`/`applyExtraChoice`, receipts, feed (`pushFeed`/`moodFeed`/
+  `feedWorldEvent`), Brad/Boss/Kayla/Marcus handlers, `dayHeadline`/`dayAward`,
+  `storyLine`/`shareText`. No DOM; seeded mulberry32 on `g.rngState` + clearly-scoped
+  local generators on `g.runSeed`; zero bare Math.random.
+- `ntos-world.js` (`?v=w13`) — the OFFICE. Flags-driven staging (laptop, stairs,
+  deck detour, firing escort, summons, Kayla kitchen, webinar), event queue with
+  incidents, verbs incl. `goForBossCall`, `takeKaylaTask`, `reportKayla`. Never
+  touches meters; render is the only canvas code.
+- `index.html` — the SHELL. Canvas world + HUD (+ receipts line) + `#office` feed
+  ticker + card/incident overlay + crunch modal + status popups (context buttons:
+  chat / sit-with / take-task / quick call / mention-to-HR) + day report (headline,
+  award, feed log) + share + movie mode + watchdog + save/resume.
+- `ntos-standalone.html` — fully-inlined shareable (176 KB); `build_standalone.py`
+  inlines both modules. **Rebuild after any change.**
+- `game-test.js` (178) + `world-test.js` (99, ~1.5 min — includes the 100-career
+  arc-active soak) — `osascript -l JavaScript <file>` (JSC, no node). Keep BOTH green.
+- `TASKS.md` — the current session's brief (verbatim). `assets/mascot.png` — official
+  badger logo (swap for Ting's original PNG when saved, same filename).
+- Preview config `nine-to-survive` in `/Desktop/untitled folder 2/.claude/launch.json`
+  (`autoPort: true`, base 4186).
 
 ## Workflow rules (same as MARQUE)
-1. Career rules → `ntos-game.js`; world/staging logic → `ntos-world.js` (both DOM-free +
-   seed-deterministic). Presentation/wiring → `index.html`.
-2. Bump the `?v=` cache-busters when a module changes (`n#` game, `w#` world).
-3. After edits: run BOTH test files → `python3 build_standalone.py` → verify in the browser
-   preview. Keep index + standalone in sync.
-4. Note: headless preview tabs are rAF-throttled — walks look slow there, fine at real fps.
+1. Career rules + lore → `ntos-game.js`; staging/movement → `ntos-world.js` (both
+   DOM-free + deterministic). Presentation/wiring → `index.html`.
+2. Bump `?v=` cache-busters when a module changes (`n#` game, `w#` world).
+3. After edits: run BOTH test suites → `python3 build_standalone.py` → verify in the
+   browser preview. Keep index + standalone in sync.
+4. Headless preview tabs are rAF-throttled — drive `W.step` manually when verifying.
 
-## Next steps (world-first: prefer THINGS IN THE WORLD over popups)
-1. **PIP / HR arc** (user explicitly wants this): chain review warnings → PIP state →
-   Meredith physically summons YOU to the HR pod (walk there or eat Standing).
-2. **Dennis as a physical blocker**: some tasks marked "needs approval" — carry them to
-   The Pipe and stand there while he "has questions."
-3. **Meetings**: calendar entries; be in the MEETING ROOM at the hour or take the hit.
-4. **Mascot art**: swap `assets/mascot.png` for Ting's original logo PNG (same filename).
-5. **Content depth**: grow the encounter pool; then a balance pass on WORLD_EFFECTS.
-6. Later: run meta (unlocks, traits, coping items) — the roguelike layer.
+## Next steps (world-first; the arc engine is ready for all of these)
+1. **PIP arc** as an ARCS entry: chain review warnings → PIP stage flags → Meredith
+   summons YOU to the HR pod (the boss-summons machinery generalizes directly).
+2. **Arc-start spacing**: two incidents can share a morning (works fine, but pacing
+   may want jitter so big story days are rarer).
+3. **Exploit/balance pass** on arc rewards (receipt burn +10/+8, daily sympathize).
+4. **Dennis as a physical blocker** (carry approvals to The Pipe) — could also mint a
+   `dennis_approval_timestamp` receipt.
+5. **Meetings** on a calendar (be in the MEETING ROOM or take the hit; the webinar
+   freeze is the prototype).
+6. Mascot PNG swap; later: run meta (unlocks, traits) — the roguelike layer.

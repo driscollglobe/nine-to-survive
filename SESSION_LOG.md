@@ -396,3 +396,139 @@ tile ring at desk. Committed as one feedback round.
   marcus) with seeded task load 7, Poppins rendering, **zero console errors**.
 - **Left undone, deliberately**: the 13–14 escape-day tail (needs promotion-level
   variance — a new system; logged under TASK 5). Nothing else outstanding from the brief.
+
+## Session 8 — Character chaos & serialized office lore (2026-07-09, autonomous per TASKS.md)
+
+The brief called itself "Session 7" but the log already had one, so this is Session 8.
+All five REQUIRED tasks landed plus all four STRETCH tasks. One commit per task.
+Final state: **178 game + 99 world tests green** (incl. the 100-career soak with all
+five arcs active), standalone 176 KB, zero console errors live-verified in the preview.
+
+### The systems added (all state on `g`, all rides the existing save)
+
+**The arc engine (`ARCS` table + `advanceArcs`, TASK 1).** An arc = a named multi-day
+storyline with numbered stages; `advanceArcs(g)` runs each morning inside `nextDay`,
+BEFORE `planDay` (arcs can bar cards). All arc randomness uses LOCAL mulberry32
+generators keyed off a new `g.runSeed` (+ arc name + day + purpose) — `g.rngState` is
+provably untouched (test: 8 days of plans identical with the engine running vs. a
+bare planDay replay), so every pre-existing balance number survived unchanged.
+`g.npcState` tracks all seven coworkers (stress/trust/arcStage/flags/counters).
+`worldFlagsFor(g)` is the single one-way bridge the shell passes to `W.newDay(seed,
+day, plan, flags)`. Five arcs are table entries: brad_second_job, boss_spiral,
+hr_survey, kayla_presentation, marcus_survivor. A future arc = one entry + incident
+content + (if needed) a few world staging flags.
+
+**Arc incidents.** Story cards outside the 20-card deck (deck untouched, per brief).
+`g.todayIncidents` staged by the morning's arc advance → world merges them into the
+event queue (kind 'card' | 'incident', sorted by minute) → the owner NPC walks over →
+`arcincident` signal → same overlay → `applyIncidentChoice(g, id, idx, min)`.
+Incidents gate 5 PM exactly like cards (tested: an incident staged at 1015 fires
+before dayover may). Unanswered incidents re-stage next morning — no day can strand.
+
+**The office feed (TASK 3).** Brain-owned: `g.feed` (cleared each morning), written
+only by real events — `moodFeed` (notable moods only, boss intel always leads, ≤3
+lines, once-per-morning resume-safe guard), `feedWorldEvent` (bradSteal/bossCatchBad/
+crunch/couch/summons), review lines in closeDay, and every arc stage/incident. Shell
+renders a collapsible `#office` ticker (latest 3, persisted collapse) + a full-day
+`<details>` log on the 5:01 report. Determinism proven end-to-end: two identical
+soak careers produce byte-identical final-day feeds.
+
+**Receipts (TASK 4).** `g.receipts` = named flags + `count` (held) + `earned`
+(lifetime); `addReceipt/hasReceipt/burnReceipt`. Current sources:
+`screenshot_brad_deck` (discovery card), `hr_survey_metadata` (survey card). Spends:
+the Credit-Reassigned burn; a metadata receipt auto-defuses exactly one review
+warning. One-line HUD count ("N held · leverage, technically"), award hook
+(Least Legally Defensible), share hooks.
+
+### The arcs, branch by branch (and how each is tested)
+
+**Brad's second job (TASK 2, the flagship).** Stages: 1 second laptop (drawn on his
+desk — lit lid) → 2 status shifts ("on a call", no meeting links; idle time now goes
+to a new STAIRS furniture spot) → 3 deck-detour walk past your desk (`braddeck`
+signal → toast + feed) → 4 discovery card → 5 exposed/waiting → 6 fired-today →
+7 gone / 8 closed quietly. Discovery choices: **screenshot** (receipt), **cover**
+(trust +3, `noBradRaids` for the rest of the run, Soul −6 — complicit), **ride**.
+Holding the receipt gives Credit Reassigned a 4th choice: burn it, +10/+8, theft
+reversed with interest (re-opens stage 8 → 5). Resolution seeded at 0.5/morning ×3
+mornings (test across 30 seeds: both fired and got-away-with-it occur). The firing
+is a watchable world choreography: 11:30 wrong-Zoom all-hands feed/toast → noon
+Meredith collects him at his desk (follows if he wanders) → both walk to the EXIT →
+`bradfired` → he's off the floor, desk drawn as cleaner carpet, `bradtasks` pushes
++2 into your inbox ("growth opportunity"). Raid schedule changes tested BOTH ways
+(covered → 0 raids while he stays; fired → 0 raids + cards leave planDay, including
+the firing morning itself so nothing can strand). Live-verified in the preview:
+allhands@11:30 → fired@12:33 → tasks → dayover@5:00.
+
+**The Boss spiral (TASK 5).** Hot for a seeded 4–6 days from day 6–9: +1 floor walk,
+crunch +0.25, and a quick-call summons answered with your feet (walk to the corner
+office inside 90 game-min; expiry = dodge). **Sympathize**: +3/−4, `softCatch`
+(catches −4/−7), and the summons become DAILY — the emotional-support-animal tax.
+**Deflect/dodge**: −1/+2, summons stop, `hardCatch` (−8/−11) for the arc's duration;
+the engine deletes both flags at resolution (tested). `bossCatchMod` is the named
+rule inside applyWorldEffect. One off-schedule human beat: world proximity signal
+(near his desk, not during a summons) → `bossHumanBeat` (once per run) + bossHuman
+WORLD_EFFECT (+2 Soul). He gets more human; the numbers stay dangerous.
+
+**The HR survey (TASK 7).** Launch feed ("a font that knows your name") + card via
+Meredith; next day the hunt (cross-referencing writing styles), then filed. Choices:
+bland fives (+1/−4), the truth (+8 Soul now, a one-shot −5 Standing bill that
+attends your next review — can flip a promotion or end a run), help a seeded
+coworker (their trust +2), or read the page source (`hr_survey_metadata` receipt →
+defuses one warning: no soul hit, no stats.warnings, feed line about response IDs;
+receipt spent; the next warning lands normally — all asserted).
+
+**Kayla's presentation panic (TASK 6, tone rule enforced).** Panic day: pinned in
+the kitchen (KITCHEN_CORNER), status shifts ("the deck is fine." it is on v31),
+feed notices. Choices are physical: **sit with her** rides the chat errand (Soul +4,
+trust +2, `bonded` → her chats +2 forever via `chatBonus`), **take one of her
+tasks** (walk-over errand, +1 task onto your real stack), **keep working** (priced:
+Soul −3 at 5 PM, named row "You kept your head down. It stayed down."), or **tell
+HR** — the worst helpful option: Meredith walks to the kitchen, Kayla is visibly
+walked to the EXIT and sent home (never strands the day, tested), the org pays YOU
++1 Standing for "flagging a risk," and next morning a mandatory 90-minute
+"Resilience & You" webinar freezes task work 9:00–10:30 while the drip continues
+(mechanically tested: zero taskdone during, resumes after). Comedy targets the
+webinar/system only.
+
+**Marcus the survivor (TASK 8).** Permanent mentor from day 3–5. Chatting delivers
+one seeded tip/day: a boss-walk read (shell reveals the real pending walk time),
+one-missed-task forgiveness at 5 PM (`taskForgivenessToday`, report row), a one-shot
+catch shield (`consumeCatchShield`), or (~25%) a miscalibration costing Standing −2
+on the spot. Never a fraud — the character direction (Marcus = survivor, Brad =
+scandal) is enforced in data and documented in HANDOFF.
+
+### Headlines, awards, share (TASKS 8+9)
+`dayHeadline(g)`/`dayAward(g)`: pure first-match functions of the day's real
+counters/incidents (firing > discovery > quick call > survey > Kayla outcomes >
+promotion/warning/dead-eyed > fallback "survived."; awards: Main Character of the
+Day / Least Legally Defensible / Most Dead Inside / Office Emotional Support Animal /
+Best Supporting Spreadsheet / fallback). `shareText(g)` in the brain: leads with the
+best real incident (watched-the-firing > burned-the-screenshot > escaped-holding-it >
+survey metadata > covered > support animal > managed-out/management lines > counter
+list) and falls back to the plain format when a run has no story. Tested that it
+never invents (fresh run mentions no arc) and matches the brief's register lines.
+
+### Soak & verification (TASK 10)
+The soak now drives the FULL pipeline: `worldFlagsFor` into newDay, moodFeed each
+morning, every new signal handled the way the shell handles it (incident choices
+rotate by day so all branches soak), and two new per-day assertions: staged
+incidents must all fire before 5 PM, and a staged firing must complete that day.
+100 careers: recovery 50/50 escapes days 10–12 (median 11 — balance unmoved by five
+live arcs), desk-only 0/50 escapes (all soul deaths), zero hangs/stuck actors/
+exceptions. Zero bare Math.random (grep: one comment). Standalone rebuilt (176,614
+bytes). Preview: a full staged story day (survey + discovery + Kayla panic on day
+5!) and the firing day played through the real shell with **zero console errors**;
+screenshots confirmed the second laptop, the feed ticker, and the receipt HUD.
+
+### What remains risky / next
+- **Story-day pileups**: day 5 above stacked survey + discovery + Kayla panic + two
+  cards. Nothing broke (events queue serially), but pacing may want arc-start
+  jitter so two incidents rarely share a morning. Watch playtests.
+- **Balance drift from arc rewards**: the receipt burn (+10/+8) and sympathize
+  (+3/day) are strong; soak medians didn't move, but a deliberate exploit pass
+  hasn't been done.
+- **Escort edge cases**: Meredith-follows-Brad converges because he heads home, but
+  a pathological wander loop would only resolve via retry; the soak never hit one.
+- Next: PIP arc as an ARCS entry (warnings → PIP → summons to the HR pod — the
+  engine and summons machinery are both ready for it), Dennis-as-blocker, meetings,
+  arc-start spacing, and the mascot PNG swap.
