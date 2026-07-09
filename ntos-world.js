@@ -597,6 +597,29 @@ function render(w, ctx, cam, vw, vh){
     if(item.f) drawBox(ctx, cam, item.f, w);
     else drawActor(ctx, cam, item.a, w);
   });
+
+  // off-screen threat arrows: a patrol/raid you can't see is still coming
+  w.actors.forEach(a => {
+    const threat = (a.id === 'boss' && a.state === 'patrol') || (a.id === 'brad' && a.state === 'raid');
+    if(!threat) return;
+    const [px, py] = proj(cam, a.x, a.y);
+    if(px >= -10 && px <= vw + 10 && py >= -40 && py <= vh + 10) return;   // on screen
+    const ex = Math.max(26, Math.min(vw - 26, px));
+    const ey = Math.max(26, Math.min(vh - 26, py));
+    const ang = Math.atan2(py - ey, px - ex);
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(ang);
+    ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-7, -9); ctx.lineTo(-3, 0); ctx.lineTo(-7, 9);
+    ctx.closePath();
+    ctx.fillStyle = '#D8443F'; ctx.fill();
+    ctx.strokeStyle = 'rgba(21,18,13,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#D8443F';
+    ctx.font = '800 10px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(a.id === 'boss' ? 'BOSS' : 'BRAD', ex, ey + 22);
+  });
 }
 
 function shade(hex, f){
