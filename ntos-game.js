@@ -259,6 +259,28 @@ const NineToSurvive = (() => {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
+  // Clearly-scoped local generators for the arc engine: seeded off g.runSeed (and
+  // never touching g.rngState), so adding or reordering arcs can never shift the
+  // day-plan stream or any established balance numbers.
+  function hashStr(s){
+    let h = 2166136261 | 0;
+    for(let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return h | 0;
+  }
+  function localRand(seed){
+    let s = seed | 0;
+    return () => {
+      s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // one-shot arc roll, unique per (run, arc, day, purpose)
+  function arcRand(g, key, salt){
+    return localRand((g.runSeed ^ hashStr(key) ^ Math.imul(g.day, 2654435761) ^ hashStr(salt || '')) | 0);
+  }
+
   // Sample DAY_ENCOUNTERS distinct encounters for the day, replayed in clock order.
   // Prefers cards not yet seen this cycle (tracked on g.seen, so it serializes),
   // so a run tours the whole pool before anything repeats; then the cycle resets.
@@ -290,6 +312,16 @@ const NineToSurvive = (() => {
     return plan.sort((a, b) => a - b);
   }
 
+  // The office lore layer: everyone you work with carries persistent state now.
+  // stress/trust move with incidents; flags hold arc secrets; counters feed
+  // headlines and share copy. All plain data — it rides the existing save.
+  const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya'];
+  function freshNpcState(){
+    const st = {};
+    NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {} }; });
+    return st;
+  }
+
   // Fresh career. Day 1, Intern, seeded plan for the first day.
   function newGame(seed){
     const g = {
@@ -300,6 +332,12 @@ const NineToSurvive = (() => {
       lastChoice: null, dayReport: null,
       stats: { bradSteals: 0, crunchWins: 0, crunchFails: 0, warnings: 0 },
       taskStreak: 0, deadEyedToday: 0,
+      npcState: freshNpcState(),
+      arcs: {},              // per-arc runtime state, keyed by ARCS name — pure data
+      todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
+      receipts: { count: 0, flags: {} },
+      feed: [],              // today's office feed: [{m: clockMin, text}]
+      runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
     };
     g.plan = planDay(g);
@@ -380,6 +418,169 @@ const NineToSurvive = (() => {
     return { kind, ds: g.standing - b.s, dso: g.soul - b.so, deadEyed };
   }
 
+  // ---- The office feed (brain side): the brain owns what is feed-worthy --------
+  // Entries are deterministic and come only from real events, moods, arc stages,
+  // and incidents. The shell just renders g.feed; it invents nothing.
+  function pushFeed(g, min, text){
+    if(!g.feed) g.feed = [];
+    g.feed.push({ m: min | 0, text });
+  }
+
+  // ---- Receipts: evidence is a resource ----------------------------------------
+  // Named flags + counts on g (serializes with the save). `count` = held now,
+  // `earned` = lifetime — awards and share copy read both.
+  function addReceipt(g, name){
+    if(!g.receipts) g.receipts = { count: 0, flags: {} };
+    if(g.receipts.flags[name]) return false;
+    g.receipts.flags[name] = true;
+    g.receipts.count++;
+    g.receipts.earned = (g.receipts.earned || 0) + 1;
+    return true;
+  }
+  function hasReceipt(g, name){ return !!(g.receipts && g.receipts.flags[name]); }
+  function burnReceipt(g, name){
+    if(!hasReceipt(g, name)) return false;
+    delete g.receipts.flags[name];
+    g.receipts.count--;
+    return true;
+  }
+
+  // ---- The arc engine: serialized office lore -----------------------------------
+  // An arc is a named multi-day storyline with numbered stages. advanceArcs(g)
+  // runs every morning inside nextDay and decides stage progression
+  // deterministically from the run seed + npcState — via LOCAL generators only,
+  // so adding, removing, or reordering arcs can never shift the day-plan stream
+  // or any established balance numbers. Arcs write plain-data stage flags; the
+  // world reads them (through worldFlagsFor) to stage physical clues, and
+  // planDay consults them (a fired Brad stops delivering Brad cards).
+  // A future arc = one more entry in this table plus its incident handlers.
+  const ARCS = {
+
+    // BRAD IS MOONLIGHTING. Ambitious, performative, insecure — and on two
+    // payrolls. Stages: 0 dormant · 1 the second laptop appears · 2 “on a call”
+    // + stairwell trips · 3 the deck detour past your desk · 4 the discovery
+    // card · 5 exposed, waiting · 6 fired today (watch the floor) · 7 gone ·
+    // 8 closed quietly (you covered, or the moment somehow passed).
+    brad_second_job: {
+      npc: 'brad',
+      advance(g, a){
+        const brad = g.npcState.brad;
+        if(a.stage === 0){
+          if(a.startDay == null)
+            a.startDay = 2 + Math.floor(localRand((g.runSeed ^ hashStr('brad_start')) | 0)() * 3);
+          if(g.day >= a.startDay){
+            a.stage = 1; brad.stress = 1;
+            pushFeed(g, 540, 'Brad deleted a message.');
+          }
+        } else if(a.stage === 1){
+          a.stage = 2; brad.stress = 2;
+          pushFeed(g, 555, 'Brad: “on a call.” It is 9:15.');
+        } else if(a.stage === 2){
+          a.stage = 3;
+          a.deckAt = 610 + Math.floor(arcRand(g, 'brad', 'deck')() * 210);   // 10:10–1:40
+        } else if(a.stage === 3 || a.stage === 4){
+          // the morning after the slip — and every morning until it's answered:
+          // the discovery card comes. It cannot strand a day; incidents gate
+          // 5 PM exactly like cards do.
+          a.stage = 4;
+          g.todayIncidents.push({ id: 'brad_discovery', owner: 'brad',
+            atMin: 620 + Math.floor(arcRand(g, 'brad', 'discovery')() * 250) });
+        } else if(a.stage === 5){
+          // exposed and unreported: some mornings, payroll does the math
+          a.waited = (a.waited || 0) + 1;
+          if(arcRand(g, 'brad', 'fired')() < 0.5){
+            a.stage = 6; brad.stress = 3;
+            pushFeed(g, 540, 'All-hands moved to 11:30. “Please plan to attend.” Nobody plans to attend. Everybody attends.');
+          } else if(a.waited >= 3){
+            a.stage = 8;
+            pushFeed(g, 540, 'Brad archived a channel nobody knew existed. The moment passed. Somehow the moment passed.');
+          }
+        } else if(a.stage === 6){
+          a.stage = 7;
+          brad.flags.fired = true;    // idempotent with the world event's report
+          pushFeed(g, 540, 'Brad’s desk is a rectangle of cleaner carpet. IT reclaimed “an asset.” The org chart heals over him by lunch.');
+        }
+      }
+    },
+
+    // THE BOSS IS GOING THROUGH SOMETHING. Week two or later his bad days get a
+    // cause and a pattern. Stages: 0 dormant · 1 hot · 2 resolved. While hot the
+    // world stages an extra floor walk, a raised crunch chance, and “quick call”
+    // summons: sympathize and Standing climbs, his catches soften, and the
+    // summons become daily; deflect (or dodge) and they stop, but his catches
+    // hit harder for the arc's duration. More human. Not less dangerous.
+    boss_spiral: {
+      npc: 'boss',
+      advance(g, a){
+        const boss = g.npcState.boss;
+        if(a.stage === 0){
+          if(a.startDay == null){
+            const r = localRand((g.runSeed ^ hashStr('boss_start')) | 0);
+            a.startDay = 6 + Math.floor(r() * 4);        // week two: day 6–9
+            a.hotDays  = 4 + Math.floor(r() * 3);        // hot for 4–6 days
+          }
+          a.summonsToday = null;
+          if(g.day >= a.startDay){
+            a.stage = 1; boss.stress = 2;
+            pushFeed(g, 540, 'Boss is typing…');
+            pushFeed(g, 541, 'Boss is typing…');
+            pushFeed(g, 544, 'The corner office door is closed. It is never closed.');
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+          }
+        } else if(a.stage === 1){
+          a.summonsToday = null;
+          if(g.day >= a.startDay + a.hotDays){
+            a.stage = 2;
+            delete boss.flags.softCatch;   // the modifiers live only while it's hot
+            delete boss.flags.hardCatch;
+            pushFeed(g, 540, 'The corner office door is open again. Nobody mentions the week. That is the arrangement.');
+          } else if(boss.flags.sympathetic){
+            // you are the office's emotional support animal now: daily summons
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+            pushFeed(g, 540, 'Boss is typing…');
+          } else if(!boss.flags.deflected){
+            // no answer yet: the quick call keeps being requested
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+          }
+        }
+      }
+    }
+  };
+
+  // Run every arc's stage logic. Called each morning from nextDay; fixed key
+  // order + local generators = deterministic no matter how the floor was played.
+  function advanceArcs(g){
+    if(!g.arcs) g.arcs = {};
+    Object.keys(ARCS).sort().forEach(key => {
+      if(!g.arcs[key]) g.arcs[key] = { stage: 0 };
+      ARCS[key].advance(g, g.arcs[key]);
+      const npc = g.npcState[ARCS[key].npc];
+      if(npc) npc.arcStage = g.arcs[key].stage;
+    });
+  }
+
+  // Everything the world needs to stage today, as plain data. The world module
+  // never reads g directly — this is the one bridge, and it's one-way.
+  function worldFlagsFor(g){
+    const A  = g.arcs || {};
+    const b  = A.brad_second_job || { stage: 0 };
+    const bo = A.boss_spiral || { stage: 0 };
+    const brad = (g.npcState && g.npcState.brad) || { flags: {} };
+    return {
+      bradLaptop:     b.stage >= 1 && b.stage <= 6,   // the second laptop, drawn
+      bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
+      bradDeckAt:     b.stage === 3 ? b.deckAt : null,
+      bradFiredToday: b.stage === 6,
+      bradGone:       b.stage >= 7,
+      noBradRaids:    !!brad.flags.covered || b.stage >= 6,
+      bossArcHot:     bo.stage === 1,
+      extraBossWalks: bo.stage === 1 ? 1 : 0,
+      crunchBoost:    bo.stage === 1 ? 0.25 : 0,
+      bossSummonsAt:  (bo.stage === 1 && bo.summonsToday) || null,
+      incidents:      (g.todayIncidents || []).slice()
+    };
+  }
+
   // Advance past a resolved card. Cards no longer end the day — 5 PM does.
   // Returns 'gameover' | 'ok'.
   const DECAY_S     = 6;   // "what have you done for them lately" — daily standing decay
@@ -426,10 +627,15 @@ const NineToSurvive = (() => {
   }
 
   // The morning after a survived day: new date, fresh plan, the night forgives.
+  // Arcs advance FIRST — a fired Brad changes what planDay may pick — and they
+  // use local generators, so the g.rngState stream planDay consumes is untouched.
   function nextDay(g){
     g.day++; g.week = Math.floor((g.day - 1) / 5) + 1;
-    g.idxInDay = 0; g.plan = planDay(g); g.dayReport = null;
+    g.idxInDay = 0; g.dayReport = null;
     g.taskStreak = 0; g.deadEyedToday = 0;
+    g.feed = []; g.todayIncidents = [];
+    advanceArcs(g);
+    g.plan = planDay(g);
   }
 
   // Fire drill (a crunch, not a fire): deliver under a timer or eat a Standing hit.
@@ -498,7 +704,9 @@ const NineToSurvive = (() => {
     clamp, fmt, burnFor, soulDrainFor,
     newGame, planDay, currentEncounter, isFinalEncounter, jobTitle,
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,
-    applyCrunch, applyCoffee, applyWorldEffect
+    applyCrunch, applyCoffee, applyWorldEffect,
+    NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
+    pushFeed, addReceipt, hasReceipt, burnReceipt
   };
 })();
 

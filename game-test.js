@@ -307,6 +307,80 @@ ok('resumed career is identical to the uninterrupted one',
   && gSaved.failed === gLive.failed && gSaved.rngState === gLive.rngState,
   'day '+gSaved.day+'/'+gLive.day+' $'+gSaved.money+'/'+gLive.money);
 
+// ---- 12. the arc engine + npcState --------------------------------------------
+const ga = G.newGame(55);
+ok('npcState: all seven coworkers tracked', G.NPC_IDS.length === 7 && G.NPC_IDS.every(id =>
+  ga.npcState[id] && typeof ga.npcState[id].stress === 'number' && typeof ga.npcState[id].trust === 'number'
+  && typeof ga.npcState[id].arcStage === 'number' && !!ga.npcState[id].flags && !!ga.npcState[id].counters));
+ok('day 1: arcs dormant, world flags quiet', (() => {
+  const f = G.worldFlagsFor(ga);
+  return !f.bradLaptop && !f.bossArcHot && f.incidents.length === 0 && !f.bradGone;
+})());
+// arcs progress deterministically off the run seed, not the day-plan stream
+const gA = G.newGame(55), gB = G.newGame(55);
+for(let d = 0; d < 9; d++){ G.nextDay(gA); G.nextDay(gB); }
+ok('same seed = identical arc state after 10 days',
+  JSON.stringify(gA.arcs) === JSON.stringify(gB.arcs)
+  && JSON.stringify(gA.npcState) === JSON.stringify(gB.npcState));
+ok('same seed = identical feed after 10 days', JSON.stringify(gA.feed) === JSON.stringify(gB.feed));
+// the arc engine must not touch the rng stream: plans match an arc-free replay
+ok('arcs never move the day-plan stream', (() => {
+  const withArcs = G.newGame(91), plans = [];
+  for(let d = 0; d < 8; d++){ plans.push(withArcs.plan.join(',')); G.nextDay(withArcs); }
+  // replay: pure planDay/rng usage with a hand-stepped day counter
+  const bare = G.newGame(91), plans2 = [plans[0]];
+  for(let d = 0; d < 7; d++){
+    bare.day++; bare.week = Math.floor((bare.day - 1) / 5) + 1;
+    plans2.push(G.planDay(bare).join(','));
+  }
+  return JSON.stringify(plans.slice(0, 8)) === JSON.stringify(plans2);
+})());
+// the Brad arc stages its clues on schedule
+ok('Brad arc: laptop by day 4, clues escalate, discovery card staged', (() => {
+  const g2 = G.newGame(12);
+  let sawLaptop = false, sawCalls = false, sawIncident = false;
+  for(let d = 0; d < 6; d++){
+    G.nextDay(g2);
+    const f = G.worldFlagsFor(g2);
+    if(f.bradLaptop) sawLaptop = true;
+    if(f.bradCalls) sawCalls = true;
+    if(f.incidents.some(i => i.id === 'brad_discovery')) sawIncident = true;
+  }
+  return sawLaptop && sawCalls && sawIncident;
+})());
+// the Boss arc goes hot in week two with its pressure flags
+ok('Boss arc: hot week 2+, extra walk + crunch boost + a summons', (() => {
+  const g2 = G.newGame(12);
+  for(let d = 0; d < 9; d++){
+    G.nextDay(g2);
+    const f = G.worldFlagsFor(g2);
+    if(f.bossArcHot) return f.extraBossWalks === 1 && f.crunchBoost > 0 && f.bossSummonsAt >= 620;
+  }
+  return false;
+})());
+// npcState + arc state survive the save: snapshot mid-arc, continue both, identical
+const gArc = G.newGame(13);
+careerLoop(gArc, 2, 6, 2, 'bossPass', 6);
+ok('mid-arc snapshot has live arc state', gArc.arcs.brad_second_job.stage >= 1, 'stage='+ (gArc.arcs.brad_second_job||{}).stage);
+const gArcSaved = JSON.parse(JSON.stringify(gArc));
+careerLoop(gArc, 2, 6, 2, 'bossPass', 12);
+careerLoop(gArcSaved, 2, 6, 2, 'bossPass', 12);
+ok('round-tripped npcState/arcs continue byte-identical',
+  JSON.stringify(gArc) === JSON.stringify(gArcSaved));
+
+// ---- 13. receipts ---------------------------------------------------------------
+const gr = G.newGame(14);
+ok('receipts start empty', gr.receipts.count === 0);
+ok('addReceipt banks a named flag', G.addReceipt(gr, 'screenshot_brad_deck')
+  && G.hasReceipt(gr, 'screenshot_brad_deck') && gr.receipts.count === 1);
+ok('no duplicate receipts', !G.addReceipt(gr, 'screenshot_brad_deck') && gr.receipts.count === 1);
+G.addReceipt(gr, 'hr_survey_metadata');
+ok('burnReceipt spends it, lifetime count keeps score',
+  G.burnReceipt(gr, 'screenshot_brad_deck') && !G.hasReceipt(gr, 'screenshot_brad_deck')
+  && gr.receipts.count === 1 && gr.receipts.earned === 2);
+ok('cannot burn what you never had', !G.burnReceipt(gr, 'dennis_approval_timestamp'));
+ok('receipts JSON round-trip clean', JSON.stringify(JSON.parse(JSON.stringify(gr.receipts))) === JSON.stringify(gr.receipts));
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');
