@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n6"></script>
+<script src="ntos-game.js?v=n7"></script>
 <script src="ntos-world.js?v=w7"></script>
 <style>
 :root{
@@ -110,6 +110,9 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .cta{display:inline-block;padding:16px 42px;border-radius:100px;background:var(--ink);color:var(--panel);font-weight:600;font-size:16px;transition:transform .1s,opacity .2s;}
 .cta:hover{opacity:.9;} .cta:active{transform:translateY(2px);}
 .resumebtn{background:var(--money);color:#fff;display:block;margin:10px auto 0;}
+.sharebtn{display:block;width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid var(--line);background:transparent;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);transition:color .2s,border-color .2s;}
+.sharebtn:hover{color:var(--ink);border-color:var(--ink);}
+#sharebtn-end{max-width:300px;margin:14px auto 0;}
 
 /* ---- the office world ---- */
 #play{position:fixed;inset:0;padding:0;}
@@ -247,6 +250,7 @@ button{touch-action:manipulation;}
       <div class="bankline" id="bankline"></div>
       <button class="walkout hidden" id="walkoutbtn" onclick="doWalkOut()">Walk out — you have your number</button>
       <button class="next" id="clockinbtn" onclick="clockIn()">Clock in — Day 2</button>
+      <button class="sharebtn" id="sharebtn-day" onclick="shareRun(this)">Share the grind</button>
     </div>
   </section>
 
@@ -262,6 +266,7 @@ button{touch-action:manipulation;}
       <div class="fm d"><div class="fl">Days survived</div><div class="fv" id="fin-days">0</div></div>
     </div>
     <button class="cta" onclick="startGame()">Run it back</button>
+    <button class="sharebtn" id="sharebtn-end" onclick="shareRun(this)">Share how it ended</button>
     <div class="foot">Nine to Survive</div>
   </section>
 
@@ -803,6 +808,44 @@ function clockIn(){
 
 function doWalkOut(){
   if(G.walkOut(g)) endGame();
+}
+
+/* ---- share card: plain text to the clipboard, receipts included ---- */
+function shareFlavor(){
+  const s = g.stats || {};
+  if(s.bradSteals > 0) return 'Brad stole ' + s.bradSteals + ' of my files and presented them as growth.';
+  if(s.crunchWins > 0) return 'Survived ' + s.crunchWins + ' fire drill' + (s.crunchWins > 1 ? 's' : '') + ' without learning anything.';
+  if(s.warnings > 0) return s.warnings + ' formal warning' + (s.warnings > 1 ? 's' : '') + ', zero formal changes.';
+  if(s.crunchFails > 0) return 'Missed ' + s.crunchFails + ' fire-drill deadline' + (s.crunchFails > 1 ? 's' : '') + '. The room saw.';
+  return 'An unremarkable tenure, which was the plan.';
+}
+function shareRun(btn){
+  const headline = g.over ? G.verdict(g).title : 'Still there. Still counting.';
+  const text = [
+    'NINE TO SURVIVE — YOUR NUMBER',
+    'Day ' + g.day + ' · ' + headline,
+    'Banked ' + G.fmt(g.money) + ' / ' + G.fmt(G.FU_TARGET) + ' · Standing ' + g.standing + ' · Soul ' + g.soul,
+    shareFlavor(),
+    'Ungovernable. Unapologetic.'
+  ].join('\n');
+  const done = () => {
+    const old = btn.textContent;
+    btn.textContent = 'Copied.';
+    setTimeout(() => { btn.textContent = old; }, 1600);
+  };
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      done();
+    } catch(e){ btn.textContent = 'Copy failed. Very on-brand.'; }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
 }
 
 function applyDelta(key, val){

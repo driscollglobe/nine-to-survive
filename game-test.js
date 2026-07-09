@@ -138,6 +138,14 @@ const ge3 = G.newGame(4); ge3.standing = 5;
 G.applyWorldEffect(ge3, 'bossCatch');
 ok('a world effect can end the run', ge3.failed==='standing' && ge3.over);
 ok('unknown effect is a no-op', G.applyWorldEffect(ge2, 'nope')===null);
+// run counters (feed the share card; live on g so they serialize)
+const gst = G.newGame(6);
+G.applyWorldEffect(gst, 'bradSteal');
+G.applyCrunch(gst, true); G.applyCrunch(gst, false);
+gst.day = 5; gst.standing = 20; G.closeDay(gst, {tasksDone: 8, tasksTotal: 8});
+ok('run counters track steals/crunches/warnings',
+  gst.stats.bradSteals===1 && gst.stats.crunchWins===1 && gst.stats.crunchFails===1 && gst.stats.warnings===1,
+  JSON.stringify(gst.stats));
 
 // ---- 8. the walk-out win -----------------------------------------------------
 const ge = G.newGame(5);

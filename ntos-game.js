@@ -197,6 +197,7 @@ const NineToSurvive = (() => {
       idxInDay: 0, plan: null,
       failed: null, escaped: false, over: false,
       lastChoice: null, dayReport: null,
+      stats: { bradSteals: 0, crunchWins: 0, crunchFails: 0, warnings: 0 },
       rngState: (seed == null ? 1 : seed) | 0
     };
     g.plan = planDay(g);
@@ -253,6 +254,7 @@ const NineToSurvive = (() => {
   function applyWorldEffect(g, kind){
     const e = WORLD_EFFECTS[kind];
     if(!e) return null;
+    if(kind === 'bradSteal' && g.stats) g.stats.bradSteals++;
     const b = { s: g.standing, so: g.soul };
     g.standing = clamp(g.standing + (e.s || 0));
     g.soul     = clamp(g.soul + (e.so || 0));
@@ -297,6 +299,7 @@ const NineToSurvive = (() => {
         report.promoted = true; report.newTitle = jobTitle(g);
       } else if(g.standing < WARN_AT){
         soulHit(g, WARN_SOUL); report.warned = true;
+        if(g.stats) g.stats.warnings++;
       }
     }
     report.money = g.money;
@@ -313,6 +316,7 @@ const NineToSurvive = (() => {
   // Fire drill (a crunch, not a fire): deliver under a timer or eat a Standing hit.
   const CRUNCH_WIN = 4, CRUNCH_LOSE = 10;
   function applyCrunch(g, success){
+    if(g.stats){ if(success) g.stats.crunchWins++; else g.stats.crunchFails++; }
     const before = g.standing;
     g.standing = clamp(g.standing + (success ? CRUNCH_WIN : -CRUNCH_LOSE));
     if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
