@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nine to Survive — Your Number</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="ntos-game.js?v=n4"></script>
+<script src="ntos-world.js?v=w2"></script>
+<style>
+:root{
+  /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
+  --bg:#41E3D6; --bg2:#37cdc1;
+  --panel:#F4EDDA; --panel2:#ECE4CD; --panel3:#E0D7BC;
+  --ink:#15120D; --muted:#5C5647; --muted2:#8A8371;
+  --standing:#2F6BE0; --standing-d:#2454b6;
+  --soul:#E8814C; --soul-d:#c1652f;
+  --money:#2E9E63; --money-d:#237c4c;
+  --danger:#D8443F; --ok:#3E9E5E;
+  --line:rgba(21,18,13,.14);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:'Instrument Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+  min-height:100%;display:flex;align-items:center;justify-content:center;padding:20px;
+}
+.stage{width:100%;max-width:460px;}
+.mono{font-family:'JetBrains Mono',monospace;}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+.hidden{display:none !important;}
+
+/* ---- HUD / meters ---- */
+.hud{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px 16px;margin-bottom:16px;}
+.hudtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.sys{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted2);}
+.clock{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;color:var(--muted);}
+.clock b{color:var(--ink);}
+.meters{display:flex;flex-direction:column;gap:12px;}
+.meter .mrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
+.meter .mname{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;}
+.meter .msub{font-size:11px;color:var(--muted2);font-style:italic;}
+.meter .mval{font-family:'Archivo',sans-serif;font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;position:relative;}
+.mtrack{height:9px;background:var(--panel3);border-radius:100px;overflow:hidden;}
+.mfill{height:100%;border-radius:100px;transition:width .55s cubic-bezier(.3,.9,.3,1);}
+.meter.standing .mname,.meter.standing .mval{color:var(--standing);}
+.meter.standing .mfill{background:linear-gradient(90deg,var(--standing-d),var(--standing));}
+.meter.soul .mname,.meter.soul .mval{color:var(--soul);}
+.meter.soul .mfill{background:linear-gradient(90deg,var(--soul-d),var(--soul));}
+.meter.money .mname,.meter.money .mval{color:var(--money);}
+.meter.money .mfill{background:linear-gradient(90deg,var(--money-d),var(--money));}
+.jobline{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+.jobline .pay{color:var(--money);font-weight:700;}
+.taskline{margin-top:-4px;}
+.taskline #tasks-l{color:var(--danger);font-weight:700;}
+.taskline #tasks-r{color:var(--muted);}
+.statuspop .schat{display:inline-block;margin-top:10px;padding:8px 14px;border-radius:100px;background:var(--ink);color:var(--panel);font-size:12px;font-weight:600;cursor:pointer;}
+.delta{position:absolute;right:0;top:-16px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;opacity:0;white-space:nowrap;}
+.delta.show{animation:floaty 1.1s ease-out forwards;}
+@keyframes floaty{0%{opacity:0;transform:translateY(4px);}20%{opacity:1;}100%{opacity:0;transform:translateY(-12px);}}
+
+/* ---- encounter card ---- */
+.card{background:linear-gradient(165deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:18px;padding:22px 22px 20px;box-shadow:0 20px 50px rgba(0,0,0,.4);}
+.tag{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:100px;padding:4px 10px;margin-bottom:14px;}
+.etitle{font-family:'Archivo',sans-serif;font-weight:800;font-size:24px;line-height:1.08;letter-spacing:-.015em;margin-bottom:10px;}
+.escene{font-size:15px;line-height:1.55;color:#3a352a;margin-bottom:20px;}
+.choices{display:flex;flex-direction:column;gap:10px;}
+.choice{text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14.5px;line-height:1.4;color:var(--ink);transition:transform .1s,border-color .2s,background .2s;}
+.choice:hover{border-color:var(--standing);background:var(--panel3);}
+.choice:active{transform:translateY(1px);}
+
+/* outcome */
+.outcome{margin-top:2px;}
+.oline{font-size:15px;line-height:1.6;color:#3a352a;font-style:italic;border-left:2px solid var(--soul);padding-left:14px;margin-bottom:20px;}
+.next{width:100%;padding:15px;border-radius:12px;background:var(--ink);color:var(--panel);font-weight:600;font-size:15px;transition:transform .1s,opacity .2s;}
+.next:hover{opacity:.9;} .next:active{transform:translateY(1px);}
+
+/* ---- 5:01 PM day report ---- */
+.report{margin:4px 0 16px;}
+.rrow{display:flex;justify-content:space-between;gap:14px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px;}
+.rrow .rk{color:var(--muted);}
+.rrow .rv{font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;white-space:nowrap;}
+.rv.plus{color:var(--money);} .rv.minus{color:var(--danger);} .rv.soulhit{color:var(--soul);} .rv.big{color:var(--standing);}
+.bankline{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.06em;color:var(--muted);margin-bottom:18px;}
+.bankline b{color:var(--money);font-size:14px;}
+.walkout{width:100%;padding:16px;border-radius:100px;background:var(--money);color:#fff;font-weight:700;font-size:16px;margin-bottom:10px;box-shadow:0 10px 26px rgba(35,124,76,.35);transition:transform .1s,opacity .2s;}
+.walkout:hover{opacity:.92;} .walkout:active{transform:translateY(1px);}
+
+/* ---- start / end ---- */
+.screen{text-align:center;padding:6px 4px;}
+.mascot{width:156px;height:156px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 12px 34px rgba(21,18,13,.20);overflow:hidden;}
+.mascot img{width:88%;height:88%;object-fit:contain;}
+.mascot .fallback{font-size:72px;line-height:1;}
+.badge{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;}
+.big{font-family:'Archivo',sans-serif;font-weight:800;font-size:46px;line-height:.95;letter-spacing:-.03em;margin-bottom:6px;}
+.big .blue{color:var(--standing);} .big .amber{color:var(--soul);}
+.tagline{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:22px;}
+.lede{font-size:15px;line-height:1.6;color:var(--muted);max-width:370px;margin:0 auto 22px;}
+.legend{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:0 auto 24px;max-width:380px;text-align:left;}
+.leg{display:flex;gap:12px;align-items:flex-start;padding:9px 0;font-size:13.5px;line-height:1.45;}
+.leg:not(:last-child){border-bottom:1px solid var(--line);}
+.leg .k{flex-shrink:0;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:6px;margin-top:1px;font-weight:700;}
+.leg .k.s{background:rgba(94,154,214,.16);color:var(--standing);}
+.leg .k.so{background:rgba(232,129,76,.16);color:var(--soul);}
+.leg .k.m{background:rgba(46,158,99,.16);color:var(--money);}
+.leg span{color:var(--muted);}
+.cta{display:inline-block;padding:16px 42px;border-radius:100px;background:var(--ink);color:var(--panel);font-weight:600;font-size:16px;transition:transform .1s,opacity .2s;}
+.cta:hover{opacity:.9;} .cta:active{transform:translateY(2px);}
+
+/* ---- the office world ---- */
+#play{position:fixed;inset:0;padding:0;}
+#world{position:absolute;inset:0;width:100%;height:100%;cursor:grab;}
+#world.dragging{cursor:grabbing;}
+.hudfloat{position:absolute;top:14px;left:14px;width:min(360px,calc(100vw - 28px));margin:0;box-shadow:0 14px 40px rgba(21,18,13,.25);z-index:5;}
+.hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(21,18,13,.6);background:rgba(244,237,218,.85);border:1px solid var(--line);border-radius:100px;padding:6px 14px;white-space:nowrap;z-index:5;}
+.overlay{position:fixed;inset:0;background:rgba(21,18,13,.45);display:flex;align-items:center;justify-content:center;padding:18px;z-index:20;}
+.overlay .card{width:min(460px,94vw);max-height:88vh;overflow-y:auto;}
+.statuspop{position:absolute;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 34px 12px 14px;width:238px;box-shadow:0 16px 40px rgba(21,18,13,.3);}
+.statuspop .sname{font-family:'Archivo',sans-serif;font-weight:800;font-size:16px;}
+.statuspop .srole{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);margin:2px 0 8px;}
+.statuspop .sline{font-size:12.5px;line-height:1.45;color:#3a352a;font-style:italic;}
+.statuspop .sx{position:absolute;top:6px;right:10px;font-size:14px;color:var(--muted2);cursor:pointer;}
+.toast{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);font-family:'JetBrains Mono',monospace;font-size:11.5px;border-radius:100px;padding:9px 18px;opacity:0;transition:opacity .25s;z-index:15;pointer-events:none;white-space:nowrap;}
+.toast.show{opacity:1;}
+/* fire drill */
+.crunchcard .tag{color:var(--danger);border-color:var(--danger);}
+.crunchbar{height:14px;background:var(--panel3);border-radius:100px;overflow:hidden;margin:6px 0 8px;}
+#crunchfill{height:100%;width:100%;background:linear-gradient(90deg,#b3322e,var(--danger));border-radius:100px;}
+.crunchmeta{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;margin-bottom:14px;}
+#workbtn{background:var(--danger);color:#fff;font-weight:800;letter-spacing:.06em;}
+.crunchresult{font-size:14.5px;line-height:1.5;font-style:italic;border-left:2px solid var(--danger);padding-left:12px;margin:4px 0 14px;color:#3a352a;}
+
+/* end screen */
+.verdicttag{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-bottom:14px;}
+.verdict{font-family:'Archivo',sans-serif;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.02em;margin-bottom:16px;}
+.vbody{font-size:15px;line-height:1.6;color:var(--muted);max-width:380px;margin:0 auto 24px;}
+.finalmeters{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:330px;margin:0 auto 26px;}
+.fm{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;}
+.fm .fl{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:4px;}
+.fm .fv{font-family:'Archivo',sans-serif;font-weight:800;font-size:26px;}
+.fm.s .fv{color:var(--standing);} .fm.so .fv{color:var(--soul);}
+.fm.m .fv{color:var(--money);} .fm.d .fv{color:var(--ink);}
+.foot{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2);letter-spacing:.14em;text-transform:uppercase;margin-top:24px;}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- START -->
+  <section id="start" class="screen">
+    <div class="mascot"><img src="assets/mascot.png" alt="Nine to Survive" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span class="fallback" style="display:none">🤷</span></div>
+    <div class="badge">Nine to Survive presents</div>
+    <h1 class="big">Your <span class="blue">Num</span><span class="amber">ber</span></h1>
+    <div class="tagline">Bank $6,000. Keep your soul. Walk out.</div>
+    <p class="lede">Everyone in this building has a number — the bank balance where they stand up, say the thing, and never come back. Yours is $6,000. It's a real office out there: tasks pile on your desk, the Boss walks the floor, Brad circles your inbox, and every trip to the coffee machine is a gamble. Click. Move. Survive. Get out.</p>
+    <div class="legend">
+      <div class="leg"><span class="k s">Standing</span><div>How the org sees you. <span>Ship tasks at your desk to earn it — it decays every single day. Zero = managed out. Fridays decide promotions.</span></div></div>
+      <div class="leg"><span class="k so">Soul</span><div>How much of you is left. <span>Work drains it. Coffee, the couch, and real conversations refill it — away from your desk, on the clock.</span></div></div>
+      <div class="leg"><span class="k m">Money</span><div>Your walk-out fund. <span>Paid daily, rent relentless, promotions pay better. Hit $6,000 and you're free.</span></div></div>
+    </div>
+    <button class="cta" onclick="startGame()">Clock in — Day 1</button>
+    <div class="foot">Ungovernable. Unapologetic.</div>
+  </section>
+
+  <!-- PLAY: the office -->
+  <section id="play" class="hidden">
+    <canvas id="world"></canvas>
+
+    <div class="hud hudfloat">
+      <div class="hudtop">
+        <div class="sys">Employee Monitoring · Live</div>
+        <div class="clock" id="clock"><b>9:00</b> AM</div>
+      </div>
+      <div class="jobline"><span id="jobline-l">Day 1 · Wk 1 · Intern</span><span class="pay" id="jobline-r">+$180/day</span></div>
+      <div class="jobline taskline"><span id="tasks-l">INBOX · 0 waiting</span><span id="tasks-r">0/8 shipped</span></div>
+      <div class="meters">
+        <div class="meter standing">
+          <div class="mrow"><div><span class="mname">Standing</span> <span class="msub">how they see you</span></div><div class="mval" id="v-standing">50<span class="delta" id="d-standing"></span></div></div>
+          <div class="mtrack"><div class="mfill" id="f-standing" style="width:50%"></div></div>
+        </div>
+        <div class="meter soul">
+          <div class="mrow"><div><span class="mname">Soul</span> <span class="msub">how much is left</span></div><div class="mval" id="v-soul">65<span class="delta" id="d-soul"></span></div></div>
+          <div class="mtrack"><div class="mfill" id="f-soul" style="width:65%"></div></div>
+        </div>
+        <div class="meter money">
+          <div class="mrow"><div><span class="mname">Your Number</span> <span class="msub">bank $6,000 · walk out</span></div><div class="mval" id="v-money">$300<span class="delta" id="d-money"></span></div></div>
+          <div class="mtrack"><div class="mfill" id="f-money" style="width:5%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hint">Click the floor to walk · Work happens AT your desk · Watch for ❗ · Coffee/couch/chats refill Soul</div>
+    <div id="statuspop" class="statuspop hidden"></div>
+    <div id="toast" class="toast"></div>
+
+    <div id="cardoverlay" class="overlay hidden">
+      <div class="card">
+        <div id="enc">
+          <div class="tag" id="tag"></div>
+          <div class="etitle" id="etitle"></div>
+          <div class="escene" id="escene"></div>
+          <div class="choices" id="choices"></div>
+        </div>
+        <div id="out" class="outcome hidden">
+          <div class="oline" id="oline"></div>
+          <button class="next" id="nextbtn" onclick="advance()">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="crunchmodal" class="overlay hidden">
+      <div class="card crunchcard">
+        <div class="tag">🔥 Fire drill</div>
+        <div class="etitle">“Client escalation. I need the numbers NOW.”</div>
+        <div class="escene">The boss is standing up in the corner office. Everyone is looking at you. Smash <b>WORK</b> before the timer dies — deliver, or it's a Standing hit and a story HR keeps.</div>
+        <div class="crunchbar"><div id="crunchfill"></div></div>
+        <div class="crunchmeta"><span id="crunchcount">0 / 12</span><span id="crunchtime">8.0s</span></div>
+        <div id="crunchresult" class="crunchresult hidden"></div>
+        <button class="next" id="workbtn">WORK</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5:01 PM · DAY REPORT -->
+  <section id="dayend" class="hidden">
+    <div class="card">
+      <div class="tag" id="detag">5:01 PM · Day 1</div>
+      <div class="etitle" id="detitle">Day 1: survived.</div>
+      <div class="report" id="report"></div>
+      <div class="bankline" id="bankline"></div>
+      <button class="walkout hidden" id="walkoutbtn" onclick="doWalkOut()">Walk out — you have your number</button>
+      <button class="next" id="clockinbtn" onclick="clockIn()">Clock in — Day 2</button>
+    </div>
+  </section>
+
+  <!-- END -->
+  <section id="end" class="screen hidden">
+    <div class="verdicttag" id="vtag">End of day</div>
+    <div class="verdict" id="verdict"></div>
+    <p class="vbody" id="vbody"></p>
+    <div class="finalmeters">
+      <div class="fm s"><div class="fl">Standing</div><div class="fv" id="fin-standing">0</div></div>
+      <div class="fm so"><div class="fl">Soul</div><div class="fv" id="fin-soul">0</div></div>
+      <div class="fm m"><div class="fl">Banked</div><div class="fv" id="fin-money">$0</div></div>
+      <div class="fm d"><div class="fl">Days survived</div><div class="fv" id="fin-days">0</div></div>
+    </div>
+    <button class="cta" onclick="startGame()">Run it back</button>
+    <div class="foot">Nine to Survive</div>
+  </section>
+
+</div>
+
+<script>
+/* Shell: presentation + wiring only. Rules live in ntos-game.js (NineToSurvive);
+   the visible office lives in ntos-world.js (NtosWorld). The shell runs the rAF
+   loop, feeds world signals into the rules, and renders both. */
+const G = NineToSurvive;
+const W = NtosWorld;
+W.setEncounters(G.ENCOUNTERS);
+let g, world, runSeed;
+const $id = (x) => document.getElementById(x);
+function screens(showId){
+  ['start','play','dayend','end'].forEach(s => $id(s).classList.toggle('hidden', s !== showId));
+}
+
+/* ---- camera + canvas ---- */
+const canvas = $id('world');
+const ctx = canvas.getContext('2d');
+const cam = { x: 0, y: 0, z: 1 };
+let rafId = null, lastT = 0;
+
+function fitCanvas(){
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', fitCanvas);
+
+function centerCamOn(gx, gy){
+  cam.x = window.innerWidth / 2 - (gx - gy) * (W.TW / 2) * cam.z;
+  cam.y = window.innerHeight / 2 - (gx + gy) * (W.TH / 2) * cam.z;
+}
+function clampCam(){
+  const vw = window.innerWidth, vh = window.innerHeight, z = cam.z;
+  const minX = vw / 2 - W.GRID_W * (W.TW / 2) * z, maxX = vw / 2 + W.GRID_H * (W.TW / 2) * z;
+  const minY = vh / 2 - (W.GRID_W + W.GRID_H) * (W.TH / 2) * z, maxY = vh / 2;
+  cam.x = Math.max(minX, Math.min(maxX, cam.x));
+  cam.y = Math.max(minY, Math.min(maxY, cam.y));
+}
+
+/* ---- input: drag pan, wheel zoom, click pick ---- */
+let dragging = false, dragMoved = false, dragStart = null;
+canvas.addEventListener('mousedown', (e) => {
+  dragging = true; dragMoved = false;
+  dragStart = { mx: e.clientX, my: e.clientY, cx: cam.x, cy: cam.y };
+  canvas.classList.add('dragging');
+});
+window.addEventListener('mousemove', (e) => {
+  if(!dragging) return;
+  const dx = e.clientX - dragStart.mx, dy = e.clientY - dragStart.my;
+  if(Math.abs(dx) + Math.abs(dy) > 6) dragMoved = true;
+  cam.x = dragStart.cx + dx; cam.y = dragStart.cy + dy;
+  clampCam();
+});
+window.addEventListener('mouseup', (e) => {
+  if(!dragging) return;
+  dragging = false;
+  canvas.classList.remove('dragging');
+  if(!dragMoved) handleWorldClick(e.clientX, e.clientY);
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const before = W.screenToTile(cam, e.clientX, e.clientY);
+  cam.z = Math.max(0.55, Math.min(1.8, cam.z * (e.deltaY > 0 ? 0.9 : 1.11)));
+  const after = W.screenToTile(cam, e.clientX, e.clientY);
+  cam.x += (after.x - before.x - (after.y - before.y)) * (W.TW / 2) * cam.z;
+  cam.y += (after.x - before.x + (after.y - before.y)) * (W.TH / 2) * cam.z;
+  clampCam();
+}, { passive: false });
+
+function handleWorldClick(sx, sy){
+  if(!world || world.dayOver) return;
+  const t = W.screenToTile(cam, sx, sy);
+  const actor = W.pickActorAt(world, t.x, t.y);
+  if(actor){ showStatus(actor, sx, sy); return; }
+  hideStatus();
+  if(W.isCoffeeAt(t.x, t.y)){
+    if(world.coffeeUsed) toast('You’ve had your one coffee mercy today.');
+    else if(W.goForCoffee(world)) toast('Heading for coffee…');
+    return;
+  }
+  if(W.isCouchAt(t.x, t.y)){
+    if(world.couchUsed) toast('One couch session a day. HR counts.');
+    else if(W.goForCouch(world)) toast('Five minutes. You’ve earned nothing, take it anyway.');
+    return;
+  }
+  // plain floor: walk there
+  W.movePlayer(world, t);
+}
+
+/* ---- status popup + toast ---- */
+function showStatus(actor, sx, sy){
+  const s = W.statusOf(world, actor);
+  const pop = $id('statuspop');
+  pop.innerHTML = '<span class="sx" onclick="hideStatus()">✕</span>'
+    + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
+    + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
+    + '<div class="sline">' + s.line + '</div>'
+    + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">Walk over & chat</span>' : '');
+  pop.classList.remove('hidden');
+  pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
+  pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
+}
+function hideStatus(){ $id('statuspop').classList.add('hidden'); }
+function startChat(id){
+  hideStatus();
+  if(W.requestChat(world, id)) toast('Walking over…');
+}
+
+let toastT = null;
+function toast(msg){
+  const t = $id('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ---- the day loop ---- */
+function startGame(){
+  runSeed = Date.now() % 2147483647;
+  g = G.newGame(runSeed);
+  beginDay();
+}
+
+function beginDay(){
+  world = W.newDay(runSeed, g.day, g.plan);
+  screens('play');
+  fitCanvas();
+  cam.z = 1;
+  centerCamOn(9, 16);   // your desk
+  setMeter('standing', g.standing, true);
+  setMeter('soul', g.soul, true);
+  setMoney(true);
+  updateJobline();
+  hideStatus();
+  lastT = 0;
+  if(rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(loop);
+}
+
+function loop(t){
+  if($id('play').classList.contains('hidden')){ rafId = null; return; }
+  const dt = lastT ? Math.min(0.12, (t - lastT) / 1000) : 0.016;
+  lastT = t;
+  const signal = W.step(world, dt);
+  if(signal) handleSignal(signal);
+  $id('clock').innerHTML = (() => {
+    const c = W.minToClock(Math.floor(world.clockMin));
+    const parts = c.split(' ');
+    return '<b>' + parts[0] + '</b> ' + parts[1];
+  })();
+  $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
+  $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
+  W.render(world, ctx, cam, window.innerWidth, window.innerHeight);
+  rafId = requestAnimationFrame(loop);
+}
+
+// world → rules. Every verb on the floor lands here.
+function worldEffect(kind){
+  const res = G.applyWorldEffect(g, kind);
+  if(!res) return null;
+  if(res.ds) applyDelta('standing', res.ds);
+  if(res.dso) applyDelta('soul', res.dso);
+  setMeter('standing', g.standing);
+  setMeter('soul', g.soul);
+  if(g.failed){ setTimeout(endGame, 900); }
+  return res;
+}
+
+function handleSignal(s){
+  switch(s.type){
+    case 'encounter': openCard(); break;
+    case 'crunch': openCrunch(); break;
+    case 'task':
+      toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
+    case 'taskdone':
+      worldEffect('taskDone');
+      toast('Task shipped. Standing +2. ' + (s.pending ? s.pending + ' to go.' : 'Inbox zero. For now.'));
+      break;
+    case 'bosswalk':
+      toast(s.mood === 'bad'
+        ? '❗ The Boss is walking the floor. He is NOT in a good mood.'
+        : '❗ The Boss is walking the floor.');
+      break;
+    case 'bosspass':
+      worldEffect('bossPass');
+      toast('The Boss walked by. You were at your desk. Noted. Standing +2.');
+      break;
+    case 'bosscatch':
+      worldEffect(s.bad ? 'bossCatchBad' : 'bossCatch');
+      toast(s.bad
+        ? '“WHERE were you?” Wrong day for an empty chair. Standing −9.'
+        : '“Where were you?” The Boss walked by an empty chair. Standing −6.');
+      break;
+    case 'bradsteal':
+      worldEffect('bradSteal');
+      toast('Brad lifted a file off your empty desk. That task is his now. Standing −3.');
+      break;
+    case 'bradfoiled':
+      worldEffect('bradFoiled');
+      toast('Brad hovered by your desk. You were sitting right there. He left.');
+      break;
+    case 'chat': {
+      const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';
+      const res = worldEffect(kind);
+      toast(s.name.split(' ')[0] + ': five minutes of being human. Soul +' + (res ? res.dso : ''));
+      W.playerGoHome(world);
+      break;
+    }
+    case 'couch':
+      worldEffect('couch');
+      toast('Couch. Soul +6. Someone from HR definitely saw. Standing −1.');
+      break;
+    case 'coffee': {
+      const res = G.applyCoffee(g);
+      if(res){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast('Coffee. Soul +' + G.COFFEE_SOUL + '. Back to it.');
+      W.playerGoHome(world);
+      break;
+    }
+    case 'dayover': {
+      const r = G.closeDay(g, { tasksDone: s.tasksDone, tasksTotal: s.tasksTotal });
+      if(r === 'gameover') endGame(); else showDayEnd();
+      break;
+    }
+  }
+}
+
+function updateJobline(){
+  $id('jobline-l').textContent = 'Day ' + g.day + ' · Wk ' + g.week + ' · ' + G.jobTitle(g);
+  $id('jobline-r').textContent = '+' + G.fmt(G.LADDER[g.jobIdx].pay) + '/day';
+}
+
+/* ---- encounter card (fires when the owner reaches your desk) ---- */
+function openCard(){
+  hideStatus();
+  const e = G.currentEncounter(g);
+  $id('cardoverlay').classList.remove('hidden');
+  $id('enc').classList.remove('hidden');
+  $id('out').classList.add('hidden');
+  $id('tag').textContent = e.tag;
+  $id('etitle').textContent = e.title;
+  $id('escene').textContent = e.scene;
+  const box = $id('choices'); box.innerHTML = '';
+  e.choices.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'choice'; b.textContent = c.t;
+    b.onclick = () => choose(i);
+    box.appendChild(b);
+  });
+}
+
+function choose(i){
+  const res = G.applyChoice(g, i);
+  applyDelta('standing', res.ds);
+  applyDelta('soul', res.dso);
+  $id('enc').classList.add('hidden');
+  $id('out').classList.remove('hidden');
+  $id('oline').textContent = res.outcome;
+  const next = $id('nextbtn');
+  next.textContent = g.failed ? 'See how it ends' : 'Back to your desk';
+}
+
+function advance(){
+  $id('cardoverlay').classList.add('hidden');
+  const r = G.advance(g);
+  if(r === 'gameover') return endGame();
+  W.resolveEncounter(world);
+}
+
+/* ---- fire drill ---- */
+const CRUNCH_CLICKS = 12, CRUNCH_SECS = 8;
+let crunchState = null;
+function openCrunch(){
+  hideStatus();
+  crunchState = { clicks: 0, deadline: performance.now() + CRUNCH_SECS * 1000, done: false };
+  $id('crunchmodal').classList.remove('hidden');
+  $id('crunchresult').classList.add('hidden');
+  $id('workbtn').textContent = 'WORK';
+  $id('crunchcount').textContent = '0 / ' + CRUNCH_CLICKS;
+  crunchTick();
+}
+function crunchTick(){
+  if(!crunchState || crunchState.done) return;
+  const left = Math.max(0, crunchState.deadline - performance.now());
+  $id('crunchfill').style.width = (left / (CRUNCH_SECS * 1000) * 100) + '%';
+  $id('crunchtime').textContent = (left / 1000).toFixed(1) + 's';
+  if(left <= 0) return finishCrunch();
+  requestAnimationFrame(crunchTick);
+}
+$id('workbtn').addEventListener('click', () => {
+  if(!crunchState) return;
+  if(crunchState.done){ closeCrunch(); return; }
+  crunchState.clicks++;
+  $id('crunchcount').textContent = crunchState.clicks + ' / ' + CRUNCH_CLICKS;
+  if(crunchState.clicks >= CRUNCH_CLICKS) finishCrunch();
+});
+function finishCrunch(){
+  crunchState.done = true;
+  const success = crunchState.clicks >= CRUNCH_CLICKS;
+  const res = G.applyCrunch(g, success);
+  applyDelta('standing', res.ds);
+  const r = $id('crunchresult');
+  r.textContent = success
+    ? 'Delivered. The boss says “clutch” and walks off. Standing +' + G.CRUNCH_WIN + '. Nobody will remember this by Thursday.'
+    : 'The timer died. The room saw it. Standing −' + G.CRUNCH_LOSE + '. Meredith has started a document with your name on it.';
+  r.classList.remove('hidden');
+  $id('workbtn').textContent = g.failed ? 'See how it ends' : 'Back to it';
+}
+function closeCrunch(){
+  $id('crunchmodal').classList.add('hidden');
+  crunchState = null;
+  if(g.failed) return endGame();
+  W.resolveCrunch(world);
+}
+
+function showDayEnd(){
+  const rep = g.dayReport;
+  screens('dayend');
+  $id('detag').textContent = '5:01 PM · Day ' + rep.day + (rep.day % 5 === 0 ? ' · Friday review' : '');
+  $id('detitle').textContent = 'Day ' + rep.day + ': survived.';
+  const rows = [
+    ['Tasks shipped', rep.tasksDone + ' / ' + rep.tasksTotal, rep.tasksDone >= rep.tasksTotal ? 'plus' : 'minus'],
+    ['“What have you done for them lately”', 'Standing −' + rep.decay, 'minus'],
+    ['Pay — ' + rep.title, '+' + G.fmt(rep.pay), 'plus'],
+    ['Cost of living — week ' + rep.week, '−' + G.fmt(rep.burn), 'minus'],
+    ['The grind', 'Soul −' + rep.drain, 'soulhit']
+  ];
+  if(rep.missed) rows.splice(1, 0, ['Died in the inbox (' + rep.missed + ')', 'Standing −' + rep.missed * G.TASK_MISS_S, 'minus']);
+  if(rep.broke) rows.push(['Overdraft. The fear at the ATM.', 'Soul −' + G.BROKE_SOUL, 'soulhit']);
+  if(rep.promoted) rows.push(['PROMOTED → ' + rep.newTitle, 'Standing → ' + G.PROMOTE_RESET + ' · Soul −' + G.PROMOTE_SOUL, 'big']);
+  if(rep.warned) rows.push(['HR “quick chat” — the word PIP was used', 'Soul −' + G.WARN_SOUL, 'soulhit']);
+  $id('report').innerHTML = rows.map(r =>
+    '<div class="rrow"><span class="rk">' + r[0] + '</span><span class="rv ' + r[2] + '">' + r[1] + '</span></div>'
+  ).join('');
+  $id('bankline').innerHTML = 'Banked: <b>' + G.fmt(g.money) + '</b> / your number: ' + G.fmt(G.FU_TARGET);
+  $id('walkoutbtn').classList.toggle('hidden', !G.canWalkOut(g));
+  $id('clockinbtn').textContent = G.canWalkOut(g) ? 'One more day (greed)' : 'Clock in — Day ' + (g.day + 1);
+}
+
+function clockIn(){
+  G.nextDay(g);
+  beginDay();
+}
+
+function doWalkOut(){
+  if(G.walkOut(g)) endGame();
+}
+
+function applyDelta(key, val){
+  setMeter(key, g[key]);
+  const d = $id('d-'+key);
+  if(val !== 0){
+    d.textContent = (val > 0 ? '+' : '') + val;
+    d.style.color = val > 0 ? (key === 'standing' ? 'var(--standing)' : 'var(--soul)') : 'var(--danger)';
+    d.classList.remove('show'); void d.offsetWidth; d.classList.add('show');
+  }
+}
+
+function setMeter(key, val, instant){
+  const f = $id('f-'+key), v = $id('v-'+key);
+  if(instant) f.style.transition = 'none'; else f.style.transition = '';
+  f.style.width = val + '%';
+  if(instant) requestAnimationFrame(() => f.style.transition = '');
+  v.childNodes[0].nodeValue = String(val);
+}
+
+function setMoney(instant){
+  const f = $id('f-money'), v = $id('v-money');
+  if(instant) f.style.transition = 'none'; else f.style.transition = '';
+  f.style.width = Math.min(100, g.money / G.FU_TARGET * 100) + '%';
+  if(instant) requestAnimationFrame(() => f.style.transition = '');
+  v.childNodes[0].nodeValue = G.fmt(g.money);
+}
+
+function endGame(){
+  screens('end');
+  $id('fin-standing').textContent = g.standing;
+  $id('fin-soul').textContent = g.soul;
+  $id('fin-money').textContent = G.fmt(g.money);
+  $id('fin-days').textContent = g.day;
+  const v = G.verdict(g);
+  const color = v.tone === 'danger' ? 'var(--danger)'
+    : v.tone === 'ok' ? 'var(--ok)'
+    : v.tone === 'standing' ? 'var(--standing)'
+    : v.tone === 'soul' ? 'var(--soul)' : 'var(--muted)';
+  const vt = $id('vtag'); vt.textContent = v.tag; vt.style.color = color;
+  const vd = $id('verdict'); vd.textContent = v.title; vd.style.color = color;
+  $id('vbody').textContent = v.body;
+}
+</script>
+</body>
+</html>
