@@ -293,16 +293,13 @@ function step(w, dt){
   // ---- movement + wander ----
   w.actors.forEach(a => {
     if(a.path.length){
-      const arrived = moveAlongPath(a, dt);
-      if(!arrived) return;
-      if(a.id === 'you') w.moveMarker = null;
-      if(a.state === 'summoned'){ a.state = 'atPlayer'; }
-      else if(a.state === 'errand' && a.id === 'you'){ a.state = 'idle'; arriveErrand(w, you); }
-      else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
-      else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
-      else { a.state = 'idle'; }
+      if(moveAlongPath(a, dt)) handleArrival(w, a, you);
       return;
     }
+    // zero-path arrival: sendTo can produce an empty path when the actor is
+    // already on the target tile — treat that as arrived, or the day deadlocks
+    // (e.g. a card owner already adjacent never reaches 'atPlayer').
+    if(a.state !== 'idle' && a.state !== 'atPlayer'){ handleArrival(w, a, you); return; }
     if(a.state !== 'idle' || a.id === 'you') return;
     a.wanderT -= dt;
     if(a.wanderT <= 0){
@@ -332,9 +329,11 @@ function step(w, dt){
   const boss = getActor(w, 'boss');
   w.bossWalks.forEach(bw => {
     if(bw.status === 'pending' && w.clockMin >= bw.atMin && boss.state === 'idle'){
-      bw.status = 'out';
-      sendTo(w, boss, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'patrol');
-      w.sig.push({ type:'bosswalk', mood: boss.mood });
+      // mark 'out' only once the walk actually starts, else it hangs forever
+      if(sendTo(w, boss, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'patrol')){
+        bw.status = 'out';
+        w.sig.push({ type:'bosswalk', mood: boss.mood });
+      }
     }
   });
 
@@ -342,8 +341,8 @@ function step(w, dt){
   const brad = getActor(w, 'brad');
   w.bradRaids.forEach(br => {
     if(br.status === 'pending' && w.clockMin >= br.atMin && brad.state === 'idle'){
-      br.status = 'out';
-      sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'raid');
+      if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'raid'))
+        br.status = 'out';
     }
   });
 
@@ -353,9 +352,9 @@ function step(w, dt){
     if(ev.status === 'pending' && w.clockMin >= ev.atMin){
       const owner = getActor(w, ev.owner);
       if(owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning'){
-        ev.status = 'walking';
         owner.path = [];
-        sendTo(w, owner, adjacentTo(w, you), 'summoned');
+        // status advances only if the walk starts; otherwise retry next tick
+        if(sendTo(w, owner, adjacentTo(w, you), 'summoned')) ev.status = 'walking';
       }
     }
     if(ev.status === 'walking'){
@@ -376,6 +375,16 @@ function step(w, dt){
   }
 
   return w.sig.shift() || null;
+}
+
+// An actor finished (or never needed) a walk: route by what the walk was FOR.
+function handleArrival(w, a, you){
+  if(a.id === 'you') w.moveMarker = null;
+  if(a.state === 'summoned'){ a.state = 'atPlayer'; }
+  else if(a.state === 'errand' && a.id === 'you'){ a.state = 'idle'; arriveErrand(w, you); }
+  else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
+  else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
+  else { a.state = 'idle'; }
 }
 
 // errand arrivals (you reached the thing you clicked)

@@ -144,6 +144,26 @@ ok('the 9:03 card fires when the boss arrives', enc && enc.event.encIdx === 0 &&
 W.resolveEncounter(we);
 ok('resolve resumes the day', we.running && we.nextEvent === 1);
 
+// ---- 9b. zero-path arrivals (regression: the already-adjacent deadlock) ----------------
+// sendTo produces an empty path when the actor already stands on the target tile;
+// before the fix, such an actor never "arrived" and the day froze.
+const wz = W.newDay(37, 1, [0]);        // 9:03 boss card
+wz.bossWalks = []; wz.bradRaids = []; wz.crunch = null;
+const bossZ = W.getActor(wz, 'boss');
+bossZ.x = 8; bossZ.y = 16;              // already ON the desk-side tile the card summons to
+const encZ = stepUntil(wz, 30, ['encounter']);
+ok('already-adjacent owner still fires the card', !!encZ && encZ.event.encIdx === 0 && !wz.running,
+  encZ ? 'fired' : 'DEADLOCK');
+W.resolveEncounter(wz);
+ok('resolve after zero-path arrival still works', wz.running && wz.nextEvent === 1);
+const wz2 = W.newDay(37, 1, [9]);
+wz2.bossWalks = [{ atMin: 545, status: 'pending' }];
+wz2.bradRaids = []; wz2.crunch = null;
+const bossZ2 = W.getActor(wz2, 'boss');
+bossZ2.x = 8; bossZ2.y = 16;            // already on the patrol target tile
+const passZ = stepUntil(wz2, 30, ['bosspass', 'bosscatch']);
+ok('already-adjacent boss patrol still resolves', !!passZ, passZ ? passZ.type : 'DEADLOCK');
+
 // ---- 10. 5 PM hands the day to the rules ----------------------------------------------
 const wd = W.newDay(31, 1, []);
 wd.bossWalks = []; wd.bradRaids = []; wd.crunch = null;

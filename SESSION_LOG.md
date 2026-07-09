@@ -223,3 +223,10 @@ red ×N on the desk, task HUD line, progress bar.
 - Dennis as a physical blocker (some tasks need walking an approval to The Pipe).
 - Meetings on the calendar (be in the meeting room or eat Standing).
 - Pool growth + mascot PNG still open.
+
+## Session 5 — Stability, soak, persistence, balance (2026-07-09, autonomous per TASKS.md)
+
+### Baseline (before any changes)
+- Folder was NOT a git repo → `git init`, commit `pre-session baseline` (c1f19fa), .gitignore for .DS_Store.
+- game-test.js: **59 passed, 0 failed** (ran via osascript, verified).
+- world-test.js: **44 passed, 0 failed** (ran via osascript, verified).
