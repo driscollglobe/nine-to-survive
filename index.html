@@ -113,8 +113,9 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 
 /* ---- the office world ---- */
 #play{position:fixed;inset:0;padding:0;}
-#world{position:absolute;inset:0;width:100%;height:100%;cursor:grab;}
+#world{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none;}
 #world.dragging{cursor:grabbing;}
+button{touch-action:manipulation;}
 .hudfloat{position:absolute;top:14px;left:14px;width:min(360px,calc(100vw - 28px));margin:0;box-shadow:0 14px 40px rgba(21,18,13,.25);z-index:5;}
 .hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(21,18,13,.6);background:rgba(244,237,218,.85);border:1px solid var(--line);border-radius:100px;padding:6px 14px;white-space:nowrap;z-index:5;}
 .overlay{position:fixed;inset:0;background:rgba(21,18,13,.45);display:flex;align-items:center;justify-content:center;padding:18px;z-index:20;}
@@ -145,6 +146,17 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .fm.s .fv{color:var(--standing);} .fm.so .fv{color:var(--soul);}
 .fm.m .fv{color:var(--money);} .fm.d .fv{color:var(--ink);}
 .foot{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2);letter-spacing:.14em;text-transform:uppercase;margin-top:24px;}
+
+/* phones: shrink the HUD so the floor stays playable (last: wins specificity ties) */
+@media(max-width:420px){
+  .hudfloat{top:8px;left:8px;width:calc(100vw - 16px);padding:9px 12px 11px;}
+  .hudfloat .hudtop{margin-bottom:8px;}
+  .hudfloat .jobline{margin-bottom:8px;padding-bottom:6px;font-size:10px;}
+  .hudfloat .meters{gap:7px;}
+  .hudfloat .mtrack{height:7px;}
+  .hudfloat .meter .mval{font-size:13px;}
+  .hint{display:none;}
+}
 </style>
 </head>
 <body>
@@ -294,26 +306,65 @@ function clampCam(){
   cam.y = Math.max(minY, Math.min(maxY, cam.y));
 }
 
-/* ---- input: drag pan, wheel zoom, click pick ---- */
-let dragging = false, dragMoved = false, dragStart = null;
-canvas.addEventListener('mousedown', (e) => {
-  dragging = true; dragMoved = false;
-  dragStart = { mx: e.clientX, my: e.clientY, cx: cam.x, cy: cam.y };
-  canvas.classList.add('dragging');
+/* ---- input: pointer events — mouse and touch share one path.
+   One pointer: drag pans, a still tap/click picks. Two pointers: pinch zooms
+   around the pinch midpoint. Wheel zoom stays for mouse. ---- */
+const pointers = new Map();
+let dragging = false, dragMoved = false, dragStart = null, pinchStart = null;
+canvas.addEventListener('pointerdown', (e) => {
+  try { canvas.setPointerCapture(e.pointerId); } catch(err){ /* synthetic pointers */ }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(pointers.size === 1){
+    dragging = true; dragMoved = false;
+    dragStart = { mx: e.clientX, my: e.clientY, cx: cam.x, cy: cam.y };
+    canvas.classList.add('dragging');
+  } else if(pointers.size === 2){
+    dragging = false;
+    const pts = [...pointers.values()];
+    pinchStart = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), z: cam.z,
+                   mid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 } };
+  }
 });
-window.addEventListener('mousemove', (e) => {
+canvas.addEventListener('pointermove', (e) => {
+  if(!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(pointers.size === 2 && pinchStart){
+    const pts = [...pointers.values()];
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    const before = W.screenToTile(cam, pinchStart.mid.x, pinchStart.mid.y);
+    cam.z = Math.max(0.55, Math.min(1.8, pinchStart.z * dist / (pinchStart.dist || 1)));
+    const after = W.screenToTile(cam, pinchStart.mid.x, pinchStart.mid.y);
+    cam.x += (after.x - before.x - (after.y - before.y)) * (W.TW / 2) * cam.z;
+    cam.y += (after.x - before.x + (after.y - before.y)) * (W.TH / 2) * cam.z;
+    clampCam();
+    dragMoved = true;
+    return;
+  }
   if(!dragging) return;
   const dx = e.clientX - dragStart.mx, dy = e.clientY - dragStart.my;
   if(Math.abs(dx) + Math.abs(dy) > 6) dragMoved = true;
   cam.x = dragStart.cx + dx; cam.y = dragStart.cy + dy;
   clampCam();
 });
-window.addEventListener('mouseup', (e) => {
-  if(!dragging) return;
-  dragging = false;
+function pointerEnd(e){
+  if(!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if(pointers.size < 2) pinchStart = null;
+  if(pointers.size === 1){
+    // one finger left after a pinch: re-anchor it as a drag, never a tap
+    const p = [...pointers.values()][0];
+    dragging = true; dragMoved = true;
+    dragStart = { mx: p.x, my: p.y, cx: cam.x, cy: cam.y };
+    return;
+  }
   canvas.classList.remove('dragging');
-  if(!dragMoved) handleWorldClick(e.clientX, e.clientY);
-});
+  if(dragging){
+    dragging = false;
+    if(!dragMoved) handleWorldClick(e.clientX, e.clientY);
+  }
+}
+canvas.addEventListener('pointerup', pointerEnd);
+canvas.addEventListener('pointercancel', pointerEnd);
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const before = W.screenToTile(cam, e.clientX, e.clientY);
