@@ -620,7 +620,7 @@ if(MOVIE){
     }
     if(!$id('cardoverlay').classList.contains('hidden')){
       if(!$id('enc').classList.contains('hidden')){
-        const c = document.querySelectorAll('#choices .choice')[2];
+        const c = document.querySelector('#choices .choice[data-idx="2"]');
         if(c) c.click();
       } else {
         $id('nextbtn').click();
@@ -672,10 +672,18 @@ function openCard(){
   $id('etitle').textContent = e.title;
   $id('escene').textContent = e.scene;
   const box = $id('choices'); box.innerHTML = '';
-  e.choices.forEach((c, i) => {
+  // display order shuffles every showing (presentation only — the rules see the
+  // true index via choose(idx), and data-idx lets the autopilot find its pick)
+  const order = e.choices.map((_, i) => i);
+  for(let i = order.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = order[i]; order[i] = order[j]; order[j] = t;
+  }
+  order.forEach(idx => {
     const b = document.createElement('button');
-    b.className = 'choice'; b.textContent = c.t;
-    b.onclick = () => choose(i);
+    b.className = 'choice'; b.textContent = e.choices[idx].t;
+    b.dataset.idx = idx;
+    b.onclick = () => choose(idx);
     box.appendChild(b);
   });
 }
