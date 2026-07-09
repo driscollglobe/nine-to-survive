@@ -35,7 +35,7 @@ const NineToSurvive = (() => {
   // Money = the walk-out fund.
   const START = { standing: 50, soul: 65, money: 300 };
 
-  // A fixed 9-to-5: ten encounters in clock order. Each choice moves Standing (s) and
+  // A fixed 9-to-5: twenty encounters in clock order. Each choice moves Standing (s) and
   // Soul (so); (o) is the outcome line. The third choice is usually the "keep both alive"
   // path — the game's whole thesis.
   const ENCOUNTERS = [
@@ -50,6 +50,16 @@ const NineToSurvive = (() => {
       ]
     },
     {
+      tag:"9:12 · Reply-All Apocalypse", clock:"9:12",
+      title:"RE: RE: RE: Please Remove Me From This List",
+      scene:"Someone in Facilities replied-all to 4,000 people about a missing yogurt. Forty people have now replied-all asking to be removed. The thread is growing. Your cursor hovers.",
+      choices:[
+        {t:"Reply-all with a joke. Someone has to.", s:6, so:-4, o:"Eleven laughing emojis, one from a VP. You're now “the funny one,” which is a job you'll hold forever, unpaid."},
+        {t:"Email Facilities directly with instructions: reply, not reply-all.", s:-2, so:8, o:"They reply-all to thank you. The thread doubles. You did the right thing and the building ate it, which is the usual exchange rate."},
+        {t:"Mute the thread. Watch the fire from a distance.", s:0, so:3, o:"The thread dies by 11. You lost nothing but your faith in group email, which was already gone."}
+      ]
+    },
+    {
       tag:"9:41 · Office Bully Resistance", clock:"9:41",
       title:"Credit, Reassigned",
       scene:"In standup, Brad presents your analysis. Word for word. Your name never comes up. The boss says, “Great initiative, Brad.”",
@@ -57,6 +67,16 @@ const NineToSurvive = (() => {
         {t:"Let it go. Pick your battles.", s:0, so:-13, o:"You said nothing. Brad is now “the data guy.” You are now the person who lets Brad be the data guy. Both titles stick."},
         {t:"“Actually I built that — happy to walk everyone through it.”", s:6, so:11, o:"The room goes quiet in the good way. Brad suddenly needs to check his phone. Noted, respected, and very slightly feared."},
         {t:"DM the boss after: “FYI, that was my analysis.”", s:3, so:-2, o:"The boss replies “👍.” It’ll happen again. But the 👍 is, technically, a record. You’re building a folder."}
+      ]
+    },
+    {
+      tag:"9:55 · Calibration Season", clock:"9:55",
+      title:"The Meeting About You, Without You",
+      scene:"Performance calibration is at 10. Your name is on a slide you'll never see, discussed by people you've met twice. Meredith asks if you'd like to “submit context.”",
+      choices:[
+        {t:"Submit two pages of context. Bulleted. Cheerful.", s:7, so:-7, o:"Your context is now “input.” The slide doesn't change. Somewhere, a VP nods at a bar chart of your year."},
+        {t:"“My work is my context.”", s:-6, so:10, o:"Meredith writes “declined to engage.” Dignity: kept. Narrative: someone else's now."},
+        {t:"Three bullets and the folder link. Ten minutes, no more.", s:2, so:0, o:"Enough context to be defensible, little enough to keep your morning. The slide stays wrong, but wrong in a survivable way."}
       ]
     },
     {
@@ -70,6 +90,16 @@ const NineToSurvive = (() => {
       ]
     },
     {
+      tag:"10:40 · Synergy Unlocked", clock:"10:40",
+      title:"“Exciting Organizational Update”",
+      scene:"An all-staff email announces a reorg “to unlock synergies.” Your team now reports through someone named Chad you've never heard of. The org chart looks like a subway map after an earthquake.",
+      choices:[
+        {t:"Email Chad immediately: “Excited to partner!”", s:8, so:-8, o:"Chad replies with a calendar link. You're now “aligned.” You mourn nothing publicly, which is noticed and approved of."},
+        {t:"Say what everyone is thinking, in the team channel.", s:-8, so:11, o:"Four private “THANK YOU”s, zero public ones. The channel goes quiet. You said the true thing and now it's evidence."},
+        {t:"Change nothing. Keep shipping. Let the chart settle.", s:1, so:2, o:"Three reorgs from now, none of this will have mattered. You knew that on day one. This is the knowledge that keeps you alive here."}
+      ]
+    },
+    {
       tag:"11:15 · Mandatory Fun", clock:"11:15",
       title:"Virtual Team Trivia",
       scene:"HR has scheduled team-bonding trivia. Attendance is “optional (strongly encouraged).” Cameras are “expected.”",
@@ -77,6 +107,26 @@ const NineToSurvive = (() => {
         {t:"Show up, be peppy, win the trivia.", s:7, so:-8, o:"You’re now “so fun.” You will be invited to all of these forever. This is a trap wearing the costume of a compliment."},
         {t:"“Conflict, sorry!” Reclaim the hour.", s:-6, so:9, o:"There was no conflict. There is now an hour. HR logs you “low engagement.” You log yourself “a whole person.”"},
         {t:"Show up, answer one question, ghost at fifteen minutes.", s:1, so:0, o:"Minimum viable morale. Present enough to be seen, gone before your soul got billed. Textbook."}
+      ]
+    },
+    {
+      tag:"11:35 · Workflow Mapping", clock:"11:35",
+      title:"Nate From McKinley Wants 30 Minutes",
+      scene:"A consultant half your age is “mapping workflows.” He asks you to describe what you do, step by step, into a laptop that will decide whether what you do exists in Q3.",
+      choices:[
+        {t:"Perform enthusiasm. Inflate everything by 40%.", s:5, so:-9, o:"Nate types “high-value contributor.” You watched a spreadsheet decide to keep you alive and helped it feel good about it."},
+        {t:"Answer honestly, including the part where half the job is meetings about the job.", s:-5, so:9, o:"Nate stops typing twice. Honesty in a workflow interview is like juggling on a tightrope: technically impressive, structurally unwise."},
+        {t:"Describe outcomes, not hours. Make the value hard to delete.", s:3, so:1, o:"You gave the machine nothing to cut and nothing false to quote. Nate nods slowly. It's the best available outcome and you both know it."}
+      ]
+    },
+    {
+      tag:"12:05 · The Ritual", clock:"12:05",
+      title:"Sign the Card for… Gerald?",
+      scene:"A farewell card arrives for Gerald, 11 years in Logistics, whom you have never met. Fourteen people have written “good luck with everything!” There is a collection envelope. Kayla holds the pen.",
+      choices:[
+        {t:"Write something long and warm. Chip in $10.", s:3, so:-3, o:"Your fake warmth is indistinguishable from everyone else's fake warmth. That's what the card is for. Gerald will read none of it."},
+        {t:"Pass it along unsigned.", s:-3, so:4, o:"Kayla raises an eyebrow. Somewhere, a norm was broken. Gerald, who does not know you exist, remains unaffected."},
+        {t:"“Good luck, Gerald.” No money. Move on.", s:1, so:1, o:"Four words, zero dollars, full compliance with the ritual at minimum cost. The envelope stays mysterious. This is the way."}
       ]
     },
     {
@@ -90,6 +140,16 @@ const NineToSurvive = (() => {
       ]
     },
     {
+      tag:"1:15 · The Metaphor", clock:"1:15",
+      title:"“We're a Family Here”",
+      scene:"All-hands. The boss says the company is a family, twice, in front of a slide about “doing more with less.” The chat is a wall of clapping emojis. Someone you know was “transitioned out” Tuesday.",
+      choices:[
+        {t:"Add your clap emoji. Blend in.", s:4, so:-7, o:"Your clap joins two hundred others. Families don't have severance packages, but the metaphor sails on, and so do you."},
+        {t:"Ask in the Q&A: “Do families do layoffs?”", s:-10, so:13, o:"The question gets 47 upvotes and is skipped. You are now “not a culture fit” in a document you'll never see. Worth it. Probably."},
+        {t:"Cameras off. Emoji withheld. Attendance: technically.", s:-1, so:4, o:"You were present the way furniture is present. The metaphor didn't touch you. That's a win by local rules."}
+      ]
+    },
+    {
       tag:"1:45 · The Invisible Labor", clock:"1:45",
       title:"“Can Someone Take Notes?”",
       scene:"The meeting opens. “Can someone grab notes?” Eleven people. Silence. Every head turns, subtly, toward you.",
@@ -97,6 +157,16 @@ const NineToSurvive = (() => {
         {t:"Take the notes. Again.", s:2, so:-9, o:"You’re the notes person now. Notes people get thanked. Notes people don’t get promoted. The difference is your career."},
         {t:"“I took them last time — maybe we rotate?”", s:-1, so:8, o:"The silence goes loud. Someone else gets volun-told. You’ve broken an ancient curse, and everyone in the room noticed."},
         {t:"“Happy to — I’ll share them so we’re all accountable.”", s:4, so:2, o:"You turned the invisible-labor trap into leverage. The notes are yours now, and so is the record of who promised what."}
+      ]
+    },
+    {
+      tag:"2:05 · Itemized Grief", clock:"2:05",
+      title:"Expense Report: REJECTED",
+      scene:"Your $61 client lunch came back rejected over a $4 side of fries “not itemized per policy.” Resubmission requires three fields, one approval, and a small piece of your remaining will. Dennis is cc'd, for reasons.",
+      choices:[
+        {t:"Resubmit with an apology note and a scan of the receipt.", s:3, so:-6, o:"Approved in 40 minutes, which proves the first rejection was a choice. The system works, in the sense that it happened to you."},
+        {t:"Reply asking the policy to justify itself. Cc Finance leadership.", s:-4, so:8, o:"Finance responds with the policy PDF, highlighted. You've made an enemy who controls reimbursements. The fries were not worth a nemesis. Or maybe they were."},
+        {t:"Eat the $4. Delete the thread.", s:0, so:2, o:"You paid four dollars to make a chore stop existing. Finance wins the battle, loses a data point. Cheapest peace you'll buy all week."}
       ]
     },
     {
@@ -110,6 +180,16 @@ const NineToSurvive = (() => {
       ]
     },
     {
+      tag:"2:50 · Open Plan", clock:"2:50",
+      title:"The Loud Talker, Adjacent",
+      scene:"The sales guy two desks over is on his fourth speakerphone call. He says “circle back” the way other people breathe. Priya's headphones are at max. Your progress bar is not moving.",
+      choices:[
+        {t:"Endure it. Smile when he high-fives the air.", s:3, so:-8, o:"He finishes with “boom, easy.” You've absorbed forty minutes of secondhand synergy. It's in your bones now."},
+        {t:"Ask him, flatly, to take it in a booth.", s:-3, so:9, o:"He says “my bad, chief” and does it again after lunch. But for one shining hour: silence. Everyone within four desks owes you, quietly."},
+        {t:"Headphones, white noise, one pointed look.", s:0, so:3, o:"The look lands. He drops six decibels, roughly one “circle back” worth. You'll take it."}
+      ]
+    },
+    {
       tag:"3:15 · The Noun", clock:"3:15",
       title:"“Great for Your Visibility”",
       scene:"The boss: “Big client thing this weekend — would be huge for your visibility if you jumped in.” No extra pay. Just the noun.",
@@ -120,6 +200,16 @@ const NineToSurvive = (() => {
       ]
     },
     {
+      tag:"3:40 · Personal Brand", clock:"3:40",
+      title:"Brad Is “Humbled to Announce”",
+      scene:"Brad's LinkedIn post about “grinding while others sleep” features a 5 AM gym selfie and the word “blessed.” It has 400 likes. Two are from your leadership team. He watches you read it.",
+      choices:[
+        {t:"Like it. Comment “🔥 inspiring!”", s:5, so:-8, o:"Brad nods at you across the bullpen like a general reviewing troops. Your comment is part of his personal brand now. So are you."},
+        {t:"Scroll past. Liking nothing is a statement too.", s:-2, so:6, o:"Brad notices the silence — they always notice. Your feed stays clean. Your soul stays yours. His metrics dip by exactly one."},
+        {t:"Like it without commenting. The minimum tribute.", s:2, so:-1, o:"One thumb, zero words. The algorithm is fed, the alliance maintained, the self only slightly discounted. Transactional and complete."}
+      ]
+    },
+    {
       tag:"4:05 · The Self-Assessment", clock:"4:05",
       title:"Rate Your Own Performance",
       scene:"Annual review. Rate yourself 1–5 and “provide evidence.” Too high: arrogant. Too low: they’ll believe you.",
@@ -127,6 +217,16 @@ const NineToSurvive = (() => {
         {t:"A modest 3. Stay humble.", s:-4, so:-3, o:"You wrote “3 — met expectations.” They met your low expectations of yourself and adjusted the raise to match. Humility is a pay cut."},
         {t:"A 5, with every win and the receipts.", s:7, so:3, o:"You wrote it the way Brad would — except true. Turns out advocating for yourself is just Brad’s whole strategy, minus the lying."},
         {t:"A 4, and quietly cc the wins to your own inbox.", s:3, so:4, o:"Confident, not delusional, with a paper trail for the next place. This is the sweet spot and you know it."}
+      ]
+    },
+    {
+      tag:"4:30 · The Anonymous Survey", clock:"4:30",
+      title:"“Share Feedback on Devon's Departure?”",
+      scene:"Devon quit loudly on Tuesday. HR invites you to “share context” about why — a survey, anonymous, “we promise.” Question one asks how likely Devon's reasons are to also be your reasons, 1 through 5.",
+      choices:[
+        {t:"Everything is great! 5s across the board.", s:4, so:-9, o:"Your five stars join the wall of five stars behind which nothing changes. Devon's reasons remain everyone's reasons. Anonymously."},
+        {t:"Answer honestly. All of it. Names, dates, the sync.", s:-7, so:10, o:"The survey is “anonymous” the way glass is “private.” Someone in People Ops now has a folder that matches your writing style. Devon would be proud."},
+        {t:"Decline the survey. Text Devon congratulations instead.", s:0, so:5, o:"The only honest exit interview happens over text, to the person who left. “It's better out here,” Devon writes. You believe them."}
       ]
     },
     {
@@ -534,9 +634,15 @@ const CAST = [
             bad:'Brad presented her numbers this morning.' } }
 ];
 
-// Which NPC owns each encounter in the pool (by ENCOUNTERS index).
-const OWNER_BY_ENC = { 0:'boss', 1:'brad', 2:'boss', 3:'hr', 4:'brad',
-                       5:'hr', 6:'dennis', 7:'boss', 8:'hr', 9:'boss' };
+// Which NPC owns each encounter in the pool (by ENCOUNTERS index, clock order):
+//  0 sync  1 reply-all  2 credit  3 calibration  4 ambush  5 reorg  6 trivia
+//  7 consultant  8 farewell-card  9 offline  10 family  11 notes  12 expense
+// 13 dennis-questions  14 noise  15 visibility  16 linkedin  17 self-assess
+// 18 exit-survey  19 closer
+const OWNER_BY_ENC = { 0:'boss', 1:'marcus', 2:'brad', 3:'hr', 4:'boss',
+                       5:'boss', 6:'hr', 7:'hr', 8:'kayla', 9:'brad',
+                       10:'boss', 11:'hr', 12:'dennis', 13:'dennis', 14:'priya',
+                       15:'boss', 16:'brad', 17:'hr', 18:'hr', 19:'boss' };
 
 const MOODS = ['good','meh','bad'];
 const MOOD_FACE = { good:'😊', meh:'😐', bad:'😤' };

@@ -17,7 +17,7 @@ let pass=0, fail=0; const lines=[];
 function ok(name, cond, extra){ (cond?pass++:fail++); lines.push((cond?'PASS  ':'FAIL  ')+name+(extra?'  ['+extra+']':'')); }
 
 // ---- 1. content integrity ---------------------------------------------------
-ok('ten encounters in the pool', G.ENCOUNTERS.length === 10, 'got '+G.ENCOUNTERS.length);
+ok('twenty encounters in the pool', G.ENCOUNTERS.length === 20, 'got '+G.ENCOUNTERS.length);
 let wellFormed = true, badField = '';
 G.ENCOUNTERS.forEach((e,i)=>{
   if(!e.tag||!e.clock||!e.title||!e.scene){ wellFormed=false; badField='meta@'+i; }
@@ -55,14 +55,15 @@ ok('day plan entries are distinct + clock-ordered', g0.plan.every((v,i,a)=> i===
 const g0b = G.newGame(42);
 ok('same seed = same day plan (deterministic)', JSON.stringify(g0.plan)===JSON.stringify(g0b.plan));
 
-// the novelty cycle: five 2-card days tour all ten encounters before any repeat
+// the novelty cycle: ten 2-card days tour all twenty encounters before any repeat
 const gt = G.newGame(31);
 let tour = gt.plan.slice();
-for(let d = 0; d < 4; d++){ G.nextDay(gt); tour = tour.concat(gt.plan); }
-ok('first five days show all ten encounters exactly once',
-  JSON.stringify(tour.slice().sort((a,b)=>a-b)) === JSON.stringify([0,1,2,3,4,5,6,7,8,9]), tour.join(','));
+for(let d = 0; d < 9; d++){ G.nextDay(gt); tour = tour.concat(gt.plan); }
+const fullPool = G.ENCOUNTERS.map((_, i) => i);
+ok('first ten days show all twenty encounters exactly once',
+  JSON.stringify(tour.slice().sort((a,b)=>a-b)) === JSON.stringify(fullPool), tour.join(','));
 G.nextDay(gt);
-ok('day 6 opens a fresh cycle', gt.plan.length === G.DAY_ENCOUNTERS && gt.seen.length === G.DAY_ENCOUNTERS);
+ok('day 11 opens a fresh cycle', gt.plan.length === G.DAY_ENCOUNTERS && gt.seen.length === G.DAY_ENCOUNTERS);
 ok('the tour is seed-deterministic', (() => {
   const a = G.newGame(31), b = G.newGame(31);
   for(let d = 0; d < 6; d++){

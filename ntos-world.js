@@ -107,9 +107,15 @@ const CAST = [
             bad:'Brad presented her numbers this morning.' } }
 ];
 
-// Which NPC owns each encounter in the pool (by ENCOUNTERS index).
-const OWNER_BY_ENC = { 0:'boss', 1:'brad', 2:'boss', 3:'hr', 4:'brad',
-                       5:'hr', 6:'dennis', 7:'boss', 8:'hr', 9:'boss' };
+// Which NPC owns each encounter in the pool (by ENCOUNTERS index, clock order):
+//  0 sync  1 reply-all  2 credit  3 calibration  4 ambush  5 reorg  6 trivia
+//  7 consultant  8 farewell-card  9 offline  10 family  11 notes  12 expense
+// 13 dennis-questions  14 noise  15 visibility  16 linkedin  17 self-assess
+// 18 exit-survey  19 closer
+const OWNER_BY_ENC = { 0:'boss', 1:'marcus', 2:'brad', 3:'hr', 4:'boss',
+                       5:'boss', 6:'hr', 7:'hr', 8:'kayla', 9:'brad',
+                       10:'boss', 11:'hr', 12:'dennis', 13:'dennis', 14:'priya',
+                       15:'boss', 16:'brad', 17:'hr', 18:'hr', 19:'boss' };
 
 const MOODS = ['good','meh','bad'];
 const MOOD_FACE = { good:'😊', meh:'😐', bad:'😤' };
