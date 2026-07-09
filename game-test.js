@@ -709,6 +709,33 @@ ok('dead-eyed day: Most Dead Inside', G.dayAward(gH4) === 'Most Dead Inside');
 ok('headline/award are pure functions of run state', G.dayHeadline(gH4) === G.dayHeadline(gH4)
   && G.dayAward(gH4) === G.dayAward(gH4));
 
+// ---- 17. share copy carries the story ------------------------------------------
+const gS0 = G.newGame(501);
+ok('a storyless run falls back to the plain format', G.storyLine(gS0) === null
+  && /unremarkable tenure/.test(G.shareText(gS0)) && /NINE TO SURVIVE/.test(G.shareText(gS0)));
+const gS1 = G.newGame(501);
+gS1.npcState.brad.flags.walkedOut = true;
+ok('watching the firing leads the share', /walked out at lunch for working two jobs/.test(G.shareText(gS1)));
+const gS2 = G.newGame(501);
+G.addReceipt(gS2, 'screenshot_brad_deck');
+gS2.escaped = true; gS2.over = true; gS2.day = 12; gS2.money = 3340; gS2.soul = 42;
+ok('escaping with the screenshot: the brief\'s line, from real state',
+  /escaped on Day 12 with \$3,340, 42 Soul, and one screenshot/.test(G.shareText(gS2)));
+const gS3 = G.newGame(501);
+gS3.failed = 'standing'; gS3.over = true; gS3.day = 9;
+ok('managed out: transition line', /Managed out on Day 9\. HR called it a transition/.test(G.shareText(gS3)));
+const gS4 = G.newGame(501);
+gS4.stats.crunchWins = 4; gS4.stats.bradSteals = 2; gS4.stats.warnings = 1;
+ok('counters make a survived-list', /Survived 4 fire drills, 2 Brad thefts, and 1 formal warning\./.test(G.shareText(gS4)));
+const gS5 = G.newGame(501);
+gS5.npcState.boss.flags.sympathetic = true; gS5.npcState.boss.counters.quickCalls = 3;
+ok('the emotional-support-animal run tells on itself', /emotional support animal/.test(G.shareText(gS5)));
+ok('share text never invents: fresh run has no arc claims', (() => {
+  const t = G.shareText(G.newGame(502));
+  return !/Brad/.test(t) && !/screenshot/.test(t) && !/survey/.test(t);
+})());
+ok('share is a pure function of g', G.shareText(gS4) === G.shareText(gS4));
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');

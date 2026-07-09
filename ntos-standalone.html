@@ -821,7 +821,7 @@ const NineToSurvive = (() => {
     if(!burnReceipt(g, 'screenshot_brad_deck')) return null;
     const d = applyStoryDelta(g, +10, +8);   // the theft, reversed, with interest
     const brad = g.npcState.brad;
-    brad.trust -= 3; brad.stress = 3;
+    brad.trust -= 3; brad.stress = 3; brad.flags.burned = true;
     const a = g.arcs.brad_second_job;
     if(a && a.stage === 8 && !brad.flags.covered){ a.stage = 5; a.waited = 0; }  // the moment un-passes
     pushFeed(g, min, 'The projector saw everything. So did Meredith.');
@@ -1028,6 +1028,51 @@ const NineToSurvive = (() => {
     };
   }
 
+  // ---- Share copy that carries the story ----------------------------------------
+  // The lead line is the run's best real incident, from counters, receipts, and
+  // arc outcomes — never invented. Returns null when the run produced no story
+  // (the shell then falls back to the plain format).
+  function storyLine(g){
+    const brad = g.npcState.brad, boss = g.npcState.boss;
+    const s = g.stats || {};
+    if(brad.flags.walkedOut)
+      return 'I watched Brad get walked out at lunch for working two jobs. His deliverables are my “growth opportunity” now.';
+    if(brad.flags.burned)
+      return 'I put Brad’s other job on the projector mid-meeting. My analysis is mine again. With interest.';
+    if(g.escaped && hasReceipt(g, 'screenshot_brad_deck'))
+      return 'I escaped on Day ' + g.day + ' with ' + fmt(g.money) + ', ' + g.soul
+        + ' Soul, and one screenshot that could end Brad’s quarter.';
+    if(hasReceipt(g, 'screenshot_brad_deck'))
+      return 'Holding one screenshot that could end Brad’s quarter. Haven’t decided. That’s the fun part.';
+    if(hasReceipt(g, 'hr_survey_metadata'))
+      return 'Survived an anonymous survey that knew my middle name. I kept the metadata.';
+    if(brad.flags.covered)
+      return 'I caught Brad working a second job and covered for him. My inbox is a protected wetland. My soul, less so.';
+    if(boss.flags.sympathetic && (boss.counters.quickCalls || 0) >= 2)
+      return 'I became the corner office’s emotional support animal. Standing: excellent. Soul: on file with HR.';
+    if(g.failed === 'standing')
+      return 'Managed out on Day ' + g.day + '. HR called it a transition, which is how you know it was a firing.';
+    if(g.failed === 'soul')
+      return 'Promoted to management on Day ' + g.day + '. Please do not congratulate me.';
+    const bits = [];
+    if(s.crunchWins + s.crunchFails > 0) bits.push((s.crunchWins + s.crunchFails) + ' fire drill' + (s.crunchWins + s.crunchFails > 1 ? 's' : ''));
+    if(s.bradSteals > 0) bits.push(s.bradSteals + ' Brad theft' + (s.bradSteals > 1 ? 's' : ''));
+    if(s.warnings > 0) bits.push(s.warnings + ' formal warning' + (s.warnings > 1 ? 's' : ''));
+    if(bits.length >= 2) return 'Survived ' + bits.join(', ').replace(/, ([^,]*)$/, ', and $1') + '.';
+    return null;
+  }
+  function shareText(g){
+    const headline = g.over ? verdict(g).title : 'Still there. Still counting.';
+    const story = storyLine(g);
+    const lines = ['NINE TO SURVIVE — YOUR NUMBER'];
+    if(story) lines.push(story);
+    lines.push('Day ' + g.day + ' · ' + headline);
+    lines.push('Banked ' + fmt(g.money) + ' / ' + fmt(FU_TARGET) + ' · Standing ' + g.standing + ' · Soul ' + g.soul);
+    if(!story) lines.push('An unremarkable tenure, which was the plan.');
+    lines.push('Ungovernable. Unapologetic.');
+    return lines.join('\n');
+  }
+
   return {
     START, ENCOUNTERS, LADDER,
     FU_TARGET, DAY_ENCOUNTERS, BURN_BASE, BURN_STEP,
@@ -1043,7 +1088,8 @@ const NineToSurvive = (() => {
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
-    marcusTip, consumeCatchShield, dayHeadline, dayAward
+    marcusTip, consumeCatchShield, dayHeadline, dayAward,
+    storyLine, shareText
   };
 })();
 
@@ -3060,25 +3106,10 @@ function doWalkOut(){
   if(G.walkOut(g)) endGame();
 }
 
-/* ---- share card: plain text to the clipboard, receipts included ---- */
-function shareFlavor(){
-  const s = g.stats || {};
-  if(G.hasReceipt(g, 'screenshot_brad_deck')) return 'Holding one screenshot that could end Brad’s quarter.';
-  if(s.bradSteals > 0) return 'Brad stole ' + s.bradSteals + ' of my files and presented them as growth.';
-  if(s.crunchWins > 0) return 'Survived ' + s.crunchWins + ' fire drill' + (s.crunchWins > 1 ? 's' : '') + ' without learning anything.';
-  if(s.warnings > 0) return s.warnings + ' formal warning' + (s.warnings > 1 ? 's' : '') + ', zero formal changes.';
-  if(s.crunchFails > 0) return 'Missed ' + s.crunchFails + ' fire-drill deadline' + (s.crunchFails > 1 ? 's' : '') + '. The room saw.';
-  return 'An unremarkable tenure, which was the plan.';
-}
+/* ---- share card: plain text to the clipboard. The brain writes the story
+   (G.shareText leads with the run's best real incident); the shell only copies. ---- */
 function shareRun(btn){
-  const headline = g.over ? G.verdict(g).title : 'Still there. Still counting.';
-  const text = [
-    'NINE TO SURVIVE — YOUR NUMBER',
-    'Day ' + g.day + ' · ' + headline,
-    'Banked ' + G.fmt(g.money) + ' / ' + G.fmt(G.FU_TARGET) + ' · Standing ' + g.standing + ' · Soul ' + g.soul,
-    shareFlavor(),
-    'Ungovernable. Unapologetic.'
-  ].join('\n');
+  const text = G.shareText(g);
   const done = () => {
     const old = btn.textContent;
     btn.textContent = 'Copied.';

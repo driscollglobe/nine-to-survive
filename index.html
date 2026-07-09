@@ -1054,25 +1054,10 @@ function doWalkOut(){
   if(G.walkOut(g)) endGame();
 }
 
-/* ---- share card: plain text to the clipboard, receipts included ---- */
-function shareFlavor(){
-  const s = g.stats || {};
-  if(G.hasReceipt(g, 'screenshot_brad_deck')) return 'Holding one screenshot that could end Brad’s quarter.';
-  if(s.bradSteals > 0) return 'Brad stole ' + s.bradSteals + ' of my files and presented them as growth.';
-  if(s.crunchWins > 0) return 'Survived ' + s.crunchWins + ' fire drill' + (s.crunchWins > 1 ? 's' : '') + ' without learning anything.';
-  if(s.warnings > 0) return s.warnings + ' formal warning' + (s.warnings > 1 ? 's' : '') + ', zero formal changes.';
-  if(s.crunchFails > 0) return 'Missed ' + s.crunchFails + ' fire-drill deadline' + (s.crunchFails > 1 ? 's' : '') + '. The room saw.';
-  return 'An unremarkable tenure, which was the plan.';
-}
+/* ---- share card: plain text to the clipboard. The brain writes the story
+   (G.shareText leads with the run's best real incident); the shell only copies. ---- */
 function shareRun(btn){
-  const headline = g.over ? G.verdict(g).title : 'Still there. Still counting.';
-  const text = [
-    'NINE TO SURVIVE — YOUR NUMBER',
-    'Day ' + g.day + ' · ' + headline,
-    'Banked ' + G.fmt(g.money) + ' / ' + G.fmt(G.FU_TARGET) + ' · Standing ' + g.standing + ' · Soul ' + g.soul,
-    shareFlavor(),
-    'Ungovernable. Unapologetic.'
-  ].join('\n');
+  const text = G.shareText(g);
   const done = () => {
     const old = btn.textContent;
     btn.textContent = 'Copied.';
