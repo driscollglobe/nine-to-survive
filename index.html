@@ -394,8 +394,10 @@ function beginDay(){
   rafId = requestAnimationFrame(loop);
 }
 
+let lastRafAt = 0;
 function loop(t){
   if($id('play').classList.contains('hidden')){ rafId = null; return; }
+  lastRafAt = performance.now();
   const dt = lastT ? Math.min(0.12, (t - lastT) / 1000) : 0.016;
   lastT = t;
   const signal = W.step(world, dt);
@@ -487,6 +489,65 @@ function updateJobline(){
   $id('jobline-r').textContent = '+' + G.fmt(G.LADDER[g.jobIdx].pay) + '/day';
 }
 
+/* ---- movie mode (?movie=1): dev autopilot so a real rAF tab can run for hours.
+   Auto-starts, holds the desk, plays choice 2 on cards, wins fire drills,
+   clocks in every morning (greed button included — it never walks out), and
+   logs one line per day. Completely inert without the flag. Works from file://
+   too: location.search is populated for file URLs. ---- */
+const MOVIE = /[?&]movie=1/.test(window.location.search);
+let movieLoggedDay = 0;
+if(MOVIE){
+  console.log('[MOVIE] autopilot on');
+  setInterval(() => {
+    // background tabs suspend rAF entirely — if the render loop is starved,
+    // drive the simulation from here so an hours-long soak never freezes
+    if(world && !$id('play').classList.contains('hidden')
+       && performance.now() - lastRafAt > 1000){
+      for(let i = 0; i < 16; i++){
+        const s = W.step(world, 0.12);
+        if(s) handleSignal(s);
+        if(!world || !world.running) break;
+      }
+    }
+    if(!$id('start').classList.contains('hidden')){ startGame(); return; }
+    if(!$id('end').classList.contains('hidden')){
+      if(movieLoggedDay !== -1){
+        movieLoggedDay = -1;
+        console.log('[MOVIE] GAME OVER — day', g.day, 'standing', g.standing,
+          'soul', g.soul, 'bank $' + g.money, g.escaped ? 'ESCAPED' : ('failed: ' + g.failed));
+      }
+      return;
+    }
+    if(!$id('dayend').classList.contains('hidden')){
+      if(movieLoggedDay !== g.day && g.dayReport){
+        movieLoggedDay = g.day;
+        console.log('[MOVIE] day', g.day, '· standing', g.standing, '· soul', g.soul,
+          '· $' + g.money, '· tasks', g.dayReport.tasksDone + '/' + g.dayReport.tasksTotal,
+          G.canWalkOut(g) ? '· COULD WALK OUT (greeding on)' : '');
+      }
+      clockIn();
+      return;
+    }
+    if(!$id('cardoverlay').classList.contains('hidden')){
+      if(!$id('enc').classList.contains('hidden')){
+        const c = document.querySelectorAll('#choices .choice')[2];
+        if(c) c.click();
+      } else {
+        $id('nextbtn').click();
+      }
+      return;
+    }
+    if(!$id('crunchmodal').classList.contains('hidden')){
+      $id('workbtn').click();   // mashes to a win, then the same button closes it
+      return;
+    }
+    if(world && world.running && !world.playerErrand && !W.playerAtDesk(world)){
+      const you = W.getActor(world, 'you');
+      if(!you.path.length) W.playerGoHome(world);
+    }
+  }, 120);
+}
+
 /* ---- stuck watchdog: if the clock freezes with no modal up, dump world state ---- */
 let wdClock = -1, wdMovedAt = 0;
 setInterval(() => {
@@ -570,6 +631,8 @@ function crunchTick(){
 $id('workbtn').addEventListener('click', () => {
   if(!crunchState) return;
   if(crunchState.done){ closeCrunch(); return; }
+  // if the rAF countdown was starved (background tab), a click settles it
+  if(performance.now() >= crunchState.deadline) return finishCrunch();
   crunchState.clicks++;
   $id('crunchcount').textContent = crunchState.clicks + ' / ' + CRUNCH_CLICKS;
   if(crunchState.clicks >= CRUNCH_CLICKS) finishCrunch();
