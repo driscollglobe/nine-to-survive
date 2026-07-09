@@ -49,11 +49,13 @@ const FURNITURE = [
   { id:'plant-2',     label:null,        x:30, y:10, w:1, d:1, h:0.9,  color:'#4e7a4e' },
   { id:'plant-3',     label:null,        x:2,  y:12, w:1, d:1, h:0.9,  color:'#4e7a4e' },
   { id:'couch',       label:'COUCH',     x:2,  y:22, w:3, d:1, h:0.5,  color:'#b56a4f' },
+  { id:'stairs',      label:'STAIRS',    x:38, y:12, w:1, d:2, h:0.9,  color:'#6b675e' },
   { id:'exit',        label:'EXIT',      x:0,  y:16, w:1, d:2, h:1.1,  color:'#2E9E63' }
 ];
 const COFFEE_SPOT = { x:22, y:9 };
 const COUCH_SPOT  = { x:3,  y:21 };
 const EXIT_SPOT   = { x:1,  y:17 };
+const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -188,12 +190,16 @@ function adjacentTo(w, actor){
 
 // ── world construction ────────────────────────────────────────────────────────
 // plan = the day's encounter indices from NineToSurvive (already clock-ordered).
-function newDay(seed, day, plan){
+// flags = NineToSurvive.worldFlagsFor(g): arc stage flags the world stages
+// physically (clues, detours, the firing, incident cards). Plain data, one-way.
+function newDay(seed, day, plan, flags){
+  flags = flags || {};
   const w = {
     day,
+    flags,
     rngState: ((seed | 0) ^ Math.imul(day, 2654435761)) | 0,
     walk: buildWalkGrid(),
-    actors: CAST.map(c => ({
+    actors: CAST.filter(c => !(flags.bradGone && c.id === 'brad')).map(c => ({
       id: c.id, name: c.name, role: c.role, color: c.color, bear: !!c.bear,
       chat: !!c.chat,
       x: c.spot.x, y: c.spot.y, home: { x: c.spot.x, y: c.spot.y },
@@ -203,12 +209,16 @@ function newDay(seed, day, plan){
     clockMin: 540,           // 9:00 AM
     running: true,
     sig: [],                 // signal queue → shell drains via step()'s return
-    // cards (rare spice): owner walks over at the card's clock time
+    // cards (rare spice) + any arc incidents: the owner walks over at the
+    // event's clock minute. One sorted queue; incidents gate 5 PM like cards.
     events: plan.map(encIdx => ({
-      encIdx, owner: OWNER_BY_ENC[encIdx],
+      kind: 'card', encIdx, owner: OWNER_BY_ENC[encIdx],
       atMin: clockToMin(_encounters[encIdx].clock),
       status: 'pending'      // pending → walking → active → done
-    })),
+    })).concat((flags.incidents || []).map(inc => ({
+      kind: 'incident', id: inc.id, owner: inc.owner, atMin: inc.atMin,
+      status: 'pending'
+    }))).sort((a, b) => a.atMin - b.atMin),
     nextEvent: 0,
     activeEvent: null,
     // the actual work: tasks land in your inbox through the day (load seeded below)
@@ -218,6 +228,9 @@ function newDay(seed, day, plan){
     bossWalks: [],           // [{atMin, status:'pending'|'out'|'done'}]
     bradRaids: [],
     crunch: null,            // {atMin, status}
+    // Brad-arc staging: the deck detour and the firing you can watch
+    bradDeck: flags.bradDeckAt ? { atMin: flags.bradDeckAt, status: 'pending' } : null,
+    firing: flags.bradFiredToday ? { phase: 'wait' } : null,
     // recovery economy (once a day each)
     coffeeUsed: false, couchUsed: false, chatted: {},
     playerErrand: null,      // {type:'coffee'|'couch'|'chat'|'exit', id?, repaths}
@@ -235,16 +248,20 @@ function newDay(seed, day, plan){
   w.tasks.spawnAt = [540, 540, 540];
   const drip = Math.floor(390 / Math.max(1, w.tasks.total - 3));
   for(let i = 3; i < w.tasks.total; i++) w.tasks.spawnAt.push(560 + (i - 3) * drip);
-  // boss floor-walks: two, spaced through the day
-  for(let i = 0; i < BOSS_WALKS_PER_DAY; i++)
-    w.bossWalks.push({ atMin: 620 + i * 170 + Math.floor(rand(w) * 60), status: 'pending' });
-  // brad raids: one or two
-  const raids = 1 + (rand(w) < 0.5 ? 1 : 0);
+  // boss floor-walks: two, spaced through the day (+1 while his arc runs hot)
+  const walks = BOSS_WALKS_PER_DAY + (flags.extraBossWalks || 0);
+  for(let i = 0; i < walks; i++)
+    w.bossWalks.push({ atMin: Math.min(990, 620 + i * (walks > 2 ? 130 : 170) + Math.floor(rand(w) * 60)),
+                       status: 'pending' });
+  // brad raids: one or two — unless he's covered-for, gone, or busy being fired
+  // (the roll still spends rng so staging stays comparable across arc states)
+  const raidRoll = rand(w);
+  const raids = (flags.noBradRaids || flags.bradGone) ? 0 : 1 + (raidRoll < 0.5 ? 1 : 0);
   for(let i = 0; i < raids; i++)
     w.bradRaids.push({ atMin: 600 + Math.floor(rand(w) * 360), status: 'pending' });
   w.bradRaids.sort((a, b) => a.atMin - b.atMin);
-  // maybe a fire drill
-  if(rand(w) < CRUNCH_CHANCE)
+  // maybe a fire drill (likelier while the corner office is spiraling)
+  if(rand(w) < CRUNCH_CHANCE + (flags.crunchBoost || 0))
     w.crunch = { atMin: 690 + Math.floor(rand(w) * 120), status: 'pending' };
   return w;
 }
@@ -311,17 +328,20 @@ function step(w, dt){
     // already on the target tile — treat that as arrived, or the day deadlocks
     // (e.g. a card owner already adjacent never reaches 'atPlayer').
     if(a.state !== 'idle' && a.state !== 'atPlayer'){ handleArrival(w, a, you); return; }
-    if(a.state !== 'idle' || a.id === 'you') return;
+    if(a.state !== 'idle' || a.id === 'you' || a.off) return;
     a.wanderT -= dt;
     if(a.wanderT <= 0){
       a.wanderT = 3 + rand(w) * 8;
       const r = rand(w);
+      // Brad on two payrolls spends his idle time in the stairwell, phone out
+      const stairbound = a.id === 'brad' && w.flags.bradCalls;
       if(r < 0.30){
+        if(stairbound){ sendTo(w, a, STAIRS_SPOT, 'walking'); return; }
         const tx = a.home.x + Math.floor(rand(w) * 7) - 3;
         const ty = a.home.y + Math.floor(rand(w) * 7) - 3;
         if(isWalkable(w, tx, ty)) sendTo(w, a, { x: tx, y: ty }, 'walking');
       } else if(r < 0.42){
-        sendTo(w, a, COFFEE_SPOT, 'walking');
+        sendTo(w, a, stairbound ? STAIRS_SPOT : COFFEE_SPOT, 'walking');
       } else if(Math.abs(a.x - a.home.x) + Math.abs(a.y - a.home.y) > 0.6){
         sendTo(w, a, a.home, 'returning');
       }
@@ -351,18 +371,42 @@ function step(w, dt){
   // ---- brad raid ----
   const brad = getActor(w, 'brad');
   w.bradRaids.forEach(br => {
-    if(br.status === 'pending' && w.clockMin >= br.atMin && brad.state === 'idle'){
+    if(br.status === 'pending' && w.clockMin >= br.atMin && brad && !brad.off && brad.state === 'idle'){
       if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'raid'))
         br.status = 'out';
     }
   });
 
-  // ---- the day's cards (owner walks over at the card's minute) ----
+  // ---- the deck detour: Brad walks his other job right past your desk ----
+  if(w.bradDeck && w.bradDeck.status === 'pending' && w.clockMin >= w.bradDeck.atMin
+     && brad && !brad.off
+     && (brad.state === 'idle' || brad.state === 'walking' || brad.state === 'returning')){
+    brad.path = [];
+    if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'deck'))
+      w.bradDeck.status = 'out';
+  }
+
+  // ---- the firing: a world event you can watch, start to door ----
+  if(w.firing && w.firing.phase !== 'done'){
+    const hr = getActor(w, 'hr');
+    if(w.firing.phase === 'wait' && w.clockMin >= 690){          // 11:30 all-hands
+      w.firing.phase = 'allhands';
+      w.sig.push({ type: 'bradallhands' });
+    } else if(w.firing.phase === 'allhands' && w.clockMin >= 720 && brad && hr){  // noon
+      brad.path = [];
+      sendTo(w, brad, brad.home, 'returning');                   // he's asked to "grab a room"
+      hr.path = [];
+      if(sendTo(w, hr, adjacentTo(w, brad.home), 'escort')) w.firing.phase = 'collect';
+    }
+  }
+
+  // ---- the day's cards + arc incidents (owner walks over at the minute) ----
   if(w.nextEvent < w.events.length){
     const ev = w.events[w.nextEvent];
     if(ev.status === 'pending' && w.clockMin >= ev.atMin){
       const owner = getActor(w, ev.owner);
-      if(owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning'){
+      if(owner && !owner.off
+         && (owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning')){
         owner.path = [];
         // status advances only if the walk starts; otherwise retry next tick
         if(sendTo(w, owner, adjacentTo(w, you), 'summoned')) ev.status = 'walking';
@@ -374,7 +418,9 @@ function step(w, dt){
         ev.status = 'active';
         w.activeEvent = ev;
         w.running = false;
-        w.sig.push({ type:'encounter', event: ev });
+        w.sig.push(ev.kind === 'incident'
+          ? { type:'arcincident', id: ev.id, event: ev }
+          : { type:'encounter', event: ev });
       }
     }
   }
@@ -395,6 +441,34 @@ function handleArrival(w, a, you){
   else if(a.state === 'errand' && a.id === 'you'){ a.state = 'idle'; arriveErrand(w, you); }
   else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
   else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
+  else if(a.state === 'deck' && a.id === 'brad'){
+    // the slip: your desk, his laptop, their logo — then he's off to the stairwell
+    if(w.bradDeck) w.bradDeck.status = 'done';
+    w.sig.push({ type: 'braddeck' });
+    if(!sendTo(w, a, STAIRS_SPOT, 'walking')) sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'escort' && a.id === 'hr'){
+    const brad = getActor(w, 'brad');
+    if(!brad || brad.off){ a.state = 'idle'; }
+    else if(!brad.path.length && Math.hypot(brad.x - a.x, brad.y - a.y) <= 2.5){
+      // she has him. Both walk to the door; everyone pretends not to watch.
+      if(w.firing) w.firing.phase = 'walkout';
+      sendTo(w, brad, EXIT_SPOT, 'escorted');
+      sendTo(w, a, { x: 2, y: 17 }, 'escorting');
+    } else {
+      sendTo(w, a, adjacentTo(w, brad), 'escort');   // he moved; she follows
+    }
+  }
+  else if(a.state === 'escorting' && a.id === 'hr'){ sendTo(w, a, a.home, 'returning'); }
+  else if(a.state === 'escorted' && a.id === 'brad'){
+    // through the door. Off the floor, off payroll(s), out of the raid schedule —
+    // and two of his deliverables land in your inbox before the door shuts.
+    a.off = true; a.state = 'idle';
+    if(w.firing) w.firing.phase = 'done';
+    w.sig.push({ type: 'bradfired' });
+    w.tasks.pending += 2; w.tasks.total += 2; w.tasks.spawned += 2;
+    w.sig.push({ type: 'bradtasks', pending: w.tasks.pending });
+  }
   else { a.state = 'idle'; }
 }
 
@@ -527,6 +601,7 @@ function playerGoHome(w){
 function pickActorAt(w, gx, gy){
   let best = null, bestD = 0.75;
   w.actors.forEach(a => {
+    if(a.off) return;   // walked out; not clickable, not here
     const d = Math.hypot(a.x - gx, a.y - gy);
     if(d < bestD){ best = a; bestD = d; }
   });
@@ -551,6 +626,12 @@ function isExitAt(gx, gy){
 function statusOf(w, actor){
   if(actor.id === 'you') return { name:'You', role: actor.role, mood: null,
     line:'Tasks ship at your desk. Soul refills everywhere else. Choose.', face:'🦡', chat:false };
+  // the Brad arc shifts his status line before any card ever fires
+  if(actor.id === 'brad' && w.flags && w.flags.bradCalls){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '📵',
+      line: '“On a call.” It is the fourth call today. None of the calls have meeting links.',
+      chat: false };
+  }
   return {
     name: actor.name, role: actor.role, mood: actor.mood,
     face: MOOD_FACE[actor.mood],
@@ -627,7 +708,7 @@ function render(w, ctx, cam, vw, vh){
 
   const drawables = [];
   FURNITURE.forEach(f => drawables.push({ d: f.x + f.w / 2 + f.y + f.d / 2, f }));
-  w.actors.forEach(a => drawables.push({ d: a.x + a.y + 0.01, a }));
+  w.actors.forEach(a => { if(!a.off) drawables.push({ d: a.x + a.y + 0.01, a }); });
   drawables.sort((p, q) => p.d - q.d);
   drawables.forEach(item => {
     if(item.f) drawBox(ctx, cam, item.f, w);
@@ -681,18 +762,37 @@ function shade(hex, f){
 
 function drawBox(ctx, cam, f, w){
   const z = cam.z, hpx = f.h * 34 * z;
+  // Brad's desk after the walk-out: a rectangle of cleaner carpet
+  const col = (f.id === 'desk-brad' && w && w.flags && w.flags.bradGone) ? '#c9c1af' : f.color;
   const p = (gx, gy) => proj(cam, gx - 0.5, gy - 0.5);
   const [ax, ay] = p(f.x, f.y), [bx, by] = p(f.x + f.w, f.y);
   const [cx, cy] = p(f.x + f.w, f.y + f.d), [dx, dy] = p(f.x, f.y + f.d);
   ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
   ctx.lineTo(cx, cy - hpx); ctx.lineTo(dx, dy - hpx); ctx.closePath();
-  ctx.fillStyle = f.color; ctx.fill();
+  ctx.fillStyle = col; ctx.fill();
   ctx.beginPath(); ctx.moveTo(bx, by - hpx); ctx.lineTo(cx, cy - hpx);
   ctx.lineTo(cx, cy); ctx.lineTo(bx, by); ctx.closePath();
-  ctx.fillStyle = shade(f.color, 0.72); ctx.fill();
+  ctx.fillStyle = shade(col, 0.72); ctx.fill();
   ctx.beginPath(); ctx.moveTo(dx, dy - hpx); ctx.lineTo(cx, cy - hpx);
   ctx.lineTo(cx, cy); ctx.lineTo(dx, dy); ctx.closePath();
-  ctx.fillStyle = shade(f.color, 0.55); ctx.fill();
+  ctx.fillStyle = shade(col, 0.55); ctx.fill();
+  // the second laptop: a small extra machine on Brad's desk, lid up, screen lit
+  // in a blue-white that is not this company's blue-white
+  if(f.id === 'desk-brad' && w && w.flags && w.flags.bradLaptop && !w.flags.bradGone){
+    const [lx, ly] = proj(cam, f.x + 0.35 - 0.5, f.y + 0.2 - 0.5);
+    const ty = ly - hpx;
+    ctx.fillStyle = '#22262b';                                     // base slab
+    ctx.beginPath();
+    ctx.moveTo(lx, ty - 2 * z); ctx.lineTo(lx + 9 * z, ty + 2.5 * z);
+    ctx.lineTo(lx, ty + 7 * z); ctx.lineTo(lx - 9 * z, ty + 2.5 * z);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#dfe9f5';                                     // the lit lid
+    ctx.beginPath();
+    ctx.moveTo(lx - 9 * z, ty + 2.5 * z); ctx.lineTo(lx - 9 * z, ty - 8 * z);
+    ctx.lineTo(lx, ty - 12 * z); ctx.lineTo(lx, ty - 2 * z);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#22262b'; ctx.lineWidth = 1 * z; ctx.stroke();
+  }
   // the armed EXIT glows: your number is banked, the door is live
   if(f.id === 'exit' && w && w.walkoutArmed){
     ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
@@ -796,7 +896,7 @@ function drawActor(ctx, cam, a, w){
 }
 
 return {
-  GRID_W, GRID_H, TW, TH, CAST, FURNITURE, ZONES, OWNER_BY_ENC,
+  GRID_W, GRID_H, TW, TH, CAST, FURNITURE, ZONES, OWNER_BY_ENC, STAIRS_SPOT,
   TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,

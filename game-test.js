@@ -381,6 +381,134 @@ ok('burnReceipt spends it, lifetime count keeps score',
 ok('cannot burn what you never had', !G.burnReceipt(gr, 'dennis_approval_timestamp'));
 ok('receipts JSON round-trip clean', JSON.stringify(JSON.parse(JSON.stringify(gr.receipts))) === JSON.stringify(gr.receipts));
 
+// ---- 14. the Brad second-job arc: every branch ----------------------------------
+// march a fresh career to the discovery morning (meters pinned so nothing dies)
+function toDiscovery(seed){
+  const g2 = G.newGame(seed);
+  let guard = 0;
+  while((g2.arcs.brad_second_job || { stage: 0 }).stage < 4 && guard++ < 12){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return g2;
+}
+const gd1 = toDiscovery(101);
+ok('discovery morning: stage 4 + the card staged for today',
+  gd1.arcs.brad_second_job.stage === 4
+  && gd1.todayIncidents.some(i => i.id === 'brad_discovery' && i.owner === 'brad'
+       && i.atMin >= 620 && i.atMin < 900), 'day='+gd1.day);
+ok('clue flags preceded the card: laptop + calls, deck minute staged on day 3 of arc', (() => {
+  const g2 = G.newGame(101);
+  const seen = { laptop: false, calls: false, deck: false };
+  while((g2.arcs.brad_second_job || { stage: 0 }).stage < 4){
+    const f = G.worldFlagsFor(g2);
+    if(f.bradLaptop) seen.laptop = true;
+    if(f.bradCalls) seen.calls = true;
+    if(f.bradDeckAt) seen.deck = true;
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return seen.laptop && seen.calls && seen.deck;
+})());
+// branch: SCREENSHOT — receipt banked, arc goes to exposed-waiting
+const gScr = toDiscovery(101);
+const soulBefore = gScr.soul;
+const rScr = G.applyIncidentChoice(gScr, 'brad_discovery', 0, 700);
+ok('screenshot: receipt banked, stage 5, outcome text', G.hasReceipt(gScr, 'screenshot_brad_deck')
+  && gScr.arcs.brad_second_job.stage === 5 && /camera roll/.test(rScr.outcome)
+  && gScr.soul === Math.min(100, soulBefore + 2));
+// branch: COVER — complicit: trust jumps, Soul pays, raids off for the run
+const gCov = toDiscovery(101);
+G.applyIncidentChoice(gCov, 'brad_discovery', 1, 700);
+ok('cover: trust +3, covered, Soul −6, stage 8', gCov.npcState.brad.trust === 3
+  && gCov.npcState.brad.flags.covered && gCov.arcs.brad_second_job.stage === 8);
+ok('cover: his raids stop for the rest of the run', (() => {
+  for(let d = 0; d < 6; d++){
+    if(!G.worldFlagsFor(gCov).noBradRaids) return false;
+    G.closeDay(gCov, { tasksDone: 8, tasksTotal: 8 });
+    gCov.standing = 60; gCov.soul = 70; gCov.failed = null; gCov.over = false;
+    G.nextDay(gCov);
+  }
+  return G.worldFlagsFor(gCov).noBradRaids && !G.worldFlagsFor(gCov).bradGone;
+})());
+// branch: LET IT RIDE — exposed-waiting, no receipt, no cover
+const gRide = toDiscovery(101);
+G.applyIncidentChoice(gRide, 'brad_discovery', 2, 700);
+ok('ride: stage 5, no receipt, not covered', gRide.arcs.brad_second_job.stage === 5
+  && !G.hasReceipt(gRide, 'screenshot_brad_deck') && !gRide.npcState.brad.flags.covered);
+// resolution: seeded — across seeds, some runs fire him, some let the moment pass
+function marchToResolution(seed){
+  const g2 = toDiscovery(seed);
+  G.applyIncidentChoice(g2, 'brad_discovery', 2, 700);   // let it ride
+  const events = { firedDay: null, quiet: false };
+  for(let d = 0; d < 8; d++){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+    const st = g2.arcs.brad_second_job.stage;
+    if(st === 6 && events.firedDay == null) events.firedDay = g2.day;
+    if(st === 8){ events.quiet = true; break; }
+    if(st === 7) break;
+  }
+  return { g: g2, events };
+}
+let firedRuns = 0, quietRuns = 0, firedG = null;
+for(let sd = 200; sd < 230; sd++){
+  const r = marchToResolution(sd);
+  if(r.events.firedDay != null){ firedRuns++; firedG = firedG || r.g; }
+  else if(r.events.quiet) quietRuns++;
+}
+ok('resolution is seeded: some runs fire him, some let it pass', firedRuns > 0 && quietRuns > 0,
+  firedRuns + ' fired / ' + quietRuns + ' quiet of 30');
+ok('fired: flag set, gone from the floor, raids over', firedG.npcState.brad.flags.fired
+  && G.worldFlagsFor(firedG).bradGone && G.worldFlagsFor(firedG).noBradRaids);
+ok('fired: his cards leave the day plan', (() => {
+  for(let d = 0; d < 12; d++){
+    if(firedG.plan.some(i => G.BRAD_ENCS.indexOf(i) >= 0)) return false;
+    G.closeDay(firedG, { tasksDone: 8, tasksTotal: 8 });
+    firedG.standing = 60; firedG.soul = 70; firedG.failed = null; firedG.over = false;
+    G.nextDay(firedG);
+  }
+  return true;
+})());
+ok('firing day itself plans no Brad cards (nothing to strand)', (() => {
+  // stage 6 (walked out at lunch) must already bar his cards that morning
+  for(let sd = 200; sd < 230; sd++){
+    const g2 = toDiscovery(sd);
+    G.applyIncidentChoice(g2, 'brad_discovery', 2, 700);
+    for(let d = 0; d < 8; d++){
+      G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+      g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+      G.nextDay(g2);
+      const st = g2.arcs.brad_second_job.stage;
+      if(st === 6 && g2.plan.some(i => G.BRAD_ENCS.indexOf(i) >= 0)) return false;
+      if(st >= 7 || st === 8) break;
+    }
+  }
+  return true;
+})());
+// the receipt play: Credit Reassigned grows a fourth choice, once
+const gUse = toDiscovery(101);
+G.applyIncidentChoice(gUse, 'brad_discovery', 0, 700);     // screenshot
+ok('holding the receipt: Credit Reassigned offers the burn', G.extraChoicesFor(gUse, 2).length === 1
+  && G.extraChoicesFor(gUse, 5).length === 0);
+gUse.standing = 50; gUse.soul = 50;
+const rBurn = G.applyExtraChoice(gUse, 2, 'burn_screenshot', 800);
+ok('burning it reverses the theft with interest (+10/+8)', rBurn.ds === 10 && rBurn.dso === 8
+  && !G.hasReceipt(gUse, 'screenshot_brad_deck'));
+ok('the burn is single-use', G.extraChoicesFor(gUse, 2).length === 0
+  && G.applyExtraChoice(gUse, 2, 'burn_screenshot', 800) === null);
+const gNoR = toDiscovery(101);
+G.applyIncidentChoice(gNoR, 'brad_discovery', 2, 700);     // no screenshot taken
+ok('no receipt, no fourth choice', G.extraChoicesFor(gNoR, 2).length === 0);
+ok('arc storyline is seed-deterministic end to end', (() => {
+  const a = marchToResolution(207), b = marchToResolution(207);
+  return JSON.stringify(a.g.arcs) === JSON.stringify(b.g.arcs)
+    && JSON.stringify(a.events) === JSON.stringify(b.events);
+})());
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');

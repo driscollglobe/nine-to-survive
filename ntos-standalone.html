@@ -277,10 +277,42 @@ const NineToSurvive = (() => {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
+  // Clearly-scoped local generators for the arc engine: seeded off g.runSeed (and
+  // never touching g.rngState), so adding or reordering arcs can never shift the
+  // day-plan stream or any established balance numbers.
+  function hashStr(s){
+    let h = 2166136261 | 0;
+    for(let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return h | 0;
+  }
+  function localRand(seed){
+    let s = seed | 0;
+    return () => {
+      s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // one-shot arc roll, unique per (run, arc, day, purpose)
+  function arcRand(g, key, salt){
+    return localRand((g.runSeed ^ hashStr(key) ^ Math.imul(g.day, 2654435761) ^ hashStr(salt || '')) | 0);
+  }
+
+  // Brad's cards, by ENCOUNTERS index. Once he's fired (or being walked out
+  // today), he stops delivering them — a dead man can't reassign your credit.
+  const BRAD_ENCS = [2, 9, 16];
+  function bradOutOfPlay(g){
+    if(!g.npcState || !g.npcState.brad) return false;
+    const a = (g.arcs && g.arcs.brad_second_job) || { stage: 0 };
+    return !!g.npcState.brad.flags.fired || a.stage === 6 || a.stage === 7;
+  }
+
   // Sample DAY_ENCOUNTERS distinct encounters for the day, replayed in clock order.
   // Prefers cards not yet seen this cycle (tracked on g.seen, so it serializes),
   // so a run tours the whole pool before anything repeats; then the cycle resets.
-  // Seeded and deterministic: same seed = same tour.
+  // Seeded and deterministic: same seed = same tour. Consults the Brad arc:
+  // with him out of play his cards leave the pool (identical rng stream otherwise).
   function planDay(g){
     if(!g.seen) g.seen = [];
     const pickFrom = (cands, n) => {
@@ -291,21 +323,32 @@ const NineToSurvive = (() => {
       }
       return pool.slice(0, n);
     };
-    const fresh = [];
-    for(let i = 0; i < ENCOUNTERS.length; i++) if(g.seen.indexOf(i) < 0) fresh.push(i);
+    const barred = bradOutOfPlay(g) ? BRAD_ENCS : [];
+    const inPool = [];
+    for(let i = 0; i < ENCOUNTERS.length; i++) if(barred.indexOf(i) < 0) inPool.push(i);
+    const fresh = inPool.filter(i => g.seen.indexOf(i) < 0);
     let plan;
     if(fresh.length >= DAY_ENCOUNTERS){
       plan = pickFrom(fresh, DAY_ENCOUNTERS);
       plan.forEach(i => g.seen.push(i));
-      if(g.seen.length >= ENCOUNTERS.length) g.seen = [];  // toured the pool: reset
+      if(g.seen.length >= inPool.length) g.seen = [];      // toured the pool: reset
     } else {
       plan = fresh.slice();                                // odd remainder: finish the cycle...
-      const rest = [];
-      for(let i = 0; i < ENCOUNTERS.length; i++) if(plan.indexOf(i) < 0) rest.push(i);
+      const rest = inPool.filter(i => plan.indexOf(i) < 0);
       plan = plan.concat(pickFrom(rest, DAY_ENCOUNTERS - plan.length));
       g.seen = plan.slice();                               // ...and start the next with today
     }
     return plan.sort((a, b) => a - b);
+  }
+
+  // The office lore layer: everyone you work with carries persistent state now.
+  // stress/trust move with incidents; flags hold arc secrets; counters feed
+  // headlines and share copy. All plain data — it rides the existing save.
+  const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya'];
+  function freshNpcState(){
+    const st = {};
+    NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {} }; });
+    return st;
   }
 
   // Fresh career. Day 1, Intern, seeded plan for the first day.
@@ -318,6 +361,12 @@ const NineToSurvive = (() => {
       lastChoice: null, dayReport: null,
       stats: { bradSteals: 0, crunchWins: 0, crunchFails: 0, warnings: 0 },
       taskStreak: 0, deadEyedToday: 0,
+      npcState: freshNpcState(),
+      arcs: {},              // per-arc runtime state, keyed by ARCS name — pure data
+      todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
+      receipts: { count: 0, flags: {} },
+      feed: [],              // today's office feed: [{m: clockMin, text}]
+      runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
     };
     g.plan = planDay(g);
@@ -398,6 +447,272 @@ const NineToSurvive = (() => {
     return { kind, ds: g.standing - b.s, dso: g.soul - b.so, deadEyed };
   }
 
+  // ---- The office feed (brain side): the brain owns what is feed-worthy --------
+  // Entries are deterministic and come only from real events, moods, arc stages,
+  // and incidents. The shell just renders g.feed; it invents nothing.
+  function pushFeed(g, min, text){
+    if(!g.feed) g.feed = [];
+    g.feed.push({ m: min | 0, text });
+  }
+
+  // ---- Receipts: evidence is a resource ----------------------------------------
+  // Named flags + counts on g (serializes with the save). `count` = held now,
+  // `earned` = lifetime — awards and share copy read both.
+  function addReceipt(g, name){
+    if(!g.receipts) g.receipts = { count: 0, flags: {} };
+    if(g.receipts.flags[name]) return false;
+    g.receipts.flags[name] = true;
+    g.receipts.count++;
+    g.receipts.earned = (g.receipts.earned || 0) + 1;
+    return true;
+  }
+  function hasReceipt(g, name){ return !!(g.receipts && g.receipts.flags[name]); }
+  function burnReceipt(g, name){
+    if(!hasReceipt(g, name)) return false;
+    delete g.receipts.flags[name];
+    g.receipts.count--;
+    return true;
+  }
+
+  // ---- The arc engine: serialized office lore -----------------------------------
+  // An arc is a named multi-day storyline with numbered stages. advanceArcs(g)
+  // runs every morning inside nextDay and decides stage progression
+  // deterministically from the run seed + npcState — via LOCAL generators only,
+  // so adding, removing, or reordering arcs can never shift the day-plan stream
+  // or any established balance numbers. Arcs write plain-data stage flags; the
+  // world reads them (through worldFlagsFor) to stage physical clues, and
+  // planDay consults them (a fired Brad stops delivering Brad cards).
+  // A future arc = one more entry in this table plus its incident handlers.
+  const ARCS = {
+
+    // BRAD IS MOONLIGHTING. Ambitious, performative, insecure — and on two
+    // payrolls. Stages: 0 dormant · 1 the second laptop appears · 2 “on a call”
+    // + stairwell trips · 3 the deck detour past your desk · 4 the discovery
+    // card · 5 exposed, waiting · 6 fired today (watch the floor) · 7 gone ·
+    // 8 closed quietly (you covered, or the moment somehow passed).
+    brad_second_job: {
+      npc: 'brad',
+      advance(g, a){
+        const brad = g.npcState.brad;
+        if(a.stage === 0){
+          if(a.startDay == null)
+            a.startDay = 2 + Math.floor(localRand((g.runSeed ^ hashStr('brad_start')) | 0)() * 3);
+          if(g.day >= a.startDay){
+            a.stage = 1; brad.stress = 1;
+            pushFeed(g, 540, 'Brad deleted a message.');
+          }
+        } else if(a.stage === 1){
+          a.stage = 2; brad.stress = 2;
+          pushFeed(g, 555, 'Brad: “on a call.” It is 9:15.');
+        } else if(a.stage === 2){
+          a.stage = 3;
+          a.deckAt = 610 + Math.floor(arcRand(g, 'brad', 'deck')() * 210);   // 10:10–1:40
+        } else if(a.stage === 3 || a.stage === 4){
+          // the morning after the slip — and every morning until it's answered:
+          // the discovery card comes. It cannot strand a day; incidents gate
+          // 5 PM exactly like cards do.
+          a.stage = 4;
+          g.todayIncidents.push({ id: 'brad_discovery', owner: 'brad',
+            atMin: 620 + Math.floor(arcRand(g, 'brad', 'discovery')() * 250) });
+        } else if(a.stage === 5){
+          // exposed and unreported: some mornings, payroll does the math
+          a.waited = (a.waited || 0) + 1;
+          if(arcRand(g, 'brad', 'fired')() < 0.5){
+            a.stage = 6; brad.stress = 3;
+            pushFeed(g, 540, 'All-hands moved to 11:30. “Please plan to attend.” Nobody plans to attend. Everybody attends.');
+          } else if(a.waited >= 3){
+            a.stage = 8;
+            pushFeed(g, 540, 'Brad archived a channel nobody knew existed. The moment passed. Somehow the moment passed.');
+          }
+        } else if(a.stage === 6){
+          a.stage = 7;
+          brad.flags.fired = true;    // idempotent with the world event's report
+          pushFeed(g, 540, 'Brad’s desk is a rectangle of cleaner carpet. IT reclaimed “an asset.” The org chart heals over him by lunch.');
+        }
+      }
+    },
+
+    // THE BOSS IS GOING THROUGH SOMETHING. Week two or later his bad days get a
+    // cause and a pattern. Stages: 0 dormant · 1 hot · 2 resolved. While hot the
+    // world stages an extra floor walk, a raised crunch chance, and “quick call”
+    // summons: sympathize and Standing climbs, his catches soften, and the
+    // summons become daily; deflect (or dodge) and they stop, but his catches
+    // hit harder for the arc's duration. More human. Not less dangerous.
+    boss_spiral: {
+      npc: 'boss',
+      advance(g, a){
+        const boss = g.npcState.boss;
+        if(a.stage === 0){
+          if(a.startDay == null){
+            const r = localRand((g.runSeed ^ hashStr('boss_start')) | 0);
+            a.startDay = 6 + Math.floor(r() * 4);        // week two: day 6–9
+            a.hotDays  = 4 + Math.floor(r() * 3);        // hot for 4–6 days
+          }
+          a.summonsToday = null;
+          if(g.day >= a.startDay){
+            a.stage = 1; boss.stress = 2;
+            pushFeed(g, 540, 'Boss is typing…');
+            pushFeed(g, 541, 'Boss is typing…');
+            pushFeed(g, 544, 'The corner office door is closed. It is never closed.');
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+          }
+        } else if(a.stage === 1){
+          a.summonsToday = null;
+          if(g.day >= a.startDay + a.hotDays){
+            a.stage = 2;
+            delete boss.flags.softCatch;   // the modifiers live only while it's hot
+            delete boss.flags.hardCatch;
+            pushFeed(g, 540, 'The corner office door is open again. Nobody mentions the week. That is the arrangement.');
+          } else if(boss.flags.sympathetic){
+            // you are the office's emotional support animal now: daily summons
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+            pushFeed(g, 540, 'Boss is typing…');
+          } else if(!boss.flags.deflected){
+            // no answer yet: the quick call keeps being requested
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+          }
+        }
+      }
+    }
+  };
+
+  // Run every arc's stage logic. Called each morning from nextDay; fixed key
+  // order + local generators = deterministic no matter how the floor was played.
+  function advanceArcs(g){
+    if(!g.arcs) g.arcs = {};
+    Object.keys(ARCS).sort().forEach(key => {
+      if(!g.arcs[key]) g.arcs[key] = { stage: 0 };
+      ARCS[key].advance(g, g.arcs[key]);
+      const npc = g.npcState[ARCS[key].npc];
+      if(npc) npc.arcStage = g.arcs[key].stage;
+    });
+  }
+
+  // ---- Arc incidents: story cards, fired by the world like any card ------------
+  // Not deck expansion — these exist only when an arc stages them, and their
+  // choices move npcState, receipts, and arc stages along with the meters.
+  const ARC_INCIDENTS = {
+    brad_discovery: {
+      tag: 'Incident · The Second Laptop',
+      title: 'Wrong Deck, Brad.',
+      scene: 'Brad spins his chair to reach his coffee and his second laptop faces you, awake and honest, for four full seconds: a slide deck wearing another company’s logo. Header: “Q3 GTM — CONFIDENTIAL.” Their Q3. His name is on the title slide. He hasn’t noticed. You have unbroken line of sight and a phone.',
+      choices: [
+        { key:'screenshot', t:'Screenshot it. Both monitors. Timestamp visible.', s:0, so:+2,
+          o:'Click. It lives in your camera roll now, between a parking receipt and a photo of a sandwich. You feel the specific warmth of holding something that outranks the org chart.' },
+        { key:'cover', t:'“Brad. Screen.” Cover for him.', s:0, so:-6,
+          o:'He slams the lid and looks at you the way drowning men look at driftwood. “You’re solid,” he whispers. Complicit. The word is complicit. Your inbox, at least, is now a protected wetland.' },
+        { key:'ride', t:'See nothing. Sip your coffee. Let it ride.', s:0, so:+1,
+          o:'You turn back to your monitor and let the universe keep its own books. Whatever happens to Brad now was always going to happen. You are merely no longer load-bearing.' }
+      ]
+    }
+  };
+
+  // Meter movement for anything that isn't a deck card: same clamps, same fail
+  // states, one place.
+  function applyStoryDelta(g, s, so){
+    const b = { s: g.standing, so: g.soul };
+    g.standing = clamp(g.standing + (s || 0));
+    g.soul     = clamp(g.soul + (so || 0));
+    if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
+    else if(g.soul <= 0 && !g.failed){ g.failed = 'soul'; g.over = true; }
+    return { ds: g.standing - b.s, dso: g.soul - b.so };
+  }
+
+  // Resolve an arc incident choice: meters move, npcState/receipts/arc stages
+  // follow. `min` is the world clock (for the feed's timestamps).
+  function applyIncidentChoice(g, id, choiceIndex, min){
+    const def = ARC_INCIDENTS[id];
+    if(!def || !def.choices[choiceIndex]) return null;
+    const c = def.choices[choiceIndex];
+    const d = applyStoryDelta(g, c.s, c.so);
+    const brad = g.npcState.brad;
+    if(id === 'brad_discovery'){
+      const a = g.arcs.brad_second_job;
+      brad.counters.discoveries = (brad.counters.discoveries || 0) + 1;
+      if(c.key === 'screenshot'){
+        addReceipt(g, 'screenshot_brad_deck');
+        brad.stress = 3; a.stage = 5;
+        pushFeed(g, min, 'Brad deleted a message.');
+        pushFeed(g, (min || 0) + 2, 'Brad deleted another message.');
+      } else if(c.key === 'cover'){
+        brad.trust += 3; brad.flags.covered = true; a.stage = 8;
+        pushFeed(g, min, 'Brad sent you a gif of a saluting otter, in a channel with two members. This is a binding contract now.');
+      } else {
+        a.stage = 5;
+        pushFeed(g, min, 'Brad turned his desk eleven degrees away from the aisle. Feng shui, he said.');
+      }
+    }
+    g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: c.o };
+    return g.lastChoice;
+  }
+
+  // The receipt play: holding the screenshot gives Brad's Credit-Reassigned card
+  // a fourth choice that burns it to reverse the theft, with interest.
+  const CREDIT_ENC = 2;
+  function extraChoicesFor(g, encIdx){
+    if(encIdx === CREDIT_ENC && hasReceipt(g, 'screenshot_brad_deck') && !bradOutOfPlay(g)){
+      return [{ key: 'burn_screenshot',
+        t: '“Quick question before we move on — Brad, how’s Q3 tracking at the other place?” Screen-share the screenshot.' }];
+    }
+    return [];
+  }
+  function applyExtraChoice(g, encIdx, key, min){
+    if(key !== 'burn_screenshot' || encIdx !== CREDIT_ENC) return null;
+    if(!burnReceipt(g, 'screenshot_brad_deck')) return null;
+    const d = applyStoryDelta(g, +10, +8);   // the theft, reversed, with interest
+    const brad = g.npcState.brad;
+    brad.trust -= 3; brad.stress = 3;
+    const a = g.arcs.brad_second_job;
+    if(a && a.stage === 8 && !brad.flags.covered){ a.stage = 5; a.waited = 0; }  // the moment un-passes
+    pushFeed(g, min, 'The projector saw everything. So did Meredith.');
+    g.lastChoice = { choiceIndex: 'burn_screenshot', ds: d.ds, dso: d.dso,
+      outcome: 'You put his other logo on the big screen, right next to your analysis. The room does the math at different speeds; the boss gets there last, then all at once. Your work is yours again, retroactively, with interest. Brad’s calendar goes “busy” for the rest of the afternoon.' };
+    return g.lastChoice;
+  }
+
+  // ---- Brad-arc world moments: the world stages them, the brain records them ----
+  function bradDeckSeen(g, min){
+    const brad = g.npcState.brad;
+    if(brad.flags.deckSeen) return false;
+    brad.flags.deckSeen = true;
+    pushFeed(g, min, 'Brad walked the long way past your desk carrying slides for a company that is not this company. Slide 4 said “Our Q3.” Not our our.');
+    return true;
+  }
+  function bradAllHands(g, min){
+    pushFeed(g, min, 'Brad joined the all-hands from a conference room with another company’s name in the Zoom background. Legal joined the thread. Everyone became normal.');
+  }
+  function bradFiredReport(g, min){
+    const brad = g.npcState.brad;
+    brad.flags.fired = true; brad.flags.walkedOut = true;
+    if(g.arcs.brad_second_job && g.arcs.brad_second_job.stage === 6) g.arcs.brad_second_job.stage = 7;
+    pushFeed(g, min, 'Meredith walked Brad to the door holding a box he was not allowed to carry himself. “We wish him well,” she said, in the past tense, while he was still in the room.');
+  }
+  function bradTasksAbsorbed(g, min){
+    pushFeed(g, min, 'Two of Brad’s deliverables just landed in your inbox. The email says “congratulations on the growth opportunity.” It is not a growth opportunity.');
+  }
+
+  // Everything the world needs to stage today, as plain data. The world module
+  // never reads g directly — this is the one bridge, and it's one-way.
+  function worldFlagsFor(g){
+    const A  = g.arcs || {};
+    const b  = A.brad_second_job || { stage: 0 };
+    const bo = A.boss_spiral || { stage: 0 };
+    const brad = (g.npcState && g.npcState.brad) || { flags: {} };
+    return {
+      bradLaptop:     b.stage >= 1 && b.stage <= 6,   // the second laptop, drawn
+      bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
+      bradDeckAt:     b.stage === 3 ? b.deckAt : null,
+      bradFiredToday: b.stage === 6,
+      bradGone:       b.stage === 7,     // stage 8 = closed quietly; he's still here
+      noBradRaids:    !!brad.flags.covered || b.stage === 6 || b.stage === 7,
+      bossArcHot:     bo.stage === 1,
+      extraBossWalks: bo.stage === 1 ? 1 : 0,
+      crunchBoost:    bo.stage === 1 ? 0.25 : 0,
+      bossSummonsAt:  (bo.stage === 1 && bo.summonsToday) || null,
+      incidents:      (g.todayIncidents || []).slice()
+    };
+  }
+
   // Advance past a resolved card. Cards no longer end the day — 5 PM does.
   // Returns 'gameover' | 'ok'.
   const DECAY_S     = 6;   // "what have you done for them lately" — daily standing decay
@@ -444,10 +759,15 @@ const NineToSurvive = (() => {
   }
 
   // The morning after a survived day: new date, fresh plan, the night forgives.
+  // Arcs advance FIRST — a fired Brad changes what planDay may pick — and they
+  // use local generators, so the g.rngState stream planDay consumes is untouched.
   function nextDay(g){
     g.day++; g.week = Math.floor((g.day - 1) / 5) + 1;
-    g.idxInDay = 0; g.plan = planDay(g); g.dayReport = null;
+    g.idxInDay = 0; g.dayReport = null;
     g.taskStreak = 0; g.deadEyedToday = 0;
+    g.feed = []; g.todayIncidents = [];
+    advanceArcs(g);
+    g.plan = planDay(g);
   }
 
   // Fire drill (a crunch, not a fire): deliver under a timer or eat a Standing hit.
@@ -516,7 +836,11 @@ const NineToSurvive = (() => {
     clamp, fmt, burnFor, soulDrainFor,
     newGame, planDay, currentEncounter, isFinalEncounter, jobTitle,
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,
-    applyCrunch, applyCoffee, applyWorldEffect
+    applyCrunch, applyCoffee, applyWorldEffect,
+    NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
+    pushFeed, addReceipt, hasReceipt, burnReceipt,
+    ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
+    BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed
   };
 })();
 
@@ -576,11 +900,13 @@ const FURNITURE = [
   { id:'plant-2',     label:null,        x:30, y:10, w:1, d:1, h:0.9,  color:'#4e7a4e' },
   { id:'plant-3',     label:null,        x:2,  y:12, w:1, d:1, h:0.9,  color:'#4e7a4e' },
   { id:'couch',       label:'COUCH',     x:2,  y:22, w:3, d:1, h:0.5,  color:'#b56a4f' },
+  { id:'stairs',      label:'STAIRS',    x:38, y:12, w:1, d:2, h:0.9,  color:'#6b675e' },
   { id:'exit',        label:'EXIT',      x:0,  y:16, w:1, d:2, h:1.1,  color:'#2E9E63' }
 ];
 const COFFEE_SPOT = { x:22, y:9 };
 const COUCH_SPOT  = { x:3,  y:21 };
 const EXIT_SPOT   = { x:1,  y:17 };
+const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -715,12 +1041,16 @@ function adjacentTo(w, actor){
 
 // ── world construction ────────────────────────────────────────────────────────
 // plan = the day's encounter indices from NineToSurvive (already clock-ordered).
-function newDay(seed, day, plan){
+// flags = NineToSurvive.worldFlagsFor(g): arc stage flags the world stages
+// physically (clues, detours, the firing, incident cards). Plain data, one-way.
+function newDay(seed, day, plan, flags){
+  flags = flags || {};
   const w = {
     day,
+    flags,
     rngState: ((seed | 0) ^ Math.imul(day, 2654435761)) | 0,
     walk: buildWalkGrid(),
-    actors: CAST.map(c => ({
+    actors: CAST.filter(c => !(flags.bradGone && c.id === 'brad')).map(c => ({
       id: c.id, name: c.name, role: c.role, color: c.color, bear: !!c.bear,
       chat: !!c.chat,
       x: c.spot.x, y: c.spot.y, home: { x: c.spot.x, y: c.spot.y },
@@ -730,12 +1060,16 @@ function newDay(seed, day, plan){
     clockMin: 540,           // 9:00 AM
     running: true,
     sig: [],                 // signal queue → shell drains via step()'s return
-    // cards (rare spice): owner walks over at the card's clock time
+    // cards (rare spice) + any arc incidents: the owner walks over at the
+    // event's clock minute. One sorted queue; incidents gate 5 PM like cards.
     events: plan.map(encIdx => ({
-      encIdx, owner: OWNER_BY_ENC[encIdx],
+      kind: 'card', encIdx, owner: OWNER_BY_ENC[encIdx],
       atMin: clockToMin(_encounters[encIdx].clock),
       status: 'pending'      // pending → walking → active → done
-    })),
+    })).concat((flags.incidents || []).map(inc => ({
+      kind: 'incident', id: inc.id, owner: inc.owner, atMin: inc.atMin,
+      status: 'pending'
+    }))).sort((a, b) => a.atMin - b.atMin),
     nextEvent: 0,
     activeEvent: null,
     // the actual work: tasks land in your inbox through the day (load seeded below)
@@ -745,6 +1079,9 @@ function newDay(seed, day, plan){
     bossWalks: [],           // [{atMin, status:'pending'|'out'|'done'}]
     bradRaids: [],
     crunch: null,            // {atMin, status}
+    // Brad-arc staging: the deck detour and the firing you can watch
+    bradDeck: flags.bradDeckAt ? { atMin: flags.bradDeckAt, status: 'pending' } : null,
+    firing: flags.bradFiredToday ? { phase: 'wait' } : null,
     // recovery economy (once a day each)
     coffeeUsed: false, couchUsed: false, chatted: {},
     playerErrand: null,      // {type:'coffee'|'couch'|'chat'|'exit', id?, repaths}
@@ -762,16 +1099,20 @@ function newDay(seed, day, plan){
   w.tasks.spawnAt = [540, 540, 540];
   const drip = Math.floor(390 / Math.max(1, w.tasks.total - 3));
   for(let i = 3; i < w.tasks.total; i++) w.tasks.spawnAt.push(560 + (i - 3) * drip);
-  // boss floor-walks: two, spaced through the day
-  for(let i = 0; i < BOSS_WALKS_PER_DAY; i++)
-    w.bossWalks.push({ atMin: 620 + i * 170 + Math.floor(rand(w) * 60), status: 'pending' });
-  // brad raids: one or two
-  const raids = 1 + (rand(w) < 0.5 ? 1 : 0);
+  // boss floor-walks: two, spaced through the day (+1 while his arc runs hot)
+  const walks = BOSS_WALKS_PER_DAY + (flags.extraBossWalks || 0);
+  for(let i = 0; i < walks; i++)
+    w.bossWalks.push({ atMin: Math.min(990, 620 + i * (walks > 2 ? 130 : 170) + Math.floor(rand(w) * 60)),
+                       status: 'pending' });
+  // brad raids: one or two — unless he's covered-for, gone, or busy being fired
+  // (the roll still spends rng so staging stays comparable across arc states)
+  const raidRoll = rand(w);
+  const raids = (flags.noBradRaids || flags.bradGone) ? 0 : 1 + (raidRoll < 0.5 ? 1 : 0);
   for(let i = 0; i < raids; i++)
     w.bradRaids.push({ atMin: 600 + Math.floor(rand(w) * 360), status: 'pending' });
   w.bradRaids.sort((a, b) => a.atMin - b.atMin);
-  // maybe a fire drill
-  if(rand(w) < CRUNCH_CHANCE)
+  // maybe a fire drill (likelier while the corner office is spiraling)
+  if(rand(w) < CRUNCH_CHANCE + (flags.crunchBoost || 0))
     w.crunch = { atMin: 690 + Math.floor(rand(w) * 120), status: 'pending' };
   return w;
 }
@@ -838,17 +1179,20 @@ function step(w, dt){
     // already on the target tile — treat that as arrived, or the day deadlocks
     // (e.g. a card owner already adjacent never reaches 'atPlayer').
     if(a.state !== 'idle' && a.state !== 'atPlayer'){ handleArrival(w, a, you); return; }
-    if(a.state !== 'idle' || a.id === 'you') return;
+    if(a.state !== 'idle' || a.id === 'you' || a.off) return;
     a.wanderT -= dt;
     if(a.wanderT <= 0){
       a.wanderT = 3 + rand(w) * 8;
       const r = rand(w);
+      // Brad on two payrolls spends his idle time in the stairwell, phone out
+      const stairbound = a.id === 'brad' && w.flags.bradCalls;
       if(r < 0.30){
+        if(stairbound){ sendTo(w, a, STAIRS_SPOT, 'walking'); return; }
         const tx = a.home.x + Math.floor(rand(w) * 7) - 3;
         const ty = a.home.y + Math.floor(rand(w) * 7) - 3;
         if(isWalkable(w, tx, ty)) sendTo(w, a, { x: tx, y: ty }, 'walking');
       } else if(r < 0.42){
-        sendTo(w, a, COFFEE_SPOT, 'walking');
+        sendTo(w, a, stairbound ? STAIRS_SPOT : COFFEE_SPOT, 'walking');
       } else if(Math.abs(a.x - a.home.x) + Math.abs(a.y - a.home.y) > 0.6){
         sendTo(w, a, a.home, 'returning');
       }
@@ -878,18 +1222,42 @@ function step(w, dt){
   // ---- brad raid ----
   const brad = getActor(w, 'brad');
   w.bradRaids.forEach(br => {
-    if(br.status === 'pending' && w.clockMin >= br.atMin && brad.state === 'idle'){
+    if(br.status === 'pending' && w.clockMin >= br.atMin && brad && !brad.off && brad.state === 'idle'){
       if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'raid'))
         br.status = 'out';
     }
   });
 
-  // ---- the day's cards (owner walks over at the card's minute) ----
+  // ---- the deck detour: Brad walks his other job right past your desk ----
+  if(w.bradDeck && w.bradDeck.status === 'pending' && w.clockMin >= w.bradDeck.atMin
+     && brad && !brad.off
+     && (brad.state === 'idle' || brad.state === 'walking' || brad.state === 'returning')){
+    brad.path = [];
+    if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'deck'))
+      w.bradDeck.status = 'out';
+  }
+
+  // ---- the firing: a world event you can watch, start to door ----
+  if(w.firing && w.firing.phase !== 'done'){
+    const hr = getActor(w, 'hr');
+    if(w.firing.phase === 'wait' && w.clockMin >= 690){          // 11:30 all-hands
+      w.firing.phase = 'allhands';
+      w.sig.push({ type: 'bradallhands' });
+    } else if(w.firing.phase === 'allhands' && w.clockMin >= 720 && brad && hr){  // noon
+      brad.path = [];
+      sendTo(w, brad, brad.home, 'returning');                   // he's asked to "grab a room"
+      hr.path = [];
+      if(sendTo(w, hr, adjacentTo(w, brad.home), 'escort')) w.firing.phase = 'collect';
+    }
+  }
+
+  // ---- the day's cards + arc incidents (owner walks over at the minute) ----
   if(w.nextEvent < w.events.length){
     const ev = w.events[w.nextEvent];
     if(ev.status === 'pending' && w.clockMin >= ev.atMin){
       const owner = getActor(w, ev.owner);
-      if(owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning'){
+      if(owner && !owner.off
+         && (owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning')){
         owner.path = [];
         // status advances only if the walk starts; otherwise retry next tick
         if(sendTo(w, owner, adjacentTo(w, you), 'summoned')) ev.status = 'walking';
@@ -901,7 +1269,9 @@ function step(w, dt){
         ev.status = 'active';
         w.activeEvent = ev;
         w.running = false;
-        w.sig.push({ type:'encounter', event: ev });
+        w.sig.push(ev.kind === 'incident'
+          ? { type:'arcincident', id: ev.id, event: ev }
+          : { type:'encounter', event: ev });
       }
     }
   }
@@ -922,6 +1292,34 @@ function handleArrival(w, a, you){
   else if(a.state === 'errand' && a.id === 'you'){ a.state = 'idle'; arriveErrand(w, you); }
   else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
   else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
+  else if(a.state === 'deck' && a.id === 'brad'){
+    // the slip: your desk, his laptop, their logo — then he's off to the stairwell
+    if(w.bradDeck) w.bradDeck.status = 'done';
+    w.sig.push({ type: 'braddeck' });
+    if(!sendTo(w, a, STAIRS_SPOT, 'walking')) sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'escort' && a.id === 'hr'){
+    const brad = getActor(w, 'brad');
+    if(!brad || brad.off){ a.state = 'idle'; }
+    else if(!brad.path.length && Math.hypot(brad.x - a.x, brad.y - a.y) <= 2.5){
+      // she has him. Both walk to the door; everyone pretends not to watch.
+      if(w.firing) w.firing.phase = 'walkout';
+      sendTo(w, brad, EXIT_SPOT, 'escorted');
+      sendTo(w, a, { x: 2, y: 17 }, 'escorting');
+    } else {
+      sendTo(w, a, adjacentTo(w, brad), 'escort');   // he moved; she follows
+    }
+  }
+  else if(a.state === 'escorting' && a.id === 'hr'){ sendTo(w, a, a.home, 'returning'); }
+  else if(a.state === 'escorted' && a.id === 'brad'){
+    // through the door. Off the floor, off payroll(s), out of the raid schedule —
+    // and two of his deliverables land in your inbox before the door shuts.
+    a.off = true; a.state = 'idle';
+    if(w.firing) w.firing.phase = 'done';
+    w.sig.push({ type: 'bradfired' });
+    w.tasks.pending += 2; w.tasks.total += 2; w.tasks.spawned += 2;
+    w.sig.push({ type: 'bradtasks', pending: w.tasks.pending });
+  }
   else { a.state = 'idle'; }
 }
 
@@ -1054,6 +1452,7 @@ function playerGoHome(w){
 function pickActorAt(w, gx, gy){
   let best = null, bestD = 0.75;
   w.actors.forEach(a => {
+    if(a.off) return;   // walked out; not clickable, not here
     const d = Math.hypot(a.x - gx, a.y - gy);
     if(d < bestD){ best = a; bestD = d; }
   });
@@ -1078,6 +1477,12 @@ function isExitAt(gx, gy){
 function statusOf(w, actor){
   if(actor.id === 'you') return { name:'You', role: actor.role, mood: null,
     line:'Tasks ship at your desk. Soul refills everywhere else. Choose.', face:'🦡', chat:false };
+  // the Brad arc shifts his status line before any card ever fires
+  if(actor.id === 'brad' && w.flags && w.flags.bradCalls){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '📵',
+      line: '“On a call.” It is the fourth call today. None of the calls have meeting links.',
+      chat: false };
+  }
   return {
     name: actor.name, role: actor.role, mood: actor.mood,
     face: MOOD_FACE[actor.mood],
@@ -1154,7 +1559,7 @@ function render(w, ctx, cam, vw, vh){
 
   const drawables = [];
   FURNITURE.forEach(f => drawables.push({ d: f.x + f.w / 2 + f.y + f.d / 2, f }));
-  w.actors.forEach(a => drawables.push({ d: a.x + a.y + 0.01, a }));
+  w.actors.forEach(a => { if(!a.off) drawables.push({ d: a.x + a.y + 0.01, a }); });
   drawables.sort((p, q) => p.d - q.d);
   drawables.forEach(item => {
     if(item.f) drawBox(ctx, cam, item.f, w);
@@ -1208,18 +1613,37 @@ function shade(hex, f){
 
 function drawBox(ctx, cam, f, w){
   const z = cam.z, hpx = f.h * 34 * z;
+  // Brad's desk after the walk-out: a rectangle of cleaner carpet
+  const col = (f.id === 'desk-brad' && w && w.flags && w.flags.bradGone) ? '#c9c1af' : f.color;
   const p = (gx, gy) => proj(cam, gx - 0.5, gy - 0.5);
   const [ax, ay] = p(f.x, f.y), [bx, by] = p(f.x + f.w, f.y);
   const [cx, cy] = p(f.x + f.w, f.y + f.d), [dx, dy] = p(f.x, f.y + f.d);
   ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
   ctx.lineTo(cx, cy - hpx); ctx.lineTo(dx, dy - hpx); ctx.closePath();
-  ctx.fillStyle = f.color; ctx.fill();
+  ctx.fillStyle = col; ctx.fill();
   ctx.beginPath(); ctx.moveTo(bx, by - hpx); ctx.lineTo(cx, cy - hpx);
   ctx.lineTo(cx, cy); ctx.lineTo(bx, by); ctx.closePath();
-  ctx.fillStyle = shade(f.color, 0.72); ctx.fill();
+  ctx.fillStyle = shade(col, 0.72); ctx.fill();
   ctx.beginPath(); ctx.moveTo(dx, dy - hpx); ctx.lineTo(cx, cy - hpx);
   ctx.lineTo(cx, cy); ctx.lineTo(dx, dy); ctx.closePath();
-  ctx.fillStyle = shade(f.color, 0.55); ctx.fill();
+  ctx.fillStyle = shade(col, 0.55); ctx.fill();
+  // the second laptop: a small extra machine on Brad's desk, lid up, screen lit
+  // in a blue-white that is not this company's blue-white
+  if(f.id === 'desk-brad' && w && w.flags && w.flags.bradLaptop && !w.flags.bradGone){
+    const [lx, ly] = proj(cam, f.x + 0.35 - 0.5, f.y + 0.2 - 0.5);
+    const ty = ly - hpx;
+    ctx.fillStyle = '#22262b';                                     // base slab
+    ctx.beginPath();
+    ctx.moveTo(lx, ty - 2 * z); ctx.lineTo(lx + 9 * z, ty + 2.5 * z);
+    ctx.lineTo(lx, ty + 7 * z); ctx.lineTo(lx - 9 * z, ty + 2.5 * z);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#dfe9f5';                                     // the lit lid
+    ctx.beginPath();
+    ctx.moveTo(lx - 9 * z, ty + 2.5 * z); ctx.lineTo(lx - 9 * z, ty - 8 * z);
+    ctx.lineTo(lx, ty - 12 * z); ctx.lineTo(lx, ty - 2 * z);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#22262b'; ctx.lineWidth = 1 * z; ctx.stroke();
+  }
   // the armed EXIT glows: your number is banked, the door is live
   if(f.id === 'exit' && w && w.walkoutArmed){
     ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
@@ -1323,7 +1747,7 @@ function drawActor(ctx, cam, a, w){
 }
 
 return {
-  GRID_W, GRID_H, TW, TH, CAST, FURNITURE, ZONES, OWNER_BY_ENC,
+  GRID_W, GRID_H, TW, TH, CAST, FURNITURE, ZONES, OWNER_BY_ENC, STAIRS_SPOT,
   TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
@@ -1836,7 +2260,7 @@ function startGame(){
 }
 
 function beginDay(){
-  world = W.newDay(runSeed, g.day, g.plan);
+  world = W.newDay(runSeed, g.day, g.plan, G.worldFlagsFor(g));
   window.g = g; window.world = world;   // console debugging
   screens('play');
   fitCanvas();
@@ -1890,7 +2314,25 @@ function worldEffect(kind){
 function handleSignal(s){
   switch(s.type){
     case 'encounter': openCard(); break;
+    case 'arcincident': openIncident(s.id); break;
     case 'crunch': openCrunch(); break;
+    case 'braddeck':
+      G.bradDeckSeen(g, Math.floor(world.clockMin));
+      toast('Brad hustles past your desk mid-call. On his screen: a slide deck. The logo on it: not ours.');
+      break;
+    case 'bradallhands':
+      G.bradAllHands(g, Math.floor(world.clockMin));
+      SFX.drill();
+      toast('❗ All-hands: Brad’s Zoom background is a conference room at the WRONG COMPANY.');
+      break;
+    case 'bradfired':
+      G.bradFiredReport(g, Math.floor(world.clockMin));
+      toast('Meredith just walked Brad out the door. Carrying his box for him. Policy.');
+      break;
+    case 'bradtasks':
+      G.bradTasksAbsorbed(g, Math.floor(world.clockMin));
+      toast('Two of Brad’s tasks land in YOUR inbox. “Congratulations on the growth opportunity.”');
+      break;
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskdone': {
@@ -2094,6 +2536,60 @@ function openCard(){
     b.onclick = () => choose(idx);
     box.appendChild(b);
   });
+  // receipts can unlock an extra play (e.g. the screenshot vs. Credit Reassigned)
+  G.extraChoicesFor(g, g.plan[g.idxInDay]).forEach(x => {
+    const b = document.createElement('button');
+    b.className = 'choice';
+    b.style.borderColor = 'var(--danger)';
+    b.textContent = '🧾 ' + x.t;
+    b.dataset.key = x.key;
+    b.onclick = () => chooseExtra(x.key);
+    box.appendChild(b);
+  });
+}
+
+function chooseExtra(key){
+  const res = G.applyExtraChoice(g, g.plan[g.idxInDay], key, Math.floor(world.clockMin));
+  if(!res) return;
+  applyDelta('standing', res.ds);
+  applyDelta('soul', res.dso);
+  $id('enc').classList.add('hidden');
+  $id('out').classList.remove('hidden');
+  $id('oline').textContent = res.outcome;
+  $id('nextbtn').textContent = g.failed ? 'See how it ends' : 'Back to your desk';
+}
+
+/* ---- arc incident cards (story moments the arcs staged; not deck cards) ---- */
+let activeIncident = null;
+function openIncident(id){
+  hideStatus();
+  const def = G.ARC_INCIDENTS[id];
+  if(!def){ W.resolveEncounter(world); return; }   // unknown id: never strand the day
+  activeIncident = id;
+  $id('cardoverlay').classList.remove('hidden');
+  $id('enc').classList.remove('hidden');
+  $id('out').classList.add('hidden');
+  $id('tag').textContent = def.tag;
+  $id('etitle').textContent = def.title;
+  $id('escene').textContent = def.scene;
+  const box = $id('choices'); box.innerHTML = '';
+  def.choices.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'choice'; b.textContent = c.t;
+    b.dataset.idx = i;                 // movie-mode autopilot picks by data-idx
+    b.onclick = () => chooseIncident(i);
+    box.appendChild(b);
+  });
+}
+function chooseIncident(i){
+  const res = G.applyIncidentChoice(g, activeIncident, i, Math.floor(world.clockMin));
+  if(!res) return;
+  applyDelta('standing', res.ds);
+  applyDelta('soul', res.dso);
+  $id('enc').classList.add('hidden');
+  $id('out').classList.remove('hidden');
+  $id('oline').textContent = res.outcome;
+  $id('nextbtn').textContent = g.failed ? 'See how it ends' : 'Back to your desk';
 }
 
 function choose(i){
@@ -2109,6 +2605,13 @@ function choose(i){
 
 function advance(){
   $id('cardoverlay').classList.add('hidden');
+  if(activeIncident){
+    activeIncident = null;           // incident cards don't advance the deck index
+    if(g.failed) return endGame();
+    W.resolveEncounter(world);
+    saveRun('day');
+    return;
+  }
   const r = G.advance(g);
   if(r === 'gameover') return endGame();
   W.resolveEncounter(world);

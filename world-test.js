@@ -214,6 +214,78 @@ ok('status has name/role/mood/line', st.name === 'The Boss' && !!st.role && !!st
 ok('peers offer chat in status; boss does not', W.statusOf(w1, W.getActor(w1, 'kayla')).chat === true
   && W.statusOf(w1, boss1).chat === false);
 
+// ---- 11b. the Brad arc, staged physically ----------------------------------------------
+// clue flags: the second laptop is a flag the renderer reads; the status line shifts
+const wArc = W.newDay(43, 3, [0, 9], { bradLaptop: true, bradCalls: true });
+ok('flags ride the world object', wArc.flags.bradLaptop && wArc.flags.bradCalls);
+const bradA = W.getActor(wArc, 'brad');
+const stArc = W.statusOf(wArc, bradA);
+ok('status popup shifts while he moonlights', /On a call/.test(stArc.line) && stArc.chat === false);
+// stairwell trips: his idle wandering now detours to the stairs
+ok('he makes stairwell trips at odd intervals', (() => {
+  const w2 = W.newDay(47, 3, [9], { bradCalls: true });
+  w2.bossWalks = []; w2.bradRaids = []; w2.crunch = null;
+  for(let t = 0; t < 200; t += 0.1){
+    W.step(w2, 0.1);
+    const b = W.getActor(w2, 'brad');
+    if(Math.hypot(b.x - W.STAIRS_SPOT.x, b.y - W.STAIRS_SPOT.y) < 0.8) return true;
+  }
+  return false;
+})());
+// the deck detour: his route passes your desk and the world announces the slip
+const wDeck = W.newDay(51, 4, [9], { bradDeckAt: 560 });
+wDeck.bossWalks = []; wDeck.bradRaids = []; wDeck.crunch = null;
+const deckSig = stepUntil(wDeck, 90, ['braddeck']);
+ok('deck detour fires the braddeck signal near your desk', !!deckSig && (() => {
+  const b = W.getActor(wDeck, 'brad');
+  const you = W.getActor(wDeck, 'you');
+  return Math.hypot(b.x - you.home.x, b.y - you.home.y) < 2.5;
+})());
+// raid schedule actually changes with the arc
+ok('noBradRaids flag: zero raids staged', W.newDay(43, 5, [9], { noBradRaids: true }).bradRaids.length === 0);
+ok('same seed+day without the flag: raids exist', W.newDay(43, 5, [9]).bradRaids.length >= 1);
+const wGone = W.newDay(43, 6, [0], { bradGone: true });
+ok('bradGone: off the floor entirely, no raids', wGone.actors.length === 7
+  && !W.getActor(wGone, 'brad') && wGone.bradRaids.length === 0);
+ok('the floor still paths without him', W.CAST.filter(c => c.id !== 'you' && c.id !== 'brad')
+  .every(c => W.bfsPath(wGone, c.spot, W.adjacentTo(wGone, W.getActor(wGone, 'you'))) !== null));
+
+// ---- 11c. arc incidents fire like cards --------------------------------------------------
+const wInc = W.newDay(53, 5, [0], { incidents: [{ id: 'brad_discovery', owner: 'brad', atMin: 560 }] });
+wInc.bossWalks = []; wInc.bradRaids = []; wInc.crunch = null;
+ok('incident joins the event queue in clock order', wInc.events.length === 2
+  && wInc.events[0].kind === 'card' && wInc.events[1].kind === 'incident');
+const cardSig = stepUntil(wInc, 90, ['encounter']);
+ok('the 9:03 card still fires first', !!cardSig && cardSig.event.encIdx === 0);
+W.resolveEncounter(wInc);
+const incSig = stepUntil(wInc, 120, ['arcincident']);
+ok('the incident fires when Brad arrives, world paused', !!incSig && incSig.id === 'brad_discovery' && !wInc.running);
+W.resolveEncounter(wInc);
+ok('resolving the incident resumes the day', wInc.running && wInc.nextEvent === 2);
+ok('incidents gate 5 PM like cards', (() => {
+  const w2 = W.newDay(53, 5, [], { incidents: [{ id: 'brad_discovery', owner: 'brad', atMin: 1015 }] });
+  w2.bossWalks = []; w2.bradRaids = []; w2.crunch = null;
+  w2.clockMin = 1010;
+  const s = stepUntil(w2, 60, ['arcincident', 'dayover']);
+  return s && s.type === 'arcincident';   // the card comes before the day may end
+})());
+
+// ---- 11d. the firing: a world event you can watch ----------------------------------------
+const wFire = W.newDay(57, 8, [], { bradFiredToday: true, noBradRaids: true });
+wFire.bossWalks = []; wFire.crunch = null;
+const totalBefore = wFire.tasks.total;   // only the firing may change the day's total
+const sAll = stepUntil(wFire, 200, ['bradallhands']);
+ok('11:30: he joins the all-hands from the wrong company', !!sAll && wFire.clockMin >= 690);
+const sFired = stepUntil(wFire, 400, ['bradfired']);
+ok('noon-ish: Meredith collects him, walks him to the door', !!sFired, sFired ? 'fired' : 'NO SIGNAL');
+const sTasks = stepUntil(wFire, 5, ['bradtasks']);
+ok('his desk empties onto yours: +2 tasks, “growth opportunity”', !!sTasks
+  && wFire.tasks.total === totalBefore + 2);
+ok('he is off the floor, not clickable', W.getActor(wFire, 'brad').off === true
+  && W.pickActorAt(wFire, W.getActor(wFire, 'brad').x, W.getActor(wFire, 'brad').y) !== W.getActor(wFire, 'brad'));
+const sOver = stepUntil(wFire, 400, ['dayover']);
+ok('the firing never strands the day: 5 PM still arrives', !!sOver && sOver.type === 'dayover');
+
 // ---- 12. SOAK: full careers through the real pipeline ---------------------------------
 // A bot plays whole days exactly the way the shell does: newDay each morning,
 // step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.
@@ -228,8 +300,12 @@ function soakRun(seed, opts){
   const issues = [];
   const g = G.newGame(seed);
   while(!g.over && g.day <= maxDays){
-    const w = W.newDay(seed, g.day, g.plan);
+    const flags = G.worldFlagsFor(g);
+    const w = W.newDay(seed, g.day, g.plan, flags);
     const stuck = {};
+    // arc-day bookkeeping: staged story beats must all land before 5 PM
+    const incidentsStaged = flags.incidents.length;
+    let incidentsFired = 0, firedSeen = false;
     let steps = 0, dayDone = false, triedCoffee = false, triedCouch = false, triedChat = false;
     while(!dayDone && !g.over){
       if(++steps > 20000){
@@ -269,6 +345,16 @@ function soakRun(seed, opts){
           G.applyChoice(g, 2);
           if(G.advance(g) === 'gameover'){ dayDone = true; break; }
           W.resolveEncounter(w); break;
+        case 'arcincident':
+          // rotate the branch by day so the soak exercises every choice
+          incidentsFired++;
+          G.applyIncidentChoice(g, s.id, (g.day + seed) % 3, Math.floor(w.clockMin));
+          if(g.over){ dayDone = true; break; }
+          W.resolveEncounter(w); break;
+        case 'braddeck':    G.bradDeckSeen(g, Math.floor(w.clockMin)); break;
+        case 'bradallhands':G.bradAllHands(g, Math.floor(w.clockMin)); break;
+        case 'bradfired':   firedSeen = true; G.bradFiredReport(g, Math.floor(w.clockMin)); break;
+        case 'bradtasks':   G.bradTasksAbsorbed(g, Math.floor(w.clockMin)); break;
         case 'crunch':
           G.applyCrunch(g, true);
           if(g.over){ dayDone = true; break; }
@@ -284,6 +370,11 @@ function soakRun(seed, opts){
           G.applyWorldEffect(g, s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh');
           W.playerGoHome(w); break;
         case 'dayover': {
+          // arcs must never deadlock or strand a day's staged story beats
+          if(incidentsFired < incidentsStaged)
+            issues.push('day ' + g.day + ': ' + (incidentsStaged - incidentsFired) + ' staged incident(s) never fired');
+          if(flags.bradFiredToday && !firedSeen)
+            issues.push('day ' + g.day + ': Brad firing staged but the walk-out never happened');
           const r = G.closeDay(g, { tasksDone: s.tasksDone, tasksTotal: s.tasksTotal });
           dayDone = true;
           if(r !== 'gameover'){

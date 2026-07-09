@@ -281,10 +281,20 @@ const NineToSurvive = (() => {
     return localRand((g.runSeed ^ hashStr(key) ^ Math.imul(g.day, 2654435761) ^ hashStr(salt || '')) | 0);
   }
 
+  // Brad's cards, by ENCOUNTERS index. Once he's fired (or being walked out
+  // today), he stops delivering them — a dead man can't reassign your credit.
+  const BRAD_ENCS = [2, 9, 16];
+  function bradOutOfPlay(g){
+    if(!g.npcState || !g.npcState.brad) return false;
+    const a = (g.arcs && g.arcs.brad_second_job) || { stage: 0 };
+    return !!g.npcState.brad.flags.fired || a.stage === 6 || a.stage === 7;
+  }
+
   // Sample DAY_ENCOUNTERS distinct encounters for the day, replayed in clock order.
   // Prefers cards not yet seen this cycle (tracked on g.seen, so it serializes),
   // so a run tours the whole pool before anything repeats; then the cycle resets.
-  // Seeded and deterministic: same seed = same tour.
+  // Seeded and deterministic: same seed = same tour. Consults the Brad arc:
+  // with him out of play his cards leave the pool (identical rng stream otherwise).
   function planDay(g){
     if(!g.seen) g.seen = [];
     const pickFrom = (cands, n) => {
@@ -295,17 +305,18 @@ const NineToSurvive = (() => {
       }
       return pool.slice(0, n);
     };
-    const fresh = [];
-    for(let i = 0; i < ENCOUNTERS.length; i++) if(g.seen.indexOf(i) < 0) fresh.push(i);
+    const barred = bradOutOfPlay(g) ? BRAD_ENCS : [];
+    const inPool = [];
+    for(let i = 0; i < ENCOUNTERS.length; i++) if(barred.indexOf(i) < 0) inPool.push(i);
+    const fresh = inPool.filter(i => g.seen.indexOf(i) < 0);
     let plan;
     if(fresh.length >= DAY_ENCOUNTERS){
       plan = pickFrom(fresh, DAY_ENCOUNTERS);
       plan.forEach(i => g.seen.push(i));
-      if(g.seen.length >= ENCOUNTERS.length) g.seen = [];  // toured the pool: reset
+      if(g.seen.length >= inPool.length) g.seen = [];      // toured the pool: reset
     } else {
       plan = fresh.slice();                                // odd remainder: finish the cycle...
-      const rest = [];
-      for(let i = 0; i < ENCOUNTERS.length; i++) if(plan.indexOf(i) < 0) rest.push(i);
+      const rest = inPool.filter(i => plan.indexOf(i) < 0);
       plan = plan.concat(pickFrom(rest, DAY_ENCOUNTERS - plan.length));
       g.seen = plan.slice();                               // ...and start the next with today
     }
@@ -559,6 +570,109 @@ const NineToSurvive = (() => {
     });
   }
 
+  // ---- Arc incidents: story cards, fired by the world like any card ------------
+  // Not deck expansion — these exist only when an arc stages them, and their
+  // choices move npcState, receipts, and arc stages along with the meters.
+  const ARC_INCIDENTS = {
+    brad_discovery: {
+      tag: 'Incident · The Second Laptop',
+      title: 'Wrong Deck, Brad.',
+      scene: 'Brad spins his chair to reach his coffee and his second laptop faces you, awake and honest, for four full seconds: a slide deck wearing another company’s logo. Header: “Q3 GTM — CONFIDENTIAL.” Their Q3. His name is on the title slide. He hasn’t noticed. You have unbroken line of sight and a phone.',
+      choices: [
+        { key:'screenshot', t:'Screenshot it. Both monitors. Timestamp visible.', s:0, so:+2,
+          o:'Click. It lives in your camera roll now, between a parking receipt and a photo of a sandwich. You feel the specific warmth of holding something that outranks the org chart.' },
+        { key:'cover', t:'“Brad. Screen.” Cover for him.', s:0, so:-6,
+          o:'He slams the lid and looks at you the way drowning men look at driftwood. “You’re solid,” he whispers. Complicit. The word is complicit. Your inbox, at least, is now a protected wetland.' },
+        { key:'ride', t:'See nothing. Sip your coffee. Let it ride.', s:0, so:+1,
+          o:'You turn back to your monitor and let the universe keep its own books. Whatever happens to Brad now was always going to happen. You are merely no longer load-bearing.' }
+      ]
+    }
+  };
+
+  // Meter movement for anything that isn't a deck card: same clamps, same fail
+  // states, one place.
+  function applyStoryDelta(g, s, so){
+    const b = { s: g.standing, so: g.soul };
+    g.standing = clamp(g.standing + (s || 0));
+    g.soul     = clamp(g.soul + (so || 0));
+    if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
+    else if(g.soul <= 0 && !g.failed){ g.failed = 'soul'; g.over = true; }
+    return { ds: g.standing - b.s, dso: g.soul - b.so };
+  }
+
+  // Resolve an arc incident choice: meters move, npcState/receipts/arc stages
+  // follow. `min` is the world clock (for the feed's timestamps).
+  function applyIncidentChoice(g, id, choiceIndex, min){
+    const def = ARC_INCIDENTS[id];
+    if(!def || !def.choices[choiceIndex]) return null;
+    const c = def.choices[choiceIndex];
+    const d = applyStoryDelta(g, c.s, c.so);
+    const brad = g.npcState.brad;
+    if(id === 'brad_discovery'){
+      const a = g.arcs.brad_second_job;
+      brad.counters.discoveries = (brad.counters.discoveries || 0) + 1;
+      if(c.key === 'screenshot'){
+        addReceipt(g, 'screenshot_brad_deck');
+        brad.stress = 3; a.stage = 5;
+        pushFeed(g, min, 'Brad deleted a message.');
+        pushFeed(g, (min || 0) + 2, 'Brad deleted another message.');
+      } else if(c.key === 'cover'){
+        brad.trust += 3; brad.flags.covered = true; a.stage = 8;
+        pushFeed(g, min, 'Brad sent you a gif of a saluting otter, in a channel with two members. This is a binding contract now.');
+      } else {
+        a.stage = 5;
+        pushFeed(g, min, 'Brad turned his desk eleven degrees away from the aisle. Feng shui, he said.');
+      }
+    }
+    g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: c.o };
+    return g.lastChoice;
+  }
+
+  // The receipt play: holding the screenshot gives Brad's Credit-Reassigned card
+  // a fourth choice that burns it to reverse the theft, with interest.
+  const CREDIT_ENC = 2;
+  function extraChoicesFor(g, encIdx){
+    if(encIdx === CREDIT_ENC && hasReceipt(g, 'screenshot_brad_deck') && !bradOutOfPlay(g)){
+      return [{ key: 'burn_screenshot',
+        t: '“Quick question before we move on — Brad, how’s Q3 tracking at the other place?” Screen-share the screenshot.' }];
+    }
+    return [];
+  }
+  function applyExtraChoice(g, encIdx, key, min){
+    if(key !== 'burn_screenshot' || encIdx !== CREDIT_ENC) return null;
+    if(!burnReceipt(g, 'screenshot_brad_deck')) return null;
+    const d = applyStoryDelta(g, +10, +8);   // the theft, reversed, with interest
+    const brad = g.npcState.brad;
+    brad.trust -= 3; brad.stress = 3;
+    const a = g.arcs.brad_second_job;
+    if(a && a.stage === 8 && !brad.flags.covered){ a.stage = 5; a.waited = 0; }  // the moment un-passes
+    pushFeed(g, min, 'The projector saw everything. So did Meredith.');
+    g.lastChoice = { choiceIndex: 'burn_screenshot', ds: d.ds, dso: d.dso,
+      outcome: 'You put his other logo on the big screen, right next to your analysis. The room does the math at different speeds; the boss gets there last, then all at once. Your work is yours again, retroactively, with interest. Brad’s calendar goes “busy” for the rest of the afternoon.' };
+    return g.lastChoice;
+  }
+
+  // ---- Brad-arc world moments: the world stages them, the brain records them ----
+  function bradDeckSeen(g, min){
+    const brad = g.npcState.brad;
+    if(brad.flags.deckSeen) return false;
+    brad.flags.deckSeen = true;
+    pushFeed(g, min, 'Brad walked the long way past your desk carrying slides for a company that is not this company. Slide 4 said “Our Q3.” Not our our.');
+    return true;
+  }
+  function bradAllHands(g, min){
+    pushFeed(g, min, 'Brad joined the all-hands from a conference room with another company’s name in the Zoom background. Legal joined the thread. Everyone became normal.');
+  }
+  function bradFiredReport(g, min){
+    const brad = g.npcState.brad;
+    brad.flags.fired = true; brad.flags.walkedOut = true;
+    if(g.arcs.brad_second_job && g.arcs.brad_second_job.stage === 6) g.arcs.brad_second_job.stage = 7;
+    pushFeed(g, min, 'Meredith walked Brad to the door holding a box he was not allowed to carry himself. “We wish him well,” she said, in the past tense, while he was still in the room.');
+  }
+  function bradTasksAbsorbed(g, min){
+    pushFeed(g, min, 'Two of Brad’s deliverables just landed in your inbox. The email says “congratulations on the growth opportunity.” It is not a growth opportunity.');
+  }
+
   // Everything the world needs to stage today, as plain data. The world module
   // never reads g directly — this is the one bridge, and it's one-way.
   function worldFlagsFor(g){
@@ -571,8 +685,8 @@ const NineToSurvive = (() => {
       bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
       bradFiredToday: b.stage === 6,
-      bradGone:       b.stage >= 7,
-      noBradRaids:    !!brad.flags.covered || b.stage >= 6,
+      bradGone:       b.stage === 7,     // stage 8 = closed quietly; he's still here
+      noBradRaids:    !!brad.flags.covered || b.stage === 6 || b.stage === 7,
       bossArcHot:     bo.stage === 1,
       extraBossWalks: bo.stage === 1 ? 1 : 0,
       crunchBoost:    bo.stage === 1 ? 0.25 : 0,
@@ -706,7 +820,9 @@ const NineToSurvive = (() => {
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,
     applyCrunch, applyCoffee, applyWorldEffect,
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
-    pushFeed, addReceipt, hasReceipt, burnReceipt
+    pushFeed, addReceipt, hasReceipt, burnReceipt,
+    ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
+    BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed
   };
 })();
 

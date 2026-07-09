@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n10"></script>
-<script src="ntos-world.js?v=w11"></script>
+<script src="ntos-game.js?v=n11"></script>
+<script src="ntos-world.js?v=w12"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -515,7 +515,7 @@ function startGame(){
 }
 
 function beginDay(){
-  world = W.newDay(runSeed, g.day, g.plan);
+  world = W.newDay(runSeed, g.day, g.plan, G.worldFlagsFor(g));
   window.g = g; window.world = world;   // console debugging
   screens('play');
   fitCanvas();
@@ -569,7 +569,25 @@ function worldEffect(kind){
 function handleSignal(s){
   switch(s.type){
     case 'encounter': openCard(); break;
+    case 'arcincident': openIncident(s.id); break;
     case 'crunch': openCrunch(); break;
+    case 'braddeck':
+      G.bradDeckSeen(g, Math.floor(world.clockMin));
+      toast('Brad hustles past your desk mid-call. On his screen: a slide deck. The logo on it: not ours.');
+      break;
+    case 'bradallhands':
+      G.bradAllHands(g, Math.floor(world.clockMin));
+      SFX.drill();
+      toast('❗ All-hands: Brad’s Zoom background is a conference room at the WRONG COMPANY.');
+      break;
+    case 'bradfired':
+      G.bradFiredReport(g, Math.floor(world.clockMin));
+      toast('Meredith just walked Brad out the door. Carrying his box for him. Policy.');
+      break;
+    case 'bradtasks':
+      G.bradTasksAbsorbed(g, Math.floor(world.clockMin));
+      toast('Two of Brad’s tasks land in YOUR inbox. “Congratulations on the growth opportunity.”');
+      break;
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskdone': {
@@ -773,6 +791,60 @@ function openCard(){
     b.onclick = () => choose(idx);
     box.appendChild(b);
   });
+  // receipts can unlock an extra play (e.g. the screenshot vs. Credit Reassigned)
+  G.extraChoicesFor(g, g.plan[g.idxInDay]).forEach(x => {
+    const b = document.createElement('button');
+    b.className = 'choice';
+    b.style.borderColor = 'var(--danger)';
+    b.textContent = '🧾 ' + x.t;
+    b.dataset.key = x.key;
+    b.onclick = () => chooseExtra(x.key);
+    box.appendChild(b);
+  });
+}
+
+function chooseExtra(key){
+  const res = G.applyExtraChoice(g, g.plan[g.idxInDay], key, Math.floor(world.clockMin));
+  if(!res) return;
+  applyDelta('standing', res.ds);
+  applyDelta('soul', res.dso);
+  $id('enc').classList.add('hidden');
+  $id('out').classList.remove('hidden');
+  $id('oline').textContent = res.outcome;
+  $id('nextbtn').textContent = g.failed ? 'See how it ends' : 'Back to your desk';
+}
+
+/* ---- arc incident cards (story moments the arcs staged; not deck cards) ---- */
+let activeIncident = null;
+function openIncident(id){
+  hideStatus();
+  const def = G.ARC_INCIDENTS[id];
+  if(!def){ W.resolveEncounter(world); return; }   // unknown id: never strand the day
+  activeIncident = id;
+  $id('cardoverlay').classList.remove('hidden');
+  $id('enc').classList.remove('hidden');
+  $id('out').classList.add('hidden');
+  $id('tag').textContent = def.tag;
+  $id('etitle').textContent = def.title;
+  $id('escene').textContent = def.scene;
+  const box = $id('choices'); box.innerHTML = '';
+  def.choices.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'choice'; b.textContent = c.t;
+    b.dataset.idx = i;                 // movie-mode autopilot picks by data-idx
+    b.onclick = () => chooseIncident(i);
+    box.appendChild(b);
+  });
+}
+function chooseIncident(i){
+  const res = G.applyIncidentChoice(g, activeIncident, i, Math.floor(world.clockMin));
+  if(!res) return;
+  applyDelta('standing', res.ds);
+  applyDelta('soul', res.dso);
+  $id('enc').classList.add('hidden');
+  $id('out').classList.remove('hidden');
+  $id('oline').textContent = res.outcome;
+  $id('nextbtn').textContent = g.failed ? 'See how it ends' : 'Back to your desk';
 }
 
 function choose(i){
@@ -788,6 +860,13 @@ function choose(i){
 
 function advance(){
   $id('cardoverlay').classList.add('hidden');
+  if(activeIncident){
+    activeIncident = null;           // incident cards don't advance the deck index
+    if(g.failed) return endGame();
+    W.resolveEncounter(world);
+    saveRun('day');
+    return;
+  }
   const r = G.advance(g);
   if(r === 'gameover') return endGame();
   W.resolveEncounter(world);
