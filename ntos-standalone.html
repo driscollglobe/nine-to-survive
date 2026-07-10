@@ -2070,8 +2070,30 @@ function tileHash(x, y){
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-// carpet-tile palette: 4×4 blocks alternate tone, tiles jitter within a block
-const CARPET = ['#EBE3CE', '#EEE6D3', '#E4DBC3', '#E8DFC9'];
+
+// ── floor materials: every zone gets a real surface, not a tint ───────────────
+// a/b = the material's two tones. kinds: carpet (blocks + jitter + flecks),
+// checker (lino, hard alternation), wood (planks along x with seams).
+const FLOOR_STYLES = [
+  { kind:'carpet',  a:'#C7CDD3', b:'#BFC6CD', fleck:'rgba(21,18,13,0.08)' },   // THE BULLPEN
+  { kind:'wood',    a:'#8A6A48', b:'#7C5F40' },                                // CORNER OFFICE
+  { kind:'carpet',  a:'#E2CDC7', b:'#DBC4BD', fleck:'rgba(21,18,13,0.06)' },   // HR
+  { kind:'checker', a:'#F1EDE0', b:'#D9D3C0' },                                // KITCHEN
+  { kind:'carpet',  a:'#DEC2A4', b:'#D6B897', fleck:'rgba(21,18,13,0.07)' },   // MEETING ROOM
+  { kind:'carpet',  a:'#CBC6AD', b:'#C2BDA2', fleck:'rgba(21,18,13,0.07)' },   // THE PIPE
+  { kind:'carpet',  a:'#E7C6A2', b:'#DFBB94', fleck:'rgba(21,18,13,0.07)' }    // BREAK CORNER
+];
+const FLOOR_BASE = { kind:'carpet', a:'#E9E0C6', b:'#E2D8BB', fleck:'rgba(21,18,13,0.05)' };
+// which zone owns each tile (computed once)
+const ZONE_MAP = (() => {
+  const m = new Int8Array(GRID_W * GRID_H).fill(-1);
+  ZONES.forEach((zn, i) => {
+    for(let dy = 0; dy < zn.d; dy++)
+      for(let dx = 0; dx < zn.w; dx++)
+        m[(zn.y + dy) * GRID_W + (zn.x + dx)] = i;
+  });
+  return m;
+})();
 
 // one wall segment (face, cap, baseboard, optional window with a sky glint)
 function wallSeg(ctx, ax, ay, bx, by, H, face, cap, hasWindow, z){
@@ -2122,28 +2144,53 @@ function render(w, ctx, cam, vw, vh){
   ctx.clearRect(0, 0, vw, vh);
   const z = cam.z;
 
+  const w2 = (TW / 2) * z, hh = (TH / 2) * z;
   for(let y = 0; y < GRID_H; y++){
     for(let x = 0; x < GRID_W; x++){
       const [px, py] = proj(cam, x, y);
       if(px < -TW * z || px > vw + TW * z || py < -TH * z || py > vh + TH * z) continue;
-      ctx.beginPath();
-      ctx.moveTo(px, py - (TH / 2) * z);
-      ctx.lineTo(px + (TW / 2) * z, py);
-      ctx.lineTo(px, py + (TH / 2) * z);
-      ctx.lineTo(px - (TW / 2) * z, py);
-      ctx.closePath();
-      const block = ((x >> 2) + (y >> 2)) & 1;
+      const zi = ZONE_MAP[y * GRID_W + x];
+      const st = zi >= 0 ? FLOOR_STYLES[zi] : FLOOR_BASE;
       const hsh = tileHash(x, y);
-      ctx.fillStyle = CARPET[block * 2 + (hsh < 0.35 ? 0 : 1)];
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(21,18,13,0.04)'; ctx.lineWidth = 1; ctx.stroke();
-      // carpet flecks
-      if(hsh > 0.84 && z > 0.7){
-        const ox = (tileHash(x + 101, y) - 0.5) * TW * 0.4 * z;
-        const oy = (tileHash(x, y + 77) - 0.5) * TH * 0.4 * z;
-        ctx.fillStyle = 'rgba(21,18,13,0.06)';
-        ctx.fillRect(px + ox, py + oy, 2 * z, 1.4 * z);
+      // corners: N top, E right, S bottom, W left
+      const nx = px, ny = py - hh, ex = px + w2, ey = py,
+            sx = px, sy = py + hh, wx = px - w2, wy = py;
+      ctx.beginPath();
+      ctx.moveTo(nx, ny); ctx.lineTo(ex, ey); ctx.lineTo(sx, sy); ctx.lineTo(wx, wy);
+      ctx.closePath();
+      if(st.kind === 'checker'){
+        ctx.fillStyle = (x + y) % 2 ? st.a : st.b;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(21,18,13,0.06)'; ctx.lineWidth = 1; ctx.stroke();
+      } else if(st.kind === 'wood'){
+        const base = (y % 2) ? st.a : st.b;
+        ctx.fillStyle = hsh < 0.3 ? shade(base, 0.95) : base;
+        ctx.fill();
+        // plank seams run along x: stroke the two row edges + occasional butt joint
+        ctx.strokeStyle = 'rgba(21,18,13,0.20)'; ctx.lineWidth = 1.2 * z;
+        ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(sx, sy); ctx.stroke();
+        if(hsh > 0.72){
+          ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(sx, sy); ctx.stroke();
+        }
+      } else {
+        // carpet squares: 4×4 blocks alternate, tiles jitter inside a block
+        const block = ((x >> 2) + (y >> 2)) & 1;
+        ctx.fillStyle = block ? (hsh < 0.35 ? st.b : st.a) : (hsh < 0.35 ? st.a : st.b);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(21,18,13,0.05)'; ctx.lineWidth = 1; ctx.stroke();
+        if(st.fleck && hsh > 0.8 && z > 0.7){
+          const ox = (tileHash(x + 101, y) - 0.5) * TW * 0.4 * z;
+          const oy = (tileHash(x, y + 77) - 0.5) * TH * 0.4 * z;
+          ctx.fillStyle = st.fleck;
+          ctx.fillRect(px + ox, py + oy, 2 * z, 1.4 * z);
+        }
       }
+      // a whisper of bevel: lit top edges, shaded bottom edges
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(nx, ny); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.strokeStyle = 'rgba(21,18,13,0.045)';
+      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(sx, sy); ctx.lineTo(wx, wy); ctx.stroke();
     }
   }
 
@@ -2170,8 +2217,8 @@ function render(w, ctx, cam, vw, vh){
       const [px, py] = proj(cam, gx - 0.5, gy - 0.5);
       i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
     });
-    ctx.closePath(); ctx.fillStyle = zn.color; ctx.fill();
-    ctx.strokeStyle = 'rgba(21,18,13,0.10)'; ctx.lineWidth = 1.4 * z; ctx.stroke();
+    ctx.closePath();   // the materials ARE the zones now; just edge them
+    ctx.strokeStyle = 'rgba(21,18,13,0.14)'; ctx.lineWidth = 1.6 * z; ctx.stroke();
     // the name plate is a floor decal: under the furniture, under the people
     const [lx, ly] = proj(cam, zn.x + zn.w / 2 - 0.5, zn.y + zn.d / 2 - 0.5);
     ctx.font = '700 ' + Math.max(8, 9.5 * z) + 'px Poppins, sans-serif';
