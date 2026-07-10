@@ -2064,6 +2064,60 @@ function screenToTile(cam, sx, sy){
   return { x: (ix + iy) / 2, y: (iy - ix) / 2 };
 }
 
+// deterministic per-tile hash — texture without a single random call
+function tileHash(x, y){
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+// carpet-tile palette: 4×4 blocks alternate tone, tiles jitter within a block
+const CARPET = ['#EBE3CE', '#EEE6D3', '#E4DBC3', '#E8DFC9'];
+
+// one wall segment (face, cap, baseboard, optional window with a sky glint)
+function wallSeg(ctx, ax, ay, bx, by, H, face, cap, hasWindow, z){
+  ctx.beginPath();
+  ctx.moveTo(ax, ay - H); ctx.lineTo(bx, by - H); ctx.lineTo(bx, by); ctx.lineTo(ax, ay);
+  ctx.closePath(); ctx.fillStyle = face; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(ax, ay - H); ctx.lineTo(bx, by - H);
+  ctx.lineTo(bx, by - H + 3.5 * z); ctx.lineTo(ax, ay - H + 3.5 * z);
+  ctx.closePath(); ctx.fillStyle = cap; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  ctx.lineTo(bx, by - 4 * z); ctx.lineTo(ax, ay - 4 * z);
+  ctx.closePath(); ctx.fillStyle = 'rgba(21,18,13,0.14)'; ctx.fill();
+  if(hasWindow){
+    const ix1 = ax + (bx - ax) * 0.16, iy1 = ay + (by - ay) * 0.16;
+    const ix2 = ax + (bx - ax) * 0.84, iy2 = ay + (by - ay) * 0.84;
+    ctx.beginPath();
+    ctx.moveTo(ix1, iy1 - H * 0.82); ctx.lineTo(ix2, iy2 - H * 0.82);
+    ctx.lineTo(ix2, iy2 - H * 0.28); ctx.lineTo(ix1, iy1 - H * 0.28);
+    ctx.closePath();
+    ctx.fillStyle = '#8FE4DA'; ctx.fill();
+    ctx.strokeStyle = 'rgba(21,18,13,0.28)'; ctx.lineWidth = 1.2 * z; ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ix1, iy1 - H * 0.82); ctx.lineTo(ix2, iy2 - H * 0.82);
+    ctx.lineTo(ix2, iy2 - H * 0.60); ctx.lineTo(ix1, iy1 - H * 0.60);
+    ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
+  }
+}
+
+// an empty office chair (also what everyone is sitting on)
+function drawChair(ctx, cam, gx, gy){
+  const z = cam.z;
+  const [px, py] = proj(cam, gx, gy);
+  ctx.beginPath(); ctx.ellipse(px, py + 1.5 * z, 6 * z, 2.8 * z, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(21,18,13,0.22)'; ctx.fill();          // caster shadow
+  ctx.fillStyle = '#3f3c36';
+  ctx.fillRect(px - 1.3 * z, py - 10 * z, 2.6 * z, 11 * z);   // post
+  ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(px - 7.5 * z, py - 26 * z, 15 * z, 12 * z, 4 * z);
+  else ctx.rect(px - 7.5 * z, py - 26 * z, 15 * z, 12 * z);
+  ctx.fillStyle = '#524e46'; ctx.fill();                       // backrest
+  ctx.beginPath(); ctx.ellipse(px, py - 9 * z, 8.5 * z, 4.6 * z, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#5c5850'; ctx.fill();                       // seat
+}
+
 function render(w, ctx, cam, vw, vh){
   ctx.clearRect(0, 0, vw, vh);
   const z = cam.z;
@@ -2078,11 +2132,37 @@ function render(w, ctx, cam, vw, vh){
       ctx.lineTo(px, py + (TH / 2) * z);
       ctx.lineTo(px - (TW / 2) * z, py);
       ctx.closePath();
-      ctx.fillStyle = (x + y) % 2 ? '#EDE5CF' : '#E7DEC6';
+      const block = ((x >> 2) + (y >> 2)) & 1;
+      const hsh = tileHash(x, y);
+      ctx.fillStyle = CARPET[block * 2 + (hsh < 0.35 ? 0 : 1)];
       ctx.fill();
-      ctx.strokeStyle = 'rgba(21,18,13,0.05)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = 'rgba(21,18,13,0.04)'; ctx.lineWidth = 1; ctx.stroke();
+      // carpet flecks
+      if(hsh > 0.84 && z > 0.7){
+        const ox = (tileHash(x + 101, y) - 0.5) * TW * 0.4 * z;
+        const oy = (tileHash(x, y + 77) - 0.5) * TH * 0.4 * z;
+        ctx.fillStyle = 'rgba(21,18,13,0.06)';
+        ctx.fillRect(px + ox, py + oy, 2 * z, 1.4 * z);
+      }
     }
   }
+
+  // the floor is a slab: a dark skirt along the two front edges
+  (() => {
+    const [e1x, e1y] = proj(cam, GRID_W - 0.5, -0.5);
+    const [e2x, e2y] = proj(cam, GRID_W - 0.5, GRID_H - 0.5);
+    const [e3x, e3y] = proj(cam, -0.5, GRID_H - 0.5);
+    const D = 12 * z;
+    ctx.fillStyle = 'rgba(21,18,13,0.22)';
+    ctx.beginPath();
+    ctx.moveTo(e1x, e1y); ctx.lineTo(e2x, e2y); ctx.lineTo(e2x, e2y + D); ctx.lineTo(e1x, e1y + D);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(21,18,13,0.30)';
+    ctx.beginPath();
+    ctx.moveTo(e2x, e2y); ctx.lineTo(e3x, e3y); ctx.lineTo(e3x, e3y + D); ctx.lineTo(e2x, e2y + D);
+    ctx.closePath(); ctx.fill();
+  })();
+
   ZONES.forEach(zn => {
     ctx.beginPath();
     const c = [[zn.x, zn.y],[zn.x + zn.w, zn.y],[zn.x + zn.w, zn.y + zn.d],[zn.x, zn.y + zn.d]];
@@ -2091,12 +2171,37 @@ function render(w, ctx, cam, vw, vh){
       i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
     });
     ctx.closePath(); ctx.fillStyle = zn.color; ctx.fill();
+    ctx.strokeStyle = 'rgba(21,18,13,0.10)'; ctx.lineWidth = 1.4 * z; ctx.stroke();
+    // the name plate is a floor decal: under the furniture, under the people
     const [lx, ly] = proj(cam, zn.x + zn.w / 2 - 0.5, zn.y + zn.d / 2 - 0.5);
-    ctx.fillStyle = 'rgba(21,18,13,0.34)';
-    ctx.font = '700 ' + Math.max(9, 11 * z) + 'px Poppins, sans-serif';
+    ctx.font = '700 ' + Math.max(8, 9.5 * z) + 'px Poppins, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(zn.label, lx, ly);
+    const tw2 = ctx.measureText(zn.label).width;
+    ctx.fillStyle = 'rgba(244,237,218,0.5)';
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(lx - tw2 / 2 - 7 * z, ly - 8 * z, tw2 + 14 * z, 14 * z, 7 * z);
+    else ctx.rect(lx - tw2 / 2 - 7 * z, ly - 8 * z, tw2 + 14 * z, 14 * z);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(21,18,13,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = 'rgba(21,18,13,0.45)';
+    ctx.fillText(zn.label, lx, ly + 3.5 * z);
   });
+
+  // back walls with windows (the west wall breaks for the EXIT door)
+  for(let x = 0; x < GRID_W; x++){
+    const [ax, ay] = proj(cam, x - 0.5, -0.5);
+    const [bx, by] = proj(cam, x + 0.5, -0.5);
+    if(bx < -TW * z || ax > vw + TW * z) continue;
+    wallSeg(ctx, ax, ay, bx, by, 48 * z, '#DAD2BD', '#C7BFA8', (x % 3) === 1, z);
+  }
+  for(let y = 0; y < GRID_H; y++){
+    if(y === 16 || y === 17) continue;               // the EXIT breaks the wall
+    const [ax, ay] = proj(cam, -0.5, y - 0.5);
+    const [bx, by] = proj(cam, -0.5, y + 0.5);
+    if(ax < -TW * z && bx < -TW * z) continue;
+    wallSeg(ctx, ax, ay, bx, by, 48 * z, '#CEC6AF', '#BBB39C', (y % 3) === 1, z);
+  }
+
 
   // interaction-spot rings: the places where standing there DOES something.
   // Pulse phase rides the game clock so it freezes politely with the world.
@@ -2127,6 +2232,14 @@ function render(w, ctx, cam, vw, vh){
     if(item.f) drawBox(ctx, cam, item.f, w);
     else drawActor(ctx, cam, item.a, w);
   });
+
+  // a soft vignette: fluorescent lighting, but make it cinematic
+  const vg = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.38,
+                                      vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
+  vg.addColorStop(0, 'rgba(21,18,13,0)');
+  vg.addColorStop(1, 'rgba(21,18,13,0.10)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, vw, vh);
 
   // off-screen threat arrows: a patrol/raid you can't see is still coming
   w.actors.forEach(a => {
@@ -2173,13 +2286,52 @@ function shade(hex, f){
   return 'rgb(' + r + ',' + g + ',' + b + ')';
 }
 
+// potted plants deserve better than a green cube
+function drawPlant(ctx, cam, f, z){
+  const [px, py] = proj(cam, f.x, f.y);
+  ctx.beginPath(); ctx.ellipse(px, py + 2 * z, 9 * z, 4 * z, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(21,18,13,0.18)'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(px - 8 * z, py - 8 * z); ctx.lineTo(px + 8 * z, py - 8 * z);
+  ctx.lineTo(px + 5.5 * z, py + 2 * z); ctx.lineTo(px - 5.5 * z, py + 2 * z);
+  ctx.closePath(); ctx.fillStyle = '#A5623F'; ctx.fill();
+  ctx.fillStyle = '#8A4F33'; ctx.fillRect(px - 8 * z, py - 10.5 * z, 16 * z, 3 * z);
+  [[-6, -17, 6.5, '#4E7A4E'], [6, -18, 6.5, '#477147'], [0, -26, 8.5, '#5C8A54'], [-1, -14, 5, '#446B44']]
+    .forEach(([ox, oy, r, c2]) => {
+      ctx.beginPath(); ctx.arc(px + ox * z, py + oy * z, r * z, 0, Math.PI * 2);
+      ctx.fillStyle = c2; ctx.fill();
+    });
+  ctx.beginPath(); ctx.arc(px - 2 * z, py - 28 * z, 3 * z, 0, Math.PI * 2);
+  ctx.fillStyle = '#6E9C63'; ctx.fill();
+}
+
+// the back of a monitor: every desk gets one
+function drawMonitor(ctx, cam, f, hpx, z){
+  const [mx, my] = proj(cam, f.x + f.w / 2 - 0.5, f.y + f.d / 2 - 0.5);
+  const ty = my - hpx;
+  ctx.fillStyle = '#33302b';
+  ctx.beginPath(); ctx.ellipse(mx, ty - 1 * z, 5 * z, 2.2 * z, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(mx - 1.4 * z, ty - 9 * z, 2.8 * z, 8 * z);
+  ctx.beginPath();
+  ctx.moveTo(mx - 12 * z, ty - 9 * z);
+  ctx.lineTo(mx + 12 * z, ty - 13 * z);
+  ctx.lineTo(mx + 12 * z, ty - 26 * z);
+  ctx.lineTo(mx - 12 * z, ty - 22 * z);
+  ctx.closePath();
+  ctx.fillStyle = '#23262b'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1 * z; ctx.stroke();
+}
+
 function drawBox(ctx, cam, f, w){
   const z = cam.z, hpx = f.h * 34 * z;
+  if(f.id.indexOf('plant') === 0){ drawPlant(ctx, cam, f, z); return; }
   // Brad's desk after the walk-out: a rectangle of cleaner carpet
   const col = (f.id === 'desk-brad' && w && w.flags && w.flags.bradGone) ? '#c9c1af' : f.color;
   const p = (gx, gy) => proj(cam, gx - 0.5, gy - 0.5);
   const [ax, ay] = p(f.x, f.y), [bx, by] = p(f.x + f.w, f.y);
   const [cx, cy] = p(f.x + f.w, f.y + f.d), [dx, dy] = p(f.x, f.y + f.d);
+  // meeting-room chairs on the far side sit behind the table
+  if(f.id === 'table-meet'){ drawChair(ctx, cam, 16, 3); drawChair(ctx, cam, 17, 3); }
   ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
   ctx.lineTo(cx, cy - hpx); ctx.lineTo(dx, dy - hpx); ctx.closePath();
   ctx.fillStyle = col; ctx.fill();
@@ -2206,15 +2358,81 @@ function drawBox(ctx, cam, f, w){
     ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#22262b'; ctx.lineWidth = 1 * z; ctx.stroke();
   }
+  // ---- per-piece dressing: the difference between "boxes" and "an office" ----
+  if(f.id.indexOf('desk-') === 0){
+    drawChair(ctx, cam, f.x + Math.floor(f.w / 2), f.y + f.d);
+    if(!(w && w.flags && w.flags.bradGone && f.id === 'desk-brad'))
+      drawMonitor(ctx, cam, f, hpx, z);
+  }
+  if(f.id === 'table-meet'){ drawChair(ctx, cam, 16, 6); drawChair(ctx, cam, 17, 6); }
+  if(f.id === 'table-kitch'){ drawChair(ctx, cam, 22, 13); drawChair(ctx, cam, 23, 13); }
+  if(f.id === 'couch'){
+    // backrest slab + cushion seams
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - hpx - 13 * z); ctx.lineTo(bx, by - hpx - 13 * z);
+    ctx.lineTo(bx, by - hpx + 5 * z); ctx.lineTo(ax, ay - hpx + 5 * z);
+    ctx.closePath(); ctx.fillStyle = shade(col, 1.12); ctx.fill();
+    const vx = dx - ax, vy = dy - ay;
+    ctx.strokeStyle = shade(col, 0.78); ctx.lineWidth = 1.4 * z;
+    for(let i = 1; i < 3; i++){
+      const t = i / 3;
+      const sx = ax + (bx - ax) * t, sy = ay + (by - ay) * t;
+      ctx.beginPath(); ctx.moveTo(sx, sy - hpx); ctx.lineTo(sx + vx, sy + vy - hpx); ctx.stroke();
+    }
+  }
+  if(f.id === 'coffee'){
+    const cxm = (dx + cx) / 2, cym = (dy + cy) / 2 - hpx * 0.55;
+    ctx.beginPath(); ctx.arc(cxm, cym, 2.2 * z, 0, Math.PI * 2);
+    ctx.fillStyle = '#D8443F'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cxm, cym, 3.8 * z, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1 * z; ctx.stroke();
+  }
+  if(f.id === 'fridge'){
+    ctx.strokeStyle = 'rgba(21,18,13,0.4)'; ctx.lineWidth = 2 * z;
+    ctx.beginPath();
+    ctx.moveTo(dx + (cx - dx) * 0.22, dy + (cy - dy) * 0.22 - hpx * 0.85);
+    ctx.lineTo(dx + (cx - dx) * 0.22, dy + (cy - dy) * 0.22 - hpx * 0.5);
+    ctx.stroke();
+  }
+  if(f.id === 'printer'){
+    const [tx2, ty2] = proj(cam, f.x, f.y);
+    ctx.fillStyle = '#f0ece0';
+    ctx.fillRect(tx2 - 7 * z, ty2 - hpx - 2 * z, 14 * z, 3 * z);
+    ctx.beginPath(); ctx.arc((bx + cx) / 2, (by + cy) / 2 - hpx * 0.6, 1.8 * z, 0, Math.PI * 2);
+    ctx.fillStyle = '#7CF5B4'; ctx.fill();
+  }
+  if(f.id === 'stairs'){
+    ctx.strokeStyle = 'rgba(21,18,13,0.35)'; ctx.lineWidth = 1.6 * z;
+    for(let i = 1; i < 4; i++){
+      const t = i / 4;
+      const sx1 = ax + (dx - ax) * t, sy1 = ay + (dy - ay) * t;
+      const sx2 = bx + (cx - bx) * t, sy2 = by + (cy - by) * t;
+      ctx.beginPath(); ctx.moveTo(sx1, sy1 - hpx); ctx.lineTo(sx2, sy2 - hpx); ctx.stroke();
+    }
+  }
   // the armed EXIT glows: your number is banked, the door is live
   if(f.id === 'exit' && w && w.walkoutArmed){
     ctx.beginPath(); ctx.moveTo(ax, ay - hpx); ctx.lineTo(bx, by - hpx);
     ctx.lineTo(cx, cy - hpx); ctx.lineTo(dx, dy - hpx); ctx.closePath();
     ctx.strokeStyle = '#7CF5B4'; ctx.lineWidth = 3 * z; ctx.stroke();
   }
-  if(f.label){
+  if(f.id === 'exit'){
+    // a proper glowing EXIT sign instead of floating text
     const [lx, ly] = proj(cam, f.x + f.w / 2 - 0.5, f.y + f.d / 2 - 0.5);
-    ctx.fillStyle = (f.id === 'exit' && w && w.walkoutArmed) ? '#0e5e35' : 'rgba(21,18,13,0.8)';
+    const sy = ly - hpx - 15 * z;
+    ctx.font = '800 ' + Math.max(8, 9 * z) + 'px Poppins, sans-serif';
+    ctx.textAlign = 'center';
+    const tw2 = ctx.measureText('EXIT').width;
+    ctx.fillStyle = (w && w.walkoutArmed) ? '#2E9E63' : '#26543C';
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(lx - tw2 / 2 - 5 * z, sy - 7 * z, tw2 + 10 * z, 13 * z, 3 * z);
+    else ctx.rect(lx - tw2 / 2 - 5 * z, sy - 7 * z, tw2 + 10 * z, 13 * z);
+    ctx.fill();
+    ctx.fillStyle = '#EAFBF1';
+    ctx.fillText('EXIT', lx, sy + 3 * z);
+  } else if(f.label){
+    const [lx, ly] = proj(cam, f.x + f.w / 2 - 0.5, f.y + f.d / 2 - 0.5);
+    ctx.fillStyle = 'rgba(21,18,13,0.8)';
     ctx.font = '700 ' + Math.max(8, 9 * z) + 'px Poppins, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(f.label, lx, ly - hpx - 6 * z);
@@ -2249,8 +2467,10 @@ function drawActor(ctx, cam, a, w){
   }
   ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, 0, Math.PI * 2);
   ctx.fillStyle = a.color; ctx.fill();
+  ctx.strokeStyle = 'rgba(21,18,13,0.35)'; ctx.lineWidth = 1.3 * z; ctx.stroke();
   ctx.beginPath(); ctx.arc(px, py - 26 * z, 6.5 * z, 0, Math.PI * 2);
   ctx.fillStyle = a.bear ? '#7d7871' : '#E8C39E'; ctx.fill();   // badger gray
+  ctx.strokeStyle = 'rgba(21,18,13,0.3)'; ctx.lineWidth = 1.1 * z; ctx.stroke();
   if(a.bear){
     ctx.beginPath(); ctx.arc(px - 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
     ctx.arc(px + 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
