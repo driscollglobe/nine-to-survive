@@ -532,3 +532,32 @@ screenshots confirmed the second laptop, the feed ticker, and the receipt HUD.
 - Next: PIP arc as an ARCS entry (warnings → PIP → summons to the HR pod — the
   engine and summons machinery are both ready for it), Dennis-as-blocker, meetings,
   arc-start spacing, and the mascot PNG swap.
+
+## Session 9 — Recovery session (2026-07-10, autonomous per TASKS.md)
+
+### TASK 0 — the audit (what git actually shows)
+
+The suspicion behind this session was that a previous brief commissioned a competent
+policy, arc selection, a Priya arc, and a Dennis blocker, and that the session
+carrying it either dodged the hard parts or died. **Git settles it: that session
+never ran against this repo.** Evidence, checked directly:
+
+- `git log --oneline -30`: every commit since the Session 5 baseline maps 1:1 to a
+  brief that IS in the repo's history. Session 7 (tightening pass): TASK 1–7 commits
+  all present. Session 8 (character chaos): TASK 1–10 commits all present
+  (797d435 → 7a54004), plus five post-session fix/visual commits requested live
+  (mascot inline, scroll fix, legend alignment, two visual passes).
+- `git log --follow TASKS.md`: exactly three briefs were ever saved here — the
+  baseline, Session 7's, and Session 8's. **No version of TASKS.md ever contained
+  the policy/Priya/Dennis brief.** It was written in a chat that never touched this
+  folder — nothing was saved, nothing was committed, nothing partial exists.
+- Grep across HEAD for the commissioned systems: `policyAction`, a `priya_*` ARCS
+  entry, any needs-approval/blocker code — zero hits. Priya exists only as a chat
+  peer and feed lines. The ARCS table holds exactly the five Session 8 arcs.
+- Does SESSION_LOG overstate? **No.** Each Session 8 claim maps to a commit and to
+  code present at HEAD; the movie-mode and soak claims describe the dumb desk-bot
+  accurately (it was never claimed to be competent). The log's own "next steps"
+  list Dennis-as-blocker as future work, consistent with never-built.
+
+Verdict: not "ran and dodged," not "ran and died" — **never ran.** The correct
+recovery is to build the commissioned systems now, which is the rest of this brief.
