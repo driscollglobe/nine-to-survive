@@ -2,16 +2,53 @@
 
 Pick up here. This is the active game (MARQUE is retired/intact at `/Desktop/marque/` — reuse
 its *patterns* only). Everything lives in `/Users/kevindriscoll/Desktop/nine to survive/`.
-It RUNS and TESTS GREEN (**229 game + 128 world**, incl. a five-policy 50-seed sweep matrix
-and a 100-career soak with every system active). Git repo, one commit per task, never pushed.
-Read `SESSION_LOG.md` Sessions 5–9 — Session 9 opens with a git audit worth knowing about.
+It RUNS and TESTS GREEN (**269 game + 151 world**, incl. a five-policy 50-seed sweep matrix
+with every system active). Git repo, one commit per task, never pushed.
+Read `SESSION_LOG.md` Sessions 5–10. Session 10 is the "corporate disaster machine" pass:
+heat, chain reactions, spatial tells, interceptions, schemes, the story collection,
+named failures. The game is no longer walk→work→popup: trouble crosses the floor
+visibly, and the player can intercept, exploit, redirect, or weaponize it.
 
-## Current quick facts (through Session 9, 2026-07-10, autonomous)
+## Session 10's layer (know these five systems)
+- **Office heat** (`g.heat` — hr/boss/brad, `addHeat`/`heatOf`/`heatLevel`): raised
+  only by real player actions; consequences: HR High moves the warning bar +5,
+  Boss High adds a floor walk + off-arc quick-call summons (~1-in-3 days), Brad
+  High adds a raid + the once-per-run self-own morning. HUD line from Medium;
+  levels on the 5:01 report. Extra raid is rolled LAST in newDay (stream-safe).
+- **Chain reactions** (8, grep `CHAIN:` in ntos-game.js): truth→writing-style hunt;
+  backing Priya→paranoia; ignored Kayla→cold chats (−2) + easier dead-eyed
+  headline; exposed Brad→Legal line + raids END (burned/cowed); blocker+Adam→
+  50/50 bypass/worse; spiral+attention→deflect only holds some days; warnings
+  compound HR heat; paranoia→self-own.
+- **Tells + interceptions** (world): Brad LURKS 25 min pre-raid (👀 — confront
+  kills the raid; or plant the flawed file and let him steal poison); the Boss
+  stands up 20 min pre-walk (📋); Dennis carries blocked files desk↔Pipe (red
+  folder — walk with him = one free clear/day); Adam walks to HR "with a
+  concern" ~1-in-3 days on his side stream (redirect = Soul −1, land = HR heat
+  +1, or point him at Dennis); Priya sets up in the MEETING ROOM 40 min
+  pre-demo — the demo card fires THERE; reach her early to collect the commit
+  log or plant the backup file (card then auto-resolves as the bait).
+- **Schemes** (`g.schemes`, 5): flash the screenshot (raids end, receipt kept);
+  the poison file (+3 Standing, he presents it); the Adam grenade (seeded
+  50/50); metadata cools HR to zero (COMPETES with its warning-defusal use);
+  commit log as calibration context (+5, spent). All extra verbs/choices that
+  exist only when their conditions hold.
+- **Story collection**: 13 unlockables (brain: `STORY_META`/`STORY_ORDER`/
+  `earnedStories` — multi-unlock, ladder lead first; shell: localStorage
+  `ntos-stories-v1`). Start screen count + View-stories (locked = ??? + hint);
+  end screen "★ New story discovered" / "Story recorded". Specific failure
+  verdicts name the killer (Notes Person, Emotional Support Employee,
+  Writing Style, Track Changes, Brad's Narrative, Followed Up to Death,
+  Productivity Held) off real counters incl. the `g.stats.comply` ledger.
+
+## Current quick facts (through Session 10, 2026-07-10, autonomous)
 - **Balance**: your number is **$3,100**; a day = 2.5 real min; pay 260→1000 + $250 crunch
-  bonus (Associate+). Competent play escapes **days 10–16 (48/50; two Dennis-taxed 19s)**
-  with **Soul 58–89, median ~71** — worn, not gutted (Soul gains halve above 70; hot arc
-  days bill −4; promotions cost Soul 9). Desk-camping and suck-up die of Soul; rebels lose
-  to Standing; a permanent Intern can never bank the number. All sweep-gated.
+  bonus (Associate+). Competent play escapes **days 10–16 (47/50; tail 17/19/19)** with
+  **Soul 54–88, median ~70** — worn, not gutted (Soul gains halve above 70; hot arc
+  days bill −4; promotions cost Soul 9; the heat taxes are priced in). Desk-camping and
+  suck-up die of Soul; rebels lose to Standing; a permanent Intern can never bank the
+  number. All sweep-gated. A live `?movie=1` career on the final build escaped Day 11
+  ($3,485, Soul 75) with all three heat meters High — consequences active, still in-window.
 - **THE POLICY** (Session 9's center): `policyAction`/`policyCardChoice`/
   `policyIncidentChoice` — ONE pure dev-marked policy in the brain, consumed by BOTH
   `?movie=1` and the headless soak (identity asserted by exact-equality sweeps). Cards are
@@ -68,22 +105,26 @@ off (seed, day) so no pre-Adam staging ever shifted.
 - **Feed / headlines / awards / share**: brain-owned, deterministic, real events only.
 
 ## Files
-- `ntos-game.js` (`?v=n19`) — the BRAIN: career rules, five arcs, incidents, receipts, feed,
-  story ladder, dayHeadline/dayAward, **the policy** (dev-marked section at the bottom).
+- `ntos-game.js` (`?v=n20`) — the BRAIN: career rules, five arcs, incidents, receipts, feed,
+  heat + chains, schemes, story ladder + STORY_META collection, specific-failure verdicts,
+  dayHeadline/dayAward, **the policy** (dev-marked section at the bottom).
   Zero bare Math.random; local generators for anything that must not shift streams.
-- `ntos-world.js` (`?v=w18`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
-  firing escort, summons, kitchen, webinar, approvals, interception), event queue with
-  substitution, materials-based floor render. Never touches meters.
-- `index.html` — the SHELL: canvas world, HUD (+blocked count, receipts line), #office feed,
-  card/incident overlay, popup context verbs (chat/sit-with/take-task/quick-call/report/
-  Pipe/flatter/receipt/phrase), day report (headline, award, feed log), movie autopilot
-  consuming THE policy, save/resume, watchdog.
-- `ntos-standalone.html` (318 KB) — rebuilt by `build_standalone.py` after ANY change.
-- `game-test.js` (229) + `world-test.js` (128, ~4 min: acceptance sweeps + the five-policy
-  matrix + Adam) — `osascript -l JavaScript <file>`. **The matrix is the definition of
-  done**: movie≡competent, competent escapes most runs 10–16, desk/suck-up die of Soul,
-  rebel loses to Standing, zero hangs.
-- `TASKS.md` — current session's brief. `assets/` — badger logo (inlined as data URI).
+- `ntos-world.js` (`?v=w19`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
+  firing escort, summons, kitchen, webinar, approvals, interception, lurk/telegraphs,
+  Dennis carry, Adam concern walk, meeting-room demos), event queue with substitution,
+  interception verbs (confront/flash/bait/walk-with/redirect/grenade/pre-demo/cool-HR),
+  materials-based floor render. Never touches meters.
+- `index.html` — the SHELL: canvas world, HUD (+blocked count, receipts, heat line),
+  #office feed, card/incident overlay, popup context verbs (all of the above), day report
+  (headline, award, heat, feed log), the story-collection overlay + unlock recording
+  (the ONLY localStorage owner), movie autopilot consuming THE policy, save/resume, watchdog.
+- `ntos-standalone.html` (372 KB) — rebuilt by `build_standalone.py` after ANY change.
+- `game-test.js` (269) + `world-test.js` (151, ~5 min: acceptance sweeps + the five-policy
+  matrix + tells/interceptions) — `osascript -l JavaScript <file>`. **The matrix is the
+  definition of done**: movie≡competent, competent escapes most runs 10–16, desk/suck-up
+  die of Soul, rebel loses to Standing, zero hangs.
+- `TASKS.md` — previous session's brief (Session 10 ran from a chat brief; see SESSION_LOG).
+  `assets/` — badger logo (inlined as data URI).
 
 ## Workflow rules
 1. Rules/lore → brain; staging/movement/render → world; wiring → shell. Strictly.
@@ -95,10 +136,16 @@ off (seed, day) so no pre-Adam staging ever shifted.
    update must be argued in the commit message.
 
 ## Known risks / next
-1. Two promotion-margin seeds escape day 19 under Dennis's tax (gate covers it; a
-   promotion-variance system would smooth the review-cliff).
-2. Zero rebel survivors at this tuning; add a survival valve if that tail matters.
-3. Adam's interception vs human patience — watch playtests (≤2/day + cooldown today).
-4. Receipts can pile up unused (the policy hoards them deliberately); consider a valve.
-5. PIP arc is still the natural next ARCS entry (warnings → PIP → HR-pod summons; all
-   machinery exists). Meetings (webinar freeze is the prototype). Run meta later.
+1. Competent play runs Boss attention High most runs (perfect ship-days); at the desk
+   the extra walk is mostly upside (+2 passes). Watch whether humans read "Boss High"
+   as threat or trophy; tune the perfect-day source if it feels like a reward.
+2. The flash and the poison file are strictly better than eating raids once you hold
+   the pieces — if playtests say "no-brainer," give them a price.
+3. Pre-planted demos auto-resolve (you chose in the empty room). Verify it reads as
+   payoff, not railroad.
+4. Promotion-margin tail (17/19/19 escape days) persists under Dennis+heat taxes;
+   a promotion-variance system would smooth the review cliff.
+5. Zero rebel survivors at this tuning; add a survival valve if that tail matters.
+6. PIP arc is still the natural next ARCS entry (warnings → PIP → HR-pod summons; all
+   machinery exists — and HR heat now feeds it naturally). Run meta later; the story
+   collection is the hook it would hang from.

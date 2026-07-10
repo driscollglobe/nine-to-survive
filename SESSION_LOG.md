@@ -533,6 +533,141 @@ screenshots confirmed the second laptop, the feed ticker, and the receipt HUD.
   engine and summons machinery are both ready for it), Dennis-as-blocker, meetings,
   arc-start spacing, and the mascot PNG swap.
 
+## Session 10 — The corporate disaster machine (2026-07-10, autonomous per brief)
+
+**The diagnosis this session answered:** the game was walk → work → recover →
+popup → repeat; funny writing, not enough funny *player-caused* outcomes. The
+fix was verbs, chains, and spatial decisions — no new coworkers, no new deck
+cards, no visual polish. Systems colliding, not text.
+
+### TASK 6 — Office heat (built first: the foundation the chains hook into)
+Three pressure meters on `g.heat` — **HR heat / Boss attention / Brad
+paranoia** — raised only by things the player actually did:
+- HR: survey truth +2, each receipt collected +1, public receipt-burns +1,
+  warnings +1. Consequence: at High the **warning bar moves** (WARN_AT+5) and
+  Meredith starts the writing-style project (morning feed tell).
+- Boss: promotion +2, dodged summons +2, crunch win +1, perfect ship-day +1.
+  Consequence: at High an **extra floor walk** and **off-arc quick-call
+  summons** on seeded ~1-in-3 days.
+- Brad: the screenshot +2, backing Priya +1, the bait +2, foiled raids +1.
+  Consequence: at High an **extra raid** (rolled LAST in newDay so pre-heat
+  staging never shifts) and, once per run, the seeded **self-own morning**
+  (FINAL_v2_BRAD_PRIVATE, recalled twice).
+HUD shows a heat line from Medium; the 5:01 report carries all three levels.
+Serialized on g, reset by newGame, lazy-init for old saves.
+
+### TASK 3 — Chain reactions (8 links, each marked CHAIN in comments)
+1. Survey truth → HR heat → higher warning bar + the highlighter feed tell.
+2. Backing Priya (or the bait) → Brad stress + paranoia → more raids.
+3. Ignoring Kayla → her chats refill −2 for the rest of the run; the
+   dead-eyed headline bar drops to one task.
+4. Exposing Brad (burn OR flash) → Legal morning line + **his raids end**.
+5. Dennis blocker + Adam deployed → seeded 50/50 bypass or a worse day.
+6. Boss spiral + Boss attention ≥ Medium → deflecting only works some days
+   (the "five minutes" that never is).
+7. Warnings themselves compound HR heat.
+8. Paranoia High → the self-own morning (his mistake, your feed).
+
+### TASK 4 — the map tells (trouble visibly crosses the floor first)
+- **Brad lurks** at a water spot with line of sight on your inbox ~25 game-min
+  before every raid (👀 over his head, toast, status line).
+- **The Boss stands up** and reads the floor ~20 min before each walk (📋).
+- **Dennis carries the blocked files** desk↔Pipe with a red folder in hand on
+  blocker days (destination override only — identical rand spend, so nothing
+  else's staging shifts).
+- **Adam walks to HR "with a concern"** ~1 day in 3 (seeded on his side
+  stream; pre-existing Adam staging byte-identical).
+- **Priya sets up in the MEETING ROOM** 40 min before the demo; the demo card
+  now fires there (the presenter walks to the room, not to your desk). Spot
+  rings mark The Pipe (while files are held) and the demo room.
+
+### TASK 5 — interruptible floor events (react with your feet)
+- **The lurking Brad**: confront him ("Looking for something?") — raid dies,
+  paranoia +1; or sit tight (foil, as before); or see TASK 2's bait.
+- **Dennis mid-carry**: fall into step and answer the questions en route —
+  one approval clears free, once a day.
+- **Adam's concern walk**: intercept with a question about 2009 (Soul −1, HR
+  never hears) or let it land (HR heat +1, a folder opens); on a blocker day,
+  point him at Dennis instead.
+- **The pre-demo window**: reach Priya in the meeting room before it starts to
+  collect the commit log early or plant the flawed backup file (the demo card
+  then auto-detonates — you chose earlier, in the empty room).
+
+### TASK 2 — schemes (5, all deterministic, all serialized on g.schemes)
+1. **Flash the screenshot** at Brad: shown, not spent — raids end for the run
+   (cowed), paranoia +2. The receipt stays for the Credit-Reassigned burn.
+2. **The poison file**: leave the flawed file on top, be visibly elsewhere;
+   the raid becomes `bradpoisoned` — you lose the task, he presents poison
+   (Standing +3, paranoia +2, two feed lines, headline, award).
+3. **Adam as a chaos grenade** vs Dennis: seeded 50/50 — everything approved
+   to end a conversation about index cards, or a sub-process is born and one
+   more file gets stuck (Soul −1, you're invited to the meeting about it).
+4. **Cool HR with the metadata**: burns the receipt, zeroes HR heat — and
+   *competes* with its warning-defusal use. One receipt, two jobs, pick.
+5. **The commit log as calibration context** (+5 Standing, spent): receipts
+   work on slides about you, too.
+
+### TASK 1 — the story collection (replayability across runs)
+13 stories (the brief's list; `STORY_META` names + no-spoiler hints live in
+the brain, localStorage lives ONLY in the shell). Start screen: "Stories
+found X / 13" + View stories (found = named; locked = ??? + hint). Run end:
+"★ New story discovered: …" first time, "Story recorded: …" after.
+`earnedStories(g)` multi-unlocks everything a run clearly earned, ladder lead
+first. Verified live in the browser: unlock → localStorage → reload → count
+persists.
+
+### TASK 7 — failures name what killed you (first-match over real state)
+Became the Notes Person (comply ledger ≥8 — applyChoice now counts
+Standing-for-Soul trades) · Promoted to Emotional Support Employee (3+ quick
+calls) · Productivity Held (Kayla ignored) · Returned With Track Changes (5+
+approvals ground out) · Identified by Writing Style (HR heat High/truth
+billed) · Reassigned Into Brad's Narrative (3+ steals) · Followed Up to Death
+(Adam attrition ≥3). Plain deaths keep the plain endings. All shareable.
+
+### TASK 8 — microcopy tied to events, never dice
+Blocked-file toasts escalate (1st/2nd/"The Pipe is becoming a district");
+ship toasts know about held files, inbox zero, and review Fridays; Adam's
+interception lines escalate with his actual count; 6 new headlines (poison,
+grenade, self-own, confront, cooled, concern) + 3 new awards (Best Supporting
+Saboteur, Regional Director of Chaos, Human Firewall); share copy counts
+schemes ("The building started it.").
+
+### TASK 9 — the gate (all ran, all seen green)
+| policy        | escaped | soul-death | standing-loss | hangs |
+|---------------|--------:|-----------:|--------------:|------:|
+| movie-default | 50/50   | 0          | 0             | 0     |
+| competent     | 50/50   | 0          | 0             | 0     |
+| desk-only     | 0/50    | 50         | 0             | 0     |
+| suck-up       | 0/50    | 50         | 0             | 0     |
+| rebel (60-day)| 0/50    | 0          | 50            | 0     |
+
+- Escape days with every new system active: **47/50 in Day 10–16** (94%,
+  tail 17/19/19 ≤ 22); Soul at escape **54–88, median ~70** — the heat taxes
+  are priced in and the shape held without retuning.
+- movie ≡ competent asserted by exact equality; the soak handles the one new
+  autonomous signal (`adamconcern`) exactly as the shell does.
+- **269 game tests** (26 new: heat, chains, schemes, collection, verdicts) +
+  **151 world tests** (23 new: lurk/confront, bait/poison, flash, boss
+  telegraph, Dennis carry/escort, concern walk/redirect, grenade, demo room
+  + pre-verbs) — all green, zero bare Math.random anywhere new (Dennis's
+  carry provably spends identical rand; Adam's concern rides his side stream).
+- Browser (n20/w19, zero console errors): story unlock → reload → persists;
+  heat line appears at Medium; `?movie=1` autopilot ran with schemes,
+  approvals and the walkout intact (see below).
+- Standalone rebuilt (371 KB). Three deliberate assertion amendments, all
+  argued in commits: spiral walks ≥1 (heat can stack a second), deflect
+  asserted with a cold boss, blocked-count captured at signal time.
+
+### What remains risky / next
+- Competent play now runs Boss attention High most runs (perfect ship-days);
+  the extra walk is mostly upside at the desk — watch whether human players
+  read "Boss High" as threat or trophy.
+- The poison file and the flash are strictly better than eating raids once
+  you hold the pieces; if playtests show no-brainer feel, price them.
+- The pre-demo auto-detonate removes the in-room choice when pre-planted
+  (intended: you chose earlier) — verify it reads as payoff, not railroad.
+- Rebel still has no survivor tail; unchanged from Session 9.
+
 ## Session 9 — Recovery session (2026-07-10, autonomous per TASKS.md)
 
 ### TASK 0 — the audit (what git actually shows)
