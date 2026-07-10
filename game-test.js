@@ -338,6 +338,7 @@ ok('arcs never move the day-plan stream', (() => {
 // the Brad arc stages its clues on schedule
 ok('Brad arc: laptop by day 4, clues escalate, discovery card staged', (() => {
   const g2 = G.newGame(12);
+  g2.activeArcs.brad_second_job = true;
   let sawLaptop = false, sawCalls = false, sawIncident = false;
   for(let d = 0; d < 6; d++){
     G.nextDay(g2);
@@ -351,6 +352,7 @@ ok('Brad arc: laptop by day 4, clues escalate, discovery card staged', (() => {
 // the Boss arc goes hot in week two with its pressure flags
 ok('Boss arc: hot week 2+, extra walk + crunch boost + a summons', (() => {
   const g2 = G.newGame(12);
+  g2.activeArcs.boss_spiral = true;
   for(let d = 0; d < 9; d++){
     G.nextDay(g2);
     const f = G.worldFlagsFor(g2);
@@ -360,6 +362,7 @@ ok('Boss arc: hot week 2+, extra walk + crunch boost + a summons', (() => {
 })());
 // npcState + arc state survive the save: snapshot mid-arc, continue both, identical
 const gArc = G.newGame(13);
+gArc.activeArcs.brad_second_job = true;
 careerLoop(gArc, 2, 6, 2, 'bossPass', 6);
 ok('mid-arc snapshot has live arc state', gArc.arcs.brad_second_job.stage >= 1, 'stage='+ (gArc.arcs.brad_second_job||{}).stage);
 const gArcSaved = JSON.parse(JSON.stringify(gArc));
@@ -417,6 +420,7 @@ ok('nextDay clears the day\'s feed', (() => {
 // march a fresh career to the discovery morning (meters pinned so nothing dies)
 function toDiscovery(seed){
   const g2 = G.newGame(seed);
+  g2.activeArcs.brad_second_job = true;   // force the arc under test
   let guard = 0;
   while((g2.arcs.brad_second_job || { stage: 0 }).stage < 4 && guard++ < 12){
     G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
@@ -432,6 +436,7 @@ ok('discovery morning: stage 4 + the card staged for today',
        && i.atMin >= 620 && i.atMin < 900), 'day='+gd1.day);
 ok('clue flags preceded the card: laptop + calls, deck minute staged on day 3 of arc', (() => {
   const g2 = G.newGame(101);
+  g2.activeArcs.brad_second_job = true;
   const seen = { laptop: false, calls: false, deck: false };
   while((g2.arcs.brad_second_job || { stage: 0 }).stage < 4){
     const f = G.worldFlagsFor(g2);
@@ -544,6 +549,7 @@ ok('arc storyline is seed-deterministic end to end', (() => {
 // ---- 15. the Boss personal-spiral arc ---------------------------------------------
 function toBossHot(seed){
   const g2 = G.newGame(seed);
+  g2.activeArcs.boss_spiral = true;   // force the arc under test
   let guard = 0;
   while(!(g2.arcs.boss_spiral && g2.arcs.boss_spiral.stage === 1) && guard++ < 15){
     G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
@@ -712,6 +718,7 @@ ok('headline/award are pure functions of run state', G.dayHeadline(gH4) === G.da
 // ---- 16b. the HR anonymous-survey incident -----------------------------------------
 function toSurvey(seed){
   const g2 = G.newGame(seed);
+  g2.activeArcs.hr_survey = true;   // force the arc under test
   let guard = 0;
   while(!g2.todayIncidents.some(i => i.id === 'hr_survey') && guard++ < 12){
     G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
@@ -781,6 +788,7 @@ ok('survey day owns its headline', (() => {
 // ---- 16c. Kayla's presentation-panic day ---------------------------------------------
 function toPanic(seed){
   const g2 = G.newGame(seed);
+  g2.activeArcs.kayla_presentation = true;   // force the arc under test
   let guard = 0;
   while(!G.worldFlagsFor(g2).kaylaPanic && guard++ < 12){
     G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
@@ -857,15 +865,68 @@ gS3.failed = 'standing'; gS3.over = true; gS3.day = 9;
 ok('managed out: transition line', /Managed out on Day 9\. HR called it a transition/.test(G.shareText(gS3)));
 const gS4 = G.newGame(501);
 gS4.stats.crunchWins = 4; gS4.stats.bradSteals = 2; gS4.stats.warnings = 1;
-ok('counters make a survived-list', /Survived 4 fire drills, 2 Brad thefts, and 1 formal warning\./.test(G.shareText(gS4)));
+ok('counters alone are not a story (the ladder replaced the list)',
+  G.storyKey(gS4) === null && /unremarkable tenure/.test(G.shareText(gS4)));
 const gS5 = G.newGame(501);
-gS5.npcState.boss.flags.sympathetic = true; gS5.npcState.boss.counters.quickCalls = 3;
-ok('the emotional-support-animal run tells on itself', /emotional support animal/.test(G.shareText(gS5)));
+gS5.arcs.boss_spiral = { stage: 2 };
+gS5.npcState.boss.counters.quickCalls = 3;
+ok('surviving the spiral tells on itself', G.storyKey(gS5) === 'boss_survived'
+  && /personal weather system/.test(G.shareText(gS5)));
+// the ladder holds: a run with several stories leads with the highest rung
+const gS6 = G.newGame(501);
+gS6.npcState.kayla.flags.satWith = true;
+G.addReceipt(gS6, 'hr_survey_metadata');
+gS6.npcState.marcus.counters.saves = 2;
+ok('priority ladder: Kayla helped outranks metadata and Marcus', G.storyKey(gS6) === 'kayla_helped');
+gS6.npcState.brad.flags.fired = true;
+ok('priority ladder: Brad exposed outranks everything', G.storyKey(gS6) === 'brad_exposed');
 ok('share text never invents: fresh run has no arc claims', (() => {
   const t = G.shareText(G.newGame(502));
   return !/Brad/.test(t) && !/screenshot/.test(t) && !/survey/.test(t);
 })());
 ok('share is a pure function of g', G.shareText(gS4) === G.shareText(gS4));
+
+// ---- 17b. arc selection: 2–3 storylines per run, the rest fully dormant ------------
+ok('every run draws 2 or 3 story arcs (+ Marcus always)', (() => {
+  for(let sd = 1; sd <= 40; sd++){
+    const a = G.pickArcs(sd);
+    const n = Object.keys(a).filter(k => k !== 'marcus_survivor').length;
+    if(!a.marcus_survivor || n < 2 || n > 3) return false;
+  }
+  return true;
+})());
+ok('selection is seed-deterministic', JSON.stringify(G.pickArcs(77)) === JSON.stringify(G.pickArcs(77)));
+ok('no arc appears in nearly all runs; every arc appears in some', (() => {
+  const freq = {};
+  const N = 80;
+  for(let sd = 1; sd <= N; sd++){
+    Object.keys(G.pickArcs(sd * 131 + 7)).forEach(k => { freq[k] = (freq[k] || 0) + 1; });
+  }
+  return G.ARC_POOL.every(p => freq[p.key] >= N * 0.2 && freq[p.key] <= N * 0.85)
+    && freq.brad_second_job <= N * 0.7;
+})());
+ok('an undrawn arc is fully dormant: no stages, no clues, no feed', (() => {
+  // find a seed where Brad's arc was not drawn
+  let sd = 1;
+  while(G.pickArcs(sd).brad_second_job && sd < 500) sd++;
+  const g2 = G.newGame(sd);
+  if(g2.activeArcs.brad_second_job) return false;
+  for(let d = 0; d < 15; d++){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 70; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+    const f = G.worldFlagsFor(g2);
+    if(f.bradLaptop || f.bradCalls || f.bradDeckAt || f.bradFiredToday) return false;
+    if(g2.todayIncidents.some(i => i.id === 'brad_discovery')) return false;
+    if(g2.feed.some(l => /Brad deleted a message/.test(l.text))) return false;
+  }
+  return !g2.arcs.brad_second_job;
+})());
+ok('activeArcs serializes with the save', (() => {
+  const g2 = G.newGame(909);
+  const back = JSON.parse(JSON.stringify(g2));
+  return JSON.stringify(back.activeArcs) === JSON.stringify(g2.activeArcs);
+})());
 
 // ---- 18. the competent policy (pure functions; consumed by movie + soak) ---------
 function fakeWorld(over){

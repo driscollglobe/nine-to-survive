@@ -333,6 +333,31 @@ const NineToSurvive = (() => {
     return st;
   }
 
+  // Which storylines does THIS run get? Seeded selection of 2–3 from the story
+  // pool (weighted so Brad's scandal doesn't headline nearly every run); Marcus
+  // is the mentor, not a storyline, and is always on. Inactive arcs stay fully
+  // dormant: no clues, no stages, no incidents, no feed lines.
+  const ARC_POOL = [
+    { key: 'brad_second_job', wt: 0.5 },   // the scandal headlines a minority of runs
+    { key: 'boss_spiral', wt: 1 },
+    { key: 'hr_survey', wt: 1 },
+    { key: 'kayla_presentation', wt: 1 }
+  ];
+  function pickArcs(runSeed){
+    const r = localRand((runSeed ^ hashStr('arc_select')) | 0);
+    const count = 2 + (r() < 0.5 ? 1 : 0);
+    const active = { marcus_survivor: true };
+    const cands = ARC_POOL.slice();
+    for(let i = 0; i < count && cands.length; i++){
+      const total = cands.reduce((s, c) => s + c.wt, 0);
+      let roll = r() * total, idx = 0;
+      while(idx < cands.length - 1 && roll > cands[idx].wt){ roll -= cands[idx].wt; idx++; }
+      active[cands[idx].key] = true;
+      cands.splice(idx, 1);
+    }
+    return active;
+  }
+
   // Fresh career. Day 1, Intern, seeded plan for the first day.
   function newGame(seed){
     const g = {
@@ -345,6 +370,7 @@ const NineToSurvive = (() => {
       taskStreak: 0, deadEyedToday: 0,
       npcState: freshNpcState(),
       arcs: {},              // per-arc runtime state, keyed by ARCS name — pure data
+      activeArcs: pickArcs((seed == null ? 1 : seed) | 0),   // this run's storylines
       todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
       receipts: { count: 0, flags: {} },
       feed: [],              // today's office feed: [{m: clockMin, text}]
@@ -558,12 +584,14 @@ const NineToSurvive = (() => {
           g.todayIncidents.push({ id: 'brad_discovery', owner: 'brad',
             atMin: 620 + Math.floor(arcRand(g, 'brad', 'discovery')() * 250) });
         } else if(a.stage === 5){
-          // exposed and unreported: some mornings, payroll does the math
+          // exposed and unreported: some mornings, payroll does the math —
+          // and some runs, the moment genuinely passes (holding the screenshot
+          // unspent is its own story)
           a.waited = (a.waited || 0) + 1;
-          if(arcRand(g, 'brad', 'fired')() < 0.5){
+          if(arcRand(g, 'brad', 'fired')() < 0.4){
             a.stage = 6; brad.stress = 3;
             pushFeed(g, 540, 'All-hands moved to 11:30. “Please plan to attend.” Nobody plans to attend. Everybody attends.');
-          } else if(a.waited >= 3){
+          } else if(a.waited >= 2){
             a.stage = 8;
             pushFeed(g, 540, 'Brad archived a channel nobody knew existed. The moment passed. Somehow the moment passed.');
           }
@@ -708,6 +736,8 @@ const NineToSurvive = (() => {
   function advanceArcs(g){
     if(!g.arcs) g.arcs = {};
     Object.keys(ARCS).sort().forEach(key => {
+      // arcs this run didn't draw stay fully dormant (old saves: all active)
+      if(g.activeArcs && !g.activeArcs[key]) return;
       if(!g.arcs[key]) g.arcs[key] = { stage: 0 };
       ARCS[key].advance(g, g.arcs[key]);
       const npc = g.npcState[ARCS[key].npc];
@@ -867,6 +897,7 @@ const NineToSurvive = (() => {
     const m = g.npcState && g.npcState.marcus;
     if(!m || !m.flags.shield) return 0;
     delete m.flags.shield;
+    m.counters.saves = (m.counters.saves || 0) + 1;   // his tip just paid out
     return +2;
   }
 
@@ -904,6 +935,7 @@ const NineToSurvive = (() => {
     if(!a || a.stage !== 1 || !k) return;
     if(k.flags.satWith || k.flags.tookTask || k.flags.toldHR) return;
     soulHit(g, WATCHED_SOUL);
+    k.flags.ignored = true;   // the story remembers the dead-eyed play
     report.watchedKayla = true;
     pushFeed(g, 1018, 'Productivity held steady today. The dashboard is very proud of everyone.');
   }
@@ -1028,7 +1060,11 @@ const NineToSurvive = (() => {
     const drain = soulDrainFor(g.week);
     let missed = Math.max(0, stats.tasksTotal - stats.tasksDone);
     let forgiven = false;
-    if(g.taskForgivenessToday && missed > 0){ missed--; forgiven = true; }   // Marcus was right
+    if(g.taskForgivenessToday && missed > 0){
+      missed--; forgiven = true;                                             // Marcus was right
+      if(g.npcState && g.npcState.marcus)
+        g.npcState.marcus.counters.saves = (g.npcState.marcus.counters.saves || 0) + 1;
+    }
     const report = { day: g.day, week: g.week, title: jobTitle(g), pay, burn, drain,
                      tasksDone: stats.tasksDone, tasksTotal: stats.tasksTotal,
                      missed, forgiven, decay: DECAY_S,
@@ -1061,6 +1097,7 @@ const NineToSurvive = (() => {
           // the receipt defuses exactly one warning, then it's spent
           burnReceipt(g, 'hr_survey_metadata');
           report.warningDefused = true;
+          if(mer) mer.counters.defused = (mer.counters.defused || 0) + 1;
           pushFeed(g, 1020, 'The warning was withdrawn after you asked, politely, about survey response IDs.');
         } else {
           soulHit(g, WARN_SOUL); report.warned = true;
@@ -1255,37 +1292,69 @@ const NineToSurvive = (() => {
   }
 
   // ---- Share copy that carries the story ----------------------------------------
-  // The lead line is the run's best real incident, from counters, receipts, and
-  // arc outcomes — never invented. Returns null when the run produced no story
-  // (the shell then falls back to the plain format).
-  function storyLine(g){
-    const brad = g.npcState.brad, boss = g.npcState.boss;
-    const s = g.stats || {};
-    if(brad.flags.walkedOut)
-      return 'I watched Brad get walked out at lunch for working two jobs. His deliverables are my “growth opportunity” now.';
-    if(brad.flags.burned)
-      return 'I put Brad’s other job on the projector mid-meeting. My analysis is mine again. With interest.';
-    if(g.escaped && hasReceipt(g, 'screenshot_brad_deck'))
-      return 'I escaped on Day ' + g.day + ' with ' + fmt(g.money) + ', ' + g.soul
-        + ' Soul, and one screenshot that could end Brad’s quarter.';
-    if(hasReceipt(g, 'screenshot_brad_deck'))
-      return 'Holding one screenshot that could end Brad’s quarter. Haven’t decided. That’s the fun part.';
-    if(hasReceipt(g, 'hr_survey_metadata'))
-      return 'Survived an anonymous survey that knew my middle name. I kept the metadata.';
-    if(brad.flags.covered)
-      return 'I caught Brad working a second job and covered for him. My inbox is a protected wetland. My soul, less so.';
-    if(boss.flags.sympathetic && (boss.counters.quickCalls || 0) >= 2)
-      return 'I became the corner office’s emotional support animal. Standing: excellent. Soul: on file with HR.';
-    if(g.failed === 'standing')
-      return 'Managed out on Day ' + g.day + '. HR called it a transition, which is how you know it was a firing.';
-    if(g.failed === 'soul')
-      return 'Promoted to management on Day ' + g.day + '. Please do not congratulate me.';
-    const bits = [];
-    if(s.crunchWins + s.crunchFails > 0) bits.push((s.crunchWins + s.crunchFails) + ' fire drill' + (s.crunchWins + s.crunchFails > 1 ? 's' : ''));
-    if(s.bradSteals > 0) bits.push(s.bradSteals + ' Brad theft' + (s.bradSteals > 1 ? 's' : ''));
-    if(s.warnings > 0) bits.push(s.warnings + ' formal warning' + (s.warnings > 1 ? 's' : ''));
-    if(bits.length >= 2) return 'Survived ' + bits.join(', ').replace(/, ([^,]*)$/, ', and $1') + '.';
+  // A deterministic story-priority ladder over the run's REAL events. storyKey
+  // classifies (highest interest first, per the ladder); storyLine speaks it.
+  // Returns null when the run produced no story (shell falls back to plain).
+  function storyKey(g){
+    const brad = g.npcState.brad, boss = g.npcState.boss, kayla = g.npcState.kayla;
+    const marcus = g.npcState.marcus, mer = g.npcState.meredith, priya = g.npcState.priya;
+    const bossArc = (g.arcs || {}).boss_spiral || { stage: 0 };
+    if(brad.flags.walkedOut || brad.flags.fired || brad.flags.burned) return 'brad_exposed';
+    if(kayla.flags.satWith || kayla.flags.tookTask) return 'kayla_helped';
+    if(kayla.flags.ignored) return 'kayla_ignored';
+    if(hasReceipt(g, 'hr_survey_metadata')) return 'hr_metadata';
+    if(bossArc.stage === 2 && (boss.counters.quickCalls || 0) > 0) return 'boss_survived';
+    if((marcus.counters.saves || 0) > 0) return 'marcus_saved';
+    if(priya.flags.backed || priya.flags.baited) return 'priya_backed';
+    if((g.npcState.dennis.counters.approvalsCleared || 0) >= 3) return 'dennis_broken';
+    if((mer.counters.defused || 0) > 0) return 'warning_defused';
+    if(g.escaped && g.soul >= 50) return 'escaped_clean';
+    if(g.escaped) return 'escaped_dead_inside';
+    if(g.failed === 'standing') return 'managed_out';
+    if(g.failed === 'soul') return 'management';
     return null;
+  }
+  function storyLine(g){
+    const key = storyKey(g);
+    const brad = g.npcState.brad;
+    switch(key){
+      case 'brad_exposed':
+        if(brad.flags.walkedOut || brad.flags.fired)
+          return 'I watched Brad get walked out at lunch for working two jobs. His deliverables are my “growth opportunity” now.';
+        return 'I put Brad’s other job on the projector mid-meeting. My analysis is mine again. With interest.';
+      case 'kayla_helped':
+        return g.npcState.kayla.flags.satWith
+          ? 'Two chairs in the kitchen the day the deck hit version 31. It helped more than the deck did.'
+          : 'I quietly took a deliverable off Kayla’s stack the day everything was “fine.” No email announced it.';
+      case 'kayla_ignored':
+        return 'Kayla melted down in the kitchen and I kept shipping. The dashboard called it a strong day.';
+      case 'hr_metadata':
+        return 'Survived an anonymous survey that knew my middle name. I kept the metadata.';
+      case 'warning_defused':
+        return 'HR opened a warning. I asked about survey response IDs. The warning closed itself.';
+      case 'boss_survived':
+        return 'I survived the corner office’s personal weather system. He is more human now. The numbers are not.';
+      case 'marcus_saved':
+        return 'Marcus said one sentence over coffee that saved my quarter. He has seen this exact quarter before.';
+      case 'priya_backed':
+        return 'Brad demoed Priya’s work, so I put her name back on it in front of everyone who mattered.';
+      case 'dennis_broken':
+        return 'I outlasted Dennis. Approval by approval, question by question. The Pipe flows for me now.';
+      case 'escaped_clean':
+      case 'escaped_dead_inside':
+        if(hasReceipt(g, 'screenshot_brad_deck'))
+          return 'I escaped on Day ' + g.day + ' with ' + fmt(g.money) + ', ' + g.soul
+            + ' Soul, and one screenshot that could end Brad’s quarter.';
+        return key === 'escaped_clean'
+          ? 'I hit my number, stood up, and walked out whole. Day ' + g.day + ', ' + fmt(g.money) + ', zero regrets.'
+          : 'I escaped on Day ' + g.day + ' with ' + fmt(g.money) + ' and whatever was left of me. Mostly the money.';
+      case 'managed_out':
+        return 'Managed out on Day ' + g.day + '. HR called it a transition, which is how you know it was a firing.';
+      case 'management':
+        return 'Promoted to management on Day ' + g.day + '. Please do not congratulate me.';
+      default:
+        return null;
+    }
   }
   function shareText(g){
     const headline = g.over ? verdict(g).title : 'Still there. Still counting.';
@@ -1316,7 +1385,7 @@ const NineToSurvive = (() => {
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
-    storyLine, shareText,
+    storyLine, storyKey, shareText, ARC_POOL, pickArcs,
     policyAction, policyCardChoice, policyIncidentChoice
   };
 })();

@@ -508,7 +508,7 @@ function soakSweep(policy){
       out.outcomes.escaped++;
       out.escapeDays.push(r.g.day);
       out.soulAtEscape.push(r.g.soul);
-      const lead = G.storyLine(r.g) || '(no story)';
+      const lead = G.storyKey(r.g) || '(no story)';
       out.stories[lead] = (out.stories[lead] || 0) + 1;
     }
     else if(r.g.failed) out.outcomes[r.g.failed]++;
@@ -534,6 +534,11 @@ ok('ACCEPTANCE: every escape lands Day 10–16',
   JSON.stringify(soakC.escapeDays));
 ok('ACCEPTANCE: zero hangs, zero stuck actors, zero exceptions',
   soakC.issues.length === 0, soakC.issues.slice(0, 3).join(' | '));
+// ---- TASK 2 ACCEPTANCE: story variety across the same competent sweep ----
+ok('ACCEPTANCE: at least four distinct lead stories',
+  Object.keys(soakC.stories).length >= 4, JSON.stringify(soakC.stories));
+ok('ACCEPTANCE: Brad\'s firing leads a minority of runs',
+  (soakC.stories.brad_exposed || 0) < soakC.outcomes.escaped / 2, JSON.stringify(soakC.stories));
 lines.push('INFO  desk-only outcomes: ' + JSON.stringify(soakA.outcomes));
 lines.push('INFO  competent outcomes: ' + JSON.stringify(soakC.outcomes));
 lines.push('INFO  competent escape days: ' + JSON.stringify(soakC.escapeDays));
