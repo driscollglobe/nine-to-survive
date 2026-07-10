@@ -363,7 +363,7 @@ ok('work resumes when the webinar ends', !!afterSig && wW.clockMin >= 630);
 function soakRun(seed, opts){
   opts = opts || {};
   const maxDays = opts.maxDays || 200;
-  const recover = !!opts.recover;
+  const policy = opts.policy || 'desk';   // 'competent' consumes G.policyAction
   const issues = [];
   const g = G.newGame(seed);
   while(!g.over && g.day <= maxDays){
@@ -374,7 +374,7 @@ function soakRun(seed, opts){
     // arc-day bookkeeping: staged story beats must all land before 5 PM
     const incidentsStaged = flags.incidents.length;
     let incidentsFired = 0, firedSeen = false;
-    let steps = 0, dayDone = false, triedCoffee = false, triedCouch = false, triedChat = false;
+    let steps = 0, dayDone = false;
     while(!dayDone && !g.over){
       if(++steps > 20000){
         issues.push('day ' + g.day + ': step cap exceeded (clock=' + w.clockMin.toFixed(1)
@@ -393,31 +393,42 @@ function soakRun(seed, opts){
           stuck[a.id] = -1e9;   // report once per day
         }
       });
-      // player policy
+      // player policy — 'competent' consumes the ONE policy function (exactly
+      // as ?movie=1 does); 'desk' is the camper who never leaves the chair
       if(w.running){
-        if(recover){
-          if(!triedCoffee && w.clockMin >= 630){ triedCoffee = true; W.goForCoffee(w); }
-          if(!triedCouch && w.clockMin >= 780 && g.soul < 60){ triedCouch = true; W.goForCouch(w); }
-          if(!triedChat && w.clockMin >= 870 && g.soul < 60){
-            triedChat = true; W.requestChat(w, ['kayla','marcus','priya'][g.day % 3]);
+        if(policy === 'competent'){
+          if(!w.walkoutArmed && G.canWalkOut(g)) W.armWalkout(w);
+          const act = G.policyAction(g, w);
+          if(act.type === 'walkout') W.goForExit(w);
+          else if(act.type === 'coffee') W.goForCoffee(w);
+          else if(act.type === 'couch') W.goForCouch(w);
+          else if(act.type === 'chat') W.requestChat(w, act.id);
+          else if(act.type === 'bosscall') W.goForBossCall(w);
+          else if(act.type === 'home' && !W.playerAtDesk(w)){
+            const you = W.getActor(w, 'you');
+            if(!you.path.length) W.playerGoHome(w);
           }
-        }
-        if(!w.playerErrand && !W.playerAtDesk(w)){
+        } else if(!w.playerErrand && !W.playerAtDesk(w)){
           const you = W.getActor(w, 'you');
           if(!you.path.length) W.playerGoHome(w);
         }
       }
       if(!s) continue;
       switch(s.type){
+        case 'walkout':
+          if(G.walkOut(g)) dayDone = true;
+          break;
         case 'encounter':
-          G.applyChoice(g, 2);
+          G.applyChoice(g, policy === 'competent'
+            ? G.policyCardChoice(g, g.plan[g.idxInDay]) : 2);
           if(G.advance(g) === 'gameover'){ dayDone = true; break; }
           W.resolveEncounter(w); break;
         case 'arcincident':
-          // rotate the branch by day so the soak exercises every choice
+          // competent: the policy's named cases; desk: rotate to exercise branches
           incidentsFired++;
-          G.applyIncidentChoice(g, s.id,
-            (g.day + seed) % G.ARC_INCIDENTS[s.id].choices.length, Math.floor(w.clockMin));
+          G.applyIncidentChoice(g, s.id, policy === 'competent'
+            ? G.policyIncidentChoice(g, s.id)
+            : (g.day + seed) % G.ARC_INCIDENTS[s.id].choices.length, Math.floor(w.clockMin));
           if(g.over){ dayDone = true; break; }
           W.resolveEncounter(w); break;
         case 'braddeck':    G.bradDeckSeen(g, Math.floor(w.clockMin)); break;
@@ -425,10 +436,10 @@ function soakRun(seed, opts){
         case 'bradfired':   firedSeen = true; G.bradFiredReport(g, Math.floor(w.clockMin)); break;
         case 'bradtasks':   G.bradTasksAbsorbed(g, Math.floor(w.clockMin)); break;
         case 'summons':
-          if((seed + g.day) % 2 === 0) W.goForBossCall(w);   // odd parity: dodge it
-          break;
+          break;   // competent answers via policyAction; desk dodges by staying put
         case 'quickcall':
-          G.applyIncidentChoice(g, 'boss_quick_call', g.day % 2, Math.floor(w.clockMin));
+          G.applyIncidentChoice(g, 'boss_quick_call', policy === 'competent'
+            ? G.policyIncidentChoice(g, 'boss_quick_call') : g.day % 2, Math.floor(w.clockMin));
           if(g.over){ dayDone = true; break; }
           W.resolveQuickCall(w); W.playerGoHome(w); break;
         case 'summonsmissed': G.bossSummonsDodged(g, Math.floor(w.clockMin)); break;
@@ -480,39 +491,54 @@ function soakRun(seed, opts){
 
 // the feed is deterministic through the real pipeline: two identical careers,
 // identical office gossip (the run above ends on some day with a full feed)
-const feedA = soakRun(4321, { recover: true });
-const feedB = soakRun(4321, { recover: true });
+const feedA = soakRun(4321, { policy: 'competent' });
+const feedB = soakRun(4321, { policy: 'competent' });
 ok('same seed = same feed, end to end', feedA.g.day === feedB.g.day
   && JSON.stringify(feedA.g.feed) === JSON.stringify(feedB.g.feed)
   && feedA.g.feed.length > 0, feedA.g.feed.length + ' lines on day ' + feedA.g.day);
 
 const SOAK_SEEDS = 50;
-function soakSweep(recover){
-  const out = { issues: [], outcomes: { escaped:0, soul:0, standing:0, timeout:0 }, escapeDays: [] };
+function soakSweep(policy){
+  const out = { issues: [], outcomes: { escaped:0, soul:0, standing:0, timeout:0 },
+                escapeDays: [], soulAtEscape: [], stories: {} };
   for(let sd = 1; sd <= SOAK_SEEDS; sd++){
-    const r = soakRun(sd * 1000 + 7, { recover });
+    const r = soakRun(sd * 1000 + 7, { policy });
     out.issues = out.issues.concat(r.issues);
-    if(r.g.escaped){ out.outcomes.escaped++; out.escapeDays.push(r.g.day); }
+    if(r.g.escaped){
+      out.outcomes.escaped++;
+      out.escapeDays.push(r.g.day);
+      out.soulAtEscape.push(r.g.soul);
+      const lead = G.storyLine(r.g) || '(no story)';
+      out.stories[lead] = (out.stories[lead] || 0) + 1;
+    }
     else if(r.g.failed) out.outcomes[r.g.failed]++;
     else out.outcomes.timeout++;
   }
   out.escapeDays.sort((a, b) => a - b);
+  out.soulAtEscape.sort((a, b) => a - b);
   return out;
 }
-const soakA = soakSweep(false);
+const soakA = soakSweep('desk');
 ok('soak/desk-only ×' + SOAK_SEEDS + ': no hangs, no stuck actors, no exceptions',
   soakA.issues.length === 0, soakA.issues.slice(0, 3).join(' | '));
 ok('soak/desk-only: every career terminal', soakA.outcomes.timeout === 0, JSON.stringify(soakA.outcomes));
 // dead-eyed productivity: pure desk-camping must not escape (the grind collects)
 ok('soak/desk-only: camping the desk with zero recovery never escapes',
   soakA.outcomes.escaped === 0, JSON.stringify(soakA.outcomes));
-const soakB = soakSweep(true);
-ok('soak/recovery ×' + SOAK_SEEDS + ': no hangs, no stuck actors, no exceptions',
-  soakB.issues.length === 0, soakB.issues.slice(0, 3).join(' | '));
-ok('soak/recovery: every career terminal', soakB.outcomes.timeout === 0, JSON.stringify(soakB.outcomes));
+// ---- TASK 1 ACCEPTANCE GATE: the competent policy, through the real pipeline ----
+const soakC = soakSweep('competent');
+ok('ACCEPTANCE: competent policy escapes most or all of ' + SOAK_SEEDS + ' seeds',
+  soakC.outcomes.escaped >= 45, JSON.stringify(soakC.outcomes));
+ok('ACCEPTANCE: every escape lands Day 10–16',
+  soakC.escapeDays.length > 0 && soakC.escapeDays.every(d => d >= 10 && d <= 16),
+  JSON.stringify(soakC.escapeDays));
+ok('ACCEPTANCE: zero hangs, zero stuck actors, zero exceptions',
+  soakC.issues.length === 0, soakC.issues.slice(0, 3).join(' | '));
 lines.push('INFO  desk-only outcomes: ' + JSON.stringify(soakA.outcomes));
-lines.push('INFO  recovery outcomes: ' + JSON.stringify(soakB.outcomes));
-lines.push('INFO  recovery escape days: ' + JSON.stringify(soakB.escapeDays));
+lines.push('INFO  competent outcomes: ' + JSON.stringify(soakC.outcomes));
+lines.push('INFO  competent escape days: ' + JSON.stringify(soakC.escapeDays));
+lines.push('INFO  competent soul at escape: ' + JSON.stringify(soakC.soulAtEscape));
+lines.push('INFO  competent lead stories: ' + JSON.stringify(soakC.stories));
 
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));

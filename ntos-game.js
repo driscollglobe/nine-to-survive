@@ -1188,6 +1188,72 @@ const NineToSurvive = (() => {
     };
   }
 
+  // ═══ THE COMPETENT POLICY (dev/bot section — pure functions, no DOM) ═══════════
+  // One deterministic policy consumed by BOTH ?movie=1 and the headless soak bot,
+  // so what the autopilot demonstrates is exactly what the test suite proves.
+  // It reads g plus a plain world snapshot (w) and returns the next action:
+  // {type:'idle'|'walkout'|'coffee'|'couch'|'chat'(id)|'bosscall'|'home'}.
+
+  // Cards are scored, not memorized: standing + 1.3×soul, with a penalty for
+  // choices that would drop Standing under 35 and a heavy one for Soul under 35.
+  function policyCardChoice(g, encIdx){
+    const enc = ENCOUNTERS[encIdx];
+    if(!enc) return 0;
+    let best = 0, bestScore = -Infinity;
+    enc.choices.forEach((c, i) => {
+      let score = c.s + 1.3 * c.so;
+      if(g.standing + c.s < 35) score -= 8;
+      if(g.soul + c.so < 35) score -= 20;
+      if(score > bestScore){ bestScore = score; best = i; }
+    });
+    return best;
+  }
+
+  // Incidents get named deterministic cases, not scores.
+  function policyIncidentChoice(g, id){
+    if(id === 'brad_discovery') return g.soul < 25 ? 2 : 0;   // screenshot, unless drowning
+    if(id === 'hr_survey') return hasReceipt(g, 'hr_survey_metadata') ? 2 : 3;  // metadata, else help
+    if(id === 'boss_quick_call') return g.soul >= 65 ? 0 : 1; // sympathy only from comfort
+    return 0;
+  }
+
+  function policyAction(g, w){
+    if(g.over || !w || !w.running) return { type: 'idle' };
+    // the number is the point: leave the moment you can
+    if(canWalkOut(g)){
+      if(w.playerErrand && w.playerErrand.type === 'exit') return { type: 'idle' };
+      return { type: 'walkout' };
+    }
+    if(w.playerErrand) return { type: 'idle' };              // never interrupt an errand
+    const you = (w.actors || []).find(a => a.id === 'you');
+    if(!you || you.path.length) return { type: 'idle' };     // mid-walk: let it finish
+    // a summons is answered with your feet; the card decides the tone
+    if(w.summons && w.summons.status === 'open') return { type: 'bosscall' };
+    // Kayla's panic day is never ignored by default
+    const kayla = g.npcState && g.npcState.kayla;
+    if(w.flags && w.flags.kaylaPanic && kayla
+       && !kayla.flags.satWith && !kayla.flags.tookTask && !w.chatted.kayla)
+      return { type: 'chat', id: 'kayla' };
+    // recover before the grind bills extra — and always when Soul is collapsing
+    const needRecovery = g.soul < 35 || (g.taskStreak >= GRIND_STREAK && w.tasks.pending > 0);
+    if(needRecovery){
+      if(!w.coffeeUsed) return { type: 'coffee' };
+      if(!w.couchUsed) return { type: 'couch' };
+      let pick = null, bestS = -1;
+      ['kayla', 'marcus', 'priya'].forEach(id => {
+        if(w.chatted[id]) return;
+        const a = (w.actors || []).find(x => x.id === id);
+        if(!a || a.off) return;
+        let s = a.mood === 'good' ? 5 : a.mood === 'meh' ? 3 : 2;
+        if(id === 'kayla' && kayla && kayla.flags.bonded) s += 2;
+        if(s > bestS){ bestS = s; pick = id; }
+      });
+      if(pick) return { type: 'chat', id: pick };
+      // the recovery economy is spent; nothing left but the desk
+    }
+    return { type: 'home' };
+  }
+
   // ---- Share copy that carries the story ----------------------------------------
   // The lead line is the run's best real incident, from counters, receipts, and
   // arc outcomes — never invented. Returns null when the run produced no story
@@ -1250,7 +1316,8 @@ const NineToSurvive = (() => {
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
-    storyLine, shareText
+    storyLine, shareText,
+    policyAction, policyCardChoice, policyIncidentChoice
   };
 })();
 

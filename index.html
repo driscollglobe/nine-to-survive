@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n12"></script>
+<script src="ntos-game.js?v=n13"></script>
 <script src="ntos-world.js?v=w15"></script>
 <style>
 :root{
@@ -612,6 +612,11 @@ function loop(t){
   $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
   $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
   if(g.feed.length !== feedShown) renderFeed();
+  // a crunch bonus can bank the number mid-day: the door goes live immediately
+  if(!world.walkoutArmed && G.canWalkOut(g)){
+    W.armWalkout(world);
+    toast('Your number is banked. The EXIT is live. Any time.');
+  }
   const rc = g.receipts ? g.receipts.count : 0;
   $id('receiptline').classList.toggle('hidden', rc === 0);
   if(rc > 0) $id('receipts-r').textContent = rc + ' held · leverage, technically';
@@ -834,8 +839,12 @@ if(MOVIE){
     }
     if(!$id('cardoverlay').classList.contains('hidden')){
       if(!$id('enc').classList.contains('hidden')){
-        const c = document.querySelector('#choices .choice[data-idx="2"]')
-               || document.querySelector('#choices .choice');   // 2-choice incidents
+        // the ONE policy picks — same function the headless soak proves
+        const incId = $id('cardoverlay').dataset.incident;
+        const idx = incId ? G.policyIncidentChoice(g, incId)
+                          : G.policyCardChoice(g, g.plan[g.idxInDay]);
+        const c = document.querySelector('#choices .choice[data-idx="' + idx + '"]')
+               || document.querySelector('#choices .choice');
         if(c) c.click();
       } else {
         $id('nextbtn').click();
@@ -846,13 +855,20 @@ if(MOVIE){
       $id('workbtn').click();   // mashes to a win, then the same button closes it
       return;
     }
-    if(!MOVIE_GREED && world && world.running && world.walkoutArmed && !world.playerErrand){
-      if(W.goForExit(world)) console.log('[MOVIE] number banked mid-day — heading for the EXIT door');
-      return;
-    }
-    if(world && world.running && !world.playerErrand && !W.playerAtDesk(world)){
-      const you = W.getActor(world, 'you');
-      if(!you.path.length) W.playerGoHome(world);
+    if(world && world.running){
+      let act = G.policyAction(g, world);
+      if(act.type === 'walkout' && MOVIE_GREED) act = { type: 'home' };  // greed never leaves
+      if(act.type === 'walkout'){
+        if(W.goForExit(world)) console.log('[MOVIE] number banked — heading for the EXIT door');
+      }
+      else if(act.type === 'coffee') W.goForCoffee(world);
+      else if(act.type === 'couch') W.goForCouch(world);
+      else if(act.type === 'chat') W.requestChat(world, act.id);
+      else if(act.type === 'bosscall') W.goForBossCall(world);
+      else if(act.type === 'home' && !W.playerAtDesk(world)){
+        const you = W.getActor(world, 'you');
+        if(!you.path.length) W.playerGoHome(world);
+      }
     }
   }, 120);
 }
@@ -884,6 +900,7 @@ setInterval(() => {
 function openCard(){
   hideStatus();
   const e = G.currentEncounter(g);
+  delete $id('cardoverlay').dataset.incident;
   $id('cardoverlay').classList.remove('hidden');
   $id('enc').classList.remove('hidden');
   $id('out').classList.add('hidden');
@@ -944,6 +961,7 @@ function openIncident(id){
   const def = G.ARC_INCIDENTS[id];
   if(!def){ W.resolveEncounter(world); return; }   // unknown id: never strand the day
   activeIncident = id;
+  $id('cardoverlay').dataset.incident = id;        // the autopilot policy reads this
   $id('cardoverlay').classList.remove('hidden');
   $id('enc').classList.remove('hidden');
   $id('out').classList.add('hidden');

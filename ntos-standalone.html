@@ -1206,6 +1206,72 @@ const NineToSurvive = (() => {
     };
   }
 
+  // ═══ THE COMPETENT POLICY (dev/bot section — pure functions, no DOM) ═══════════
+  // One deterministic policy consumed by BOTH ?movie=1 and the headless soak bot,
+  // so what the autopilot demonstrates is exactly what the test suite proves.
+  // It reads g plus a plain world snapshot (w) and returns the next action:
+  // {type:'idle'|'walkout'|'coffee'|'couch'|'chat'(id)|'bosscall'|'home'}.
+
+  // Cards are scored, not memorized: standing + 1.3×soul, with a penalty for
+  // choices that would drop Standing under 35 and a heavy one for Soul under 35.
+  function policyCardChoice(g, encIdx){
+    const enc = ENCOUNTERS[encIdx];
+    if(!enc) return 0;
+    let best = 0, bestScore = -Infinity;
+    enc.choices.forEach((c, i) => {
+      let score = c.s + 1.3 * c.so;
+      if(g.standing + c.s < 35) score -= 8;
+      if(g.soul + c.so < 35) score -= 20;
+      if(score > bestScore){ bestScore = score; best = i; }
+    });
+    return best;
+  }
+
+  // Incidents get named deterministic cases, not scores.
+  function policyIncidentChoice(g, id){
+    if(id === 'brad_discovery') return g.soul < 25 ? 2 : 0;   // screenshot, unless drowning
+    if(id === 'hr_survey') return hasReceipt(g, 'hr_survey_metadata') ? 2 : 3;  // metadata, else help
+    if(id === 'boss_quick_call') return g.soul >= 65 ? 0 : 1; // sympathy only from comfort
+    return 0;
+  }
+
+  function policyAction(g, w){
+    if(g.over || !w || !w.running) return { type: 'idle' };
+    // the number is the point: leave the moment you can
+    if(canWalkOut(g)){
+      if(w.playerErrand && w.playerErrand.type === 'exit') return { type: 'idle' };
+      return { type: 'walkout' };
+    }
+    if(w.playerErrand) return { type: 'idle' };              // never interrupt an errand
+    const you = (w.actors || []).find(a => a.id === 'you');
+    if(!you || you.path.length) return { type: 'idle' };     // mid-walk: let it finish
+    // a summons is answered with your feet; the card decides the tone
+    if(w.summons && w.summons.status === 'open') return { type: 'bosscall' };
+    // Kayla's panic day is never ignored by default
+    const kayla = g.npcState && g.npcState.kayla;
+    if(w.flags && w.flags.kaylaPanic && kayla
+       && !kayla.flags.satWith && !kayla.flags.tookTask && !w.chatted.kayla)
+      return { type: 'chat', id: 'kayla' };
+    // recover before the grind bills extra — and always when Soul is collapsing
+    const needRecovery = g.soul < 35 || (g.taskStreak >= GRIND_STREAK && w.tasks.pending > 0);
+    if(needRecovery){
+      if(!w.coffeeUsed) return { type: 'coffee' };
+      if(!w.couchUsed) return { type: 'couch' };
+      let pick = null, bestS = -1;
+      ['kayla', 'marcus', 'priya'].forEach(id => {
+        if(w.chatted[id]) return;
+        const a = (w.actors || []).find(x => x.id === id);
+        if(!a || a.off) return;
+        let s = a.mood === 'good' ? 5 : a.mood === 'meh' ? 3 : 2;
+        if(id === 'kayla' && kayla && kayla.flags.bonded) s += 2;
+        if(s > bestS){ bestS = s; pick = id; }
+      });
+      if(pick) return { type: 'chat', id: pick };
+      // the recovery economy is spent; nothing left but the desk
+    }
+    return { type: 'home' };
+  }
+
   // ---- Share copy that carries the story ----------------------------------------
   // The lead line is the run's best real incident, from counters, receipts, and
   // arc outcomes — never invented. Returns null when the run produced no story
@@ -1268,7 +1334,8 @@ const NineToSurvive = (() => {
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
-    storyLine, shareText
+    storyLine, shareText,
+    policyAction, policyCardChoice, policyIncidentChoice
   };
 })();
 
@@ -3186,6 +3253,11 @@ function loop(t){
   $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
   $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
   if(g.feed.length !== feedShown) renderFeed();
+  // a crunch bonus can bank the number mid-day: the door goes live immediately
+  if(!world.walkoutArmed && G.canWalkOut(g)){
+    W.armWalkout(world);
+    toast('Your number is banked. The EXIT is live. Any time.');
+  }
   const rc = g.receipts ? g.receipts.count : 0;
   $id('receiptline').classList.toggle('hidden', rc === 0);
   if(rc > 0) $id('receipts-r').textContent = rc + ' held · leverage, technically';
@@ -3408,8 +3480,12 @@ if(MOVIE){
     }
     if(!$id('cardoverlay').classList.contains('hidden')){
       if(!$id('enc').classList.contains('hidden')){
-        const c = document.querySelector('#choices .choice[data-idx="2"]')
-               || document.querySelector('#choices .choice');   // 2-choice incidents
+        // the ONE policy picks — same function the headless soak proves
+        const incId = $id('cardoverlay').dataset.incident;
+        const idx = incId ? G.policyIncidentChoice(g, incId)
+                          : G.policyCardChoice(g, g.plan[g.idxInDay]);
+        const c = document.querySelector('#choices .choice[data-idx="' + idx + '"]')
+               || document.querySelector('#choices .choice');
         if(c) c.click();
       } else {
         $id('nextbtn').click();
@@ -3420,13 +3496,20 @@ if(MOVIE){
       $id('workbtn').click();   // mashes to a win, then the same button closes it
       return;
     }
-    if(!MOVIE_GREED && world && world.running && world.walkoutArmed && !world.playerErrand){
-      if(W.goForExit(world)) console.log('[MOVIE] number banked mid-day — heading for the EXIT door');
-      return;
-    }
-    if(world && world.running && !world.playerErrand && !W.playerAtDesk(world)){
-      const you = W.getActor(world, 'you');
-      if(!you.path.length) W.playerGoHome(world);
+    if(world && world.running){
+      let act = G.policyAction(g, world);
+      if(act.type === 'walkout' && MOVIE_GREED) act = { type: 'home' };  // greed never leaves
+      if(act.type === 'walkout'){
+        if(W.goForExit(world)) console.log('[MOVIE] number banked — heading for the EXIT door');
+      }
+      else if(act.type === 'coffee') W.goForCoffee(world);
+      else if(act.type === 'couch') W.goForCouch(world);
+      else if(act.type === 'chat') W.requestChat(world, act.id);
+      else if(act.type === 'bosscall') W.goForBossCall(world);
+      else if(act.type === 'home' && !W.playerAtDesk(world)){
+        const you = W.getActor(world, 'you');
+        if(!you.path.length) W.playerGoHome(world);
+      }
     }
   }, 120);
 }
@@ -3458,6 +3541,7 @@ setInterval(() => {
 function openCard(){
   hideStatus();
   const e = G.currentEncounter(g);
+  delete $id('cardoverlay').dataset.incident;
   $id('cardoverlay').classList.remove('hidden');
   $id('enc').classList.remove('hidden');
   $id('out').classList.add('hidden');
@@ -3518,6 +3602,7 @@ function openIncident(id){
   const def = G.ARC_INCIDENTS[id];
   if(!def){ W.resolveEncounter(world); return; }   // unknown id: never strand the day
   activeIncident = id;
+  $id('cardoverlay').dataset.incident = id;        // the autopilot policy reads this
   $id('cardoverlay').classList.remove('hidden');
   $id('enc').classList.remove('hidden');
   $id('out').classList.add('hidden');

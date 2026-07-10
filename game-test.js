@@ -867,6 +867,92 @@ ok('share text never invents: fresh run has no arc claims', (() => {
 })());
 ok('share is a pure function of g', G.shareText(gS4) === G.shareText(gS4));
 
+// ---- 18. the competent policy (pure functions; consumed by movie + soak) ---------
+function fakeWorld(over){
+  return Object.assign({
+    running: true, playerErrand: null, summons: null, flags: {},
+    coffeeUsed: false, couchUsed: false, chatted: {},
+    walkoutArmed: false,
+    tasks: { pending: 4, done: 0, total: 8 },
+    actors: [
+      { id: 'you', path: [] },
+      { id: 'kayla', mood: 'meh', path: [] },
+      { id: 'marcus', mood: 'good', path: [] },
+      { id: 'priya', mood: 'meh', path: [] }
+    ]
+  }, over || {});
+}
+const gp1 = G.newGame(801);
+ok('cards are scored: enc 0 picks the third way', G.policyCardChoice(gp1, 0) === 2);
+ok('cards are scored: the 4:57 ambush gets declined', G.policyCardChoice(gp1, 19) === 1);
+ok('soul guard: a choice that would sink Soul under 35 is shunned', (() => {
+  const t = G.newGame(801); t.soul = 32;
+  const pick = G.policyCardChoice(t, 0);            // choice 0 would hit Soul 26
+  return pick !== 0;
+})());
+ok('incident cases: screenshot unless drowning', (() => {
+  const t = G.newGame(801);
+  const hi = G.policyIncidentChoice(t, 'brad_discovery');
+  t.soul = 20;
+  return hi === 0 && G.policyIncidentChoice(t, 'brad_discovery') === 2;
+})());
+ok('incident cases: metadata first, help once held', (() => {
+  const t = G.newGame(801);
+  const first = G.policyIncidentChoice(t, 'hr_survey');
+  G.addReceipt(t, 'hr_survey_metadata');
+  return first === 3 && G.policyIncidentChoice(t, 'hr_survey') === 2;
+})());
+ok('incident cases: deflect the quick call unless Soul is comfortable', (() => {
+  const t = G.newGame(801);
+  t.soul = 70; const a = G.policyIncidentChoice(t, 'boss_quick_call');
+  t.soul = 50; const b = G.policyIncidentChoice(t, 'boss_quick_call');
+  return a === 0 && b === 1;
+})());
+ok('walk out the moment you can', (() => {
+  const t = G.newGame(801); t.money = G.FU_TARGET;
+  return G.policyAction(t, fakeWorld()).type === 'walkout';
+})());
+ok('never interrupt an errand (even to walk out you finish the walk)', (() => {
+  const t = G.newGame(801); t.money = G.FU_TARGET;
+  const a = G.policyAction(t, fakeWorld({ playerErrand: { type: 'exit' } })).type;
+  const t2 = G.newGame(801);
+  const b = G.policyAction(t2, fakeWorld({ playerErrand: { type: 'coffee' } })).type;
+  return a === 'idle' && b === 'idle';
+})());
+ok('mid-walk: let it finish', (() => {
+  const w2 = fakeWorld(); w2.actors[0].path = [{ x: 1, y: 1 }];
+  return G.policyAction(G.newGame(801), w2).type === 'idle';
+})());
+ok('an open summons is answered with your feet', (() => {
+  return G.policyAction(G.newGame(801), fakeWorld({ summons: { status: 'open' } })).type === 'bosscall';
+})());
+ok('Kayla panic is never ignored by default', (() => {
+  const t = G.newGame(801);
+  const a = G.policyAction(t, fakeWorld({ flags: { kaylaPanic: true } }));
+  return a.type === 'chat' && a.id === 'kayla';
+})());
+ok('grind threshold → recovery ladder: coffee, then couch, then best chat', (() => {
+  const t = G.newGame(801); t.taskStreak = G.GRIND_STREAK;
+  const w2 = fakeWorld();
+  const a = G.policyAction(t, w2).type;
+  w2.coffeeUsed = true;
+  const b = G.policyAction(t, w2).type;
+  w2.couchUsed = true;
+  const c = G.policyAction(t, w2);
+  return a === 'coffee' && b === 'couch' && c.type === 'chat' && c.id === 'marcus';  // good mood wins
+})());
+ok('collapsing Soul forces recovery even off-streak', (() => {
+  const t = G.newGame(801); t.soul = 30; t.taskStreak = 0;
+  return G.policyAction(t, fakeWorld()).type === 'coffee';
+})());
+ok('nothing to fix: go be at your desk', (() => {
+  return G.policyAction(G.newGame(801), fakeWorld()).type === 'home';
+})());
+ok('policy is pure: same inputs, same action', (() => {
+  const t = G.newGame(801);
+  return JSON.stringify(G.policyAction(t, fakeWorld())) === JSON.stringify(G.policyAction(t, fakeWorld()));
+})());
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');
