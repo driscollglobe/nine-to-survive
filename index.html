@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n19"></script>
-<script src="ntos-world.js?v=w18"></script>
+<script src="ntos-game.js?v=n20"></script>
+<script src="ntos-world.js?v=w19"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -839,12 +839,18 @@ function handleSignal(s){
       SFX.drill();
       toast('MANDATORY: “Resilience & You,” 90 min, cameras expected. Your inbox will wait. It will not shrink.');
       break;
-    case 'adamintercept':
+    case 'adamintercept': {
       G.adamIntercepted(g, Math.floor(world.clockMin), s.useful);
+      const nInt = (g.npcState.adam.counters.intercepts || 1);
       toast(s.useful
         ? 'Adam stopped you mid-aisle — then called Dennis. An approval just… cleared. Don’t ask.'
-        : 'Adam stopped you for a quick thought. It had three parts. You are eight minutes older.');
+        : nInt <= 1
+        ? 'Adam stopped you for a quick thought. It had three parts. You are eight minutes older.'
+        : nInt === 2
+        ? 'Adam again. The quick thought has a part two. You have been pre-registered for part three.'
+        : 'Adam. The thought is now a series. There is a recap. You were in the recap.');
       break;
+    }
     case 'bosshuman': {
       const line = G.bossHumanBeat(g, Math.floor(world.clockMin));
       if(line){
@@ -856,7 +862,12 @@ function handleSignal(s){
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskblocked':
-      toast('A task arrived marked NEEDS APPROVAL. Dennis has questions. (' + s.blocked + ' stuck)');
+      // microcopy escalates with the actual stack, not a dice roll
+      toast(s.blocked === 1
+        ? 'A task arrived marked NEEDS APPROVAL. Dennis has questions. (1 stuck)'
+        : s.blocked === 2
+        ? 'Another file stopped at The Pipe. The questions now have sub-questions. (2 stuck)'
+        : 'A ' + ['third', 'fourth', 'fifth', 'sixth'][Math.min(3, s.blocked - 3)] + ' file held. The Pipe is becoming a district. (' + s.blocked + ' stuck)');
       break;
     case 'approved':
       G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'waited');
@@ -876,8 +887,14 @@ function handleSignal(s){
       if(res && res.deadEyed && deadEyedToastDay !== g.day){
         deadEyedToastDay = g.day;
         toast('Dead-eyed productivity: ' + G.GRIND_STREAK + ' in a row without looking up. Soul bills extra until you take literally any break.');
+      } else if(!s.pending && world.tasks.blocked > 0){
+        toast('Task shipped. Inbox “zero” — except the ' + world.tasks.blocked + ' Dennis is holding, which the dashboard politely ignores.');
+      } else if(!s.pending){
+        toast('Task shipped. Standing +2. Inbox zero. For now.');
+      } else if(g.day % 5 === 0){
+        toast('Task shipped before the review. The review counts volume, not content. Volume: +1. (' + s.pending + ' to go.)');
       } else {
-        toast('Task shipped. Standing +2. ' + (s.pending ? s.pending + ' to go.' : 'Inbox zero. For now.'));
+        toast('Task shipped. Standing +2. ' + s.pending + ' to go.');
       }
       break;
     }

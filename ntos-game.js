@@ -401,6 +401,8 @@ const NineToSurvive = (() => {
     const enc = currentEncounter(g);
     const c = enc.choices[choiceIndex];
     if(!c) return null;
+    // the compliance ledger: paying Soul for Standing, again (feeds the verdict)
+    if(c.s > 0 && c.so < 0 && g.stats) g.stats.comply = (g.stats.comply || 0) + 1;
     const before = { standing: g.standing, soul: g.soul };
     g.standing = clamp(g.standing + c.s);
     g.soul     = clamp(g.soul + temperSoulGain(g, c.so));
@@ -1309,6 +1311,7 @@ const NineToSurvive = (() => {
     schemeUsed(g, 'coolhr');
     const mer = g.npcState.meredith;
     mer.counters.cooled = (mer.counters.cooled || 0) + 1;
+    mer.counters.cooledDay = g.day;
     pushFeed(g, min, 'Someone asked Meredith, hypothetically, how anonymous the survey backend is. The writing-style project ended today.');
     return 'You ask, hypothetically, about response IDs. Meredith’s highlighter caps itself. Your file gets thinner by the sound of it. The receipt is spent.';
   }
@@ -1550,6 +1553,19 @@ const NineToSurvive = (() => {
       return d + 'Brad was walked out holding a box he was not allowed to carry.';
     if(brad.counters.discoveryDay === rep.day)
       return d + 'a laptop faced the wrong direction for four full seconds.';
+    // the schemes and interceptions write their own headlines
+    if(brad.counters.poisonedDay === rep.day)
+      return d + 'Brad presented a file he stole. Cell C9 divides by a word.';
+    if((g.npcState.adam.counters || {}).grenadeDay === rep.day)
+      return d + 'Adam was deployed at Dennis. It was like watching weather systems collide.';
+    if(brad.counters.selfOwnDay === rep.day)
+      return d + 'FINAL_v2_BRAD_PRIVATE was neither private nor final.';
+    if(brad.counters.confrontDay === rep.day)
+      return d + 'a raid died of eye contact at the water fountain.';
+    if((g.npcState.meredith.counters || {}).cooledDay === rep.day)
+      return d + 'a hypothetical question about response IDs ended a highlighting project.';
+    if((g.npcState.adam.counters || {}).concernDay === rep.day)
+      return d + 'a concern reached HR. It had an appendix.';
     if(boss.counters.callDay === rep.day && boss.flags.sympathetic)
       return d + 'you became the corner office’s emotional support animal.';
     if(boss.counters.callDay === rep.day)
@@ -1589,6 +1605,9 @@ const NineToSurvive = (() => {
     const brad = g.npcState.brad, boss = g.npcState.boss;
     if(brad.counters.firedDay === rep.day || brad.counters.discoveryDay === rep.day)
       return 'Main Character of the Day';
+    if(brad.counters.poisonedDay === rep.day) return 'Best Supporting Saboteur';
+    if((g.npcState.adam.counters || {}).grenadeDay === rep.day) return 'Regional Director of Chaos';
+    if(brad.counters.confrontDay === rep.day) return 'Human Firewall';
     if(g.receipts && g.receipts.count > 0) return 'Least Legally Defensible';
     if(rep.deadEyed >= 1) return 'Most Dead Inside';
     if(boss.counters.callDay === rep.day && boss.flags.sympathetic)
@@ -1659,14 +1678,52 @@ const NineToSurvive = (() => {
       tag:'Day '+days+' · You quit', tone:'soul', title:'Out. Technically.',
       body:'You hit your number and escaped — but the building kept a piece of you at every rung. '+bank+' in '+days+' days, paid at full retail. Spend some of it remembering who you were.'
     };
-    if(g.failed === 'standing') return {
-      tag:'Day '+days+' · Terminated', tone:'danger', title:'Managed Out',
-      body:'Security walked you to your car with '+bank+' saved — not your number, but yours. You kept your dignity; the org kept the ficus. On the bright side: you never have to attend the sync again.'
-    };
-    if(g.failed === 'soul') return {
-      tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Promoted to Middle Management',
-      body:'You schedule the syncs now. You send the 4:57 asks. You say “let’s take this offline.” The '+bank+' you saved will buy things the new you enjoys. This is the real game over.'
-    };
+    // SPECIFIC FAILURES: the ending names what actually killed you. Each is a
+    // first-match ladder over the run's real record — shareable, not generic.
+    const NPC0 = { counters: {}, flags: {} };
+    const npcs = g.npcState || {};
+    if(g.failed === 'standing'){
+      const adam = npcs.adam || NPC0, mer = npcs.meredith || NPC0;
+      if(heatOf(g, 'hr') >= HEAT_HIGH || mer.flags.truthBilled) return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Identified by Writing Style',
+        body:'The survey was anonymous; your semicolons were not. Meredith matched the paragraphs, the paragraphs attended a meeting, and the meeting decided. '+bank+' saved. Your prose remains excellent, which is what did it.'
+      };
+      if(((g.stats || {}).bradSteals || 0) >= 3) return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Reassigned Into Brad’s Narrative',
+        body:'Enough of your work moved into “Team Wins” that the org concluded the team could win without you. Brad presented your absence as a process improvement. '+bank+' saved, authorship pending.'
+      };
+      if((adam.counters.concerns || 0) + (adam.counters.intercepts || 0) >= 3) return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Followed Up to Death',
+        body:'Adam raised concerns. Then follow-ups. Then a follow-up about the follow-ups. Somewhere in that thread, your role was “clarified” out of the org chart. '+bank+' saved. Adam was not consulted about your departure, and it shows, he says.'
+      };
+      return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Managed Out',
+        body:'Security walked you to your car with '+bank+' saved — not your number, but yours. You kept your dignity; the org kept the ficus. On the bright side: you never have to attend the sync again.'
+      };
+    }
+    if(g.failed === 'soul'){
+      const boss = npcs.boss || NPC0, kayla = npcs.kayla || NPC0, dennis = npcs.dennis || NPC0;
+      if(((g.stats || {}).comply || 0) >= 8) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Became the Notes Person',
+        body:'You said yes to everything and now everything is yours: the notes, the trivia, the card for Gerald, the 4:57 asks. Somewhere around yes number '+(g.stats.comply)+', the person doing the agreeing stopped being you. '+bank+' saved. The notes are immaculate.'
+      };
+      if((boss.counters.quickCalls || 0) >= 3) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Promoted to Emotional Support Employee',
+        body:'The quick calls were never quick and never calls. You know about the reorg, the nemesis in Finance, and the boat. He feels much better. You feel '+bank+' worth of nothing at all. The door is always open, which is the problem.'
+      };
+      if(kayla.flags.ignored) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Productivity Held',
+        body:'You watched the kitchen from your desk and kept shipping. The dashboard stayed green the whole way down — hers, then yours. '+bank+' saved. The dashboard is very proud of everyone.'
+      };
+      if((dennis.counters.approvalsCleared || 0) >= 5) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Returned With Track Changes',
+        body:'You answered every question Dennis had, and Dennis had all of them. Somewhere around approval nineteen, he approved the last of you, with comments. '+bank+' saved. The filename convention outlives us all.'
+      };
+      return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Promoted to Middle Management',
+        body:'You schedule the syncs now. You send the 4:57 asks. You say “let’s take this offline.” The '+bank+' you saved will buy things the new you enjoys. This is the real game over.'
+      };
+    }
     return {
       tag:'Day '+days, tone:'muted', title:'Still There.',
       body:'The day ended. Another one is coming. '+bank+' banked against a number of '+fmt(FU_TARGET)+'. Keep going.'
@@ -1871,6 +1928,8 @@ const NineToSurvive = (() => {
     if(story) lines.push(story);
     lines.push('Day ' + g.day + ' · ' + headline);
     lines.push('Banked ' + fmt(g.money) + ' / ' + fmt(FU_TARGET) + ' · Standing ' + g.standing + ' · Soul ' + g.soul);
+    if(schemesUsed(g) >= 2)
+      lines.push('Schemes run on the building: ' + schemesUsed(g) + '. The building started it.');
     if(!story) lines.push('An unremarkable tenure, which was the plan.');
     lines.push('Ungovernable. Unapologetic.');
     return lines.join('\n');

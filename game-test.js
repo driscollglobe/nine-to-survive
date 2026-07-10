@@ -1447,6 +1447,120 @@ ok('schemes serialize cleanly with the save', (() => {
   return G.schemesUsed(u) === 1 && u.schemes.flags.flash === 1;
 })());
 
+// ---- 22. THE STORY COLLECTION: run outcomes as unlockables ----------------------
+ok('collection: catalog is complete and ordered', (() => {
+  const need = ['brad_exposed','kayla_helped','kayla_ignored','hr_metadata','boss_survived',
+    'marcus_saved','priya_backed','dennis_broken','escaped_clean','escaped_dead_inside',
+    'managed_out','management','adam_meddled'];
+  return need.every(k => G.STORY_META[k] && G.STORY_META[k].name && G.STORY_META[k].hint)
+    && G.STORY_ORDER.length === need.length
+    && G.STORY_ORDER.every(k => need.includes(k));
+})());
+ok('collection: an unfinished run earns nothing', G.earnedStories(G.newGame(4001)).length === 0);
+ok('collection: a clean escape earns escaped_clean (and the ladder lead comes first)', (() => {
+  const t = G.newGame(4002);
+  t.money = 99999; t.soul = 70;
+  G.walkOut(t);
+  const e = G.earnedStories(t);
+  return e.includes('escaped_clean') && !e.includes('escaped_dead_inside');
+})());
+ok('collection: one run can clearly earn several stories', (() => {
+  const t = G.newGame(4003);
+  t.npcState.brad.flags.fired = true;                     // exposed
+  t.npcState.kayla.flags.satWith = true;                  // helped
+  G.addReceipt(t, 'hr_survey_metadata');                  // metadata banked
+  t.npcState.adam.counters.concerns = 1;                  // meddled
+  t.money = 99999; t.soul = 40;
+  G.walkOut(t);
+  const e = G.earnedStories(t);
+  return e[0] === 'brad_exposed'                          // the ladder leads
+    && e.includes('kayla_helped') && e.includes('hr_metadata')
+    && e.includes('adam_meddled') && e.includes('escaped_dead_inside')
+    && !e.includes('escaped_clean');
+})());
+ok('collection: failures earn their endings', (() => {
+  const t = G.newGame(4004);
+  t.standing = 0; t.failed = 'standing'; t.over = true;
+  const u = G.newGame(4005);
+  u.soul = 0; u.failed = 'soul'; u.over = true;
+  return G.earnedStories(t).includes('managed_out') && G.earnedStories(u).includes('management');
+})());
+ok('collection: a spent-then-cooled metadata still counts as the metadata story', (() => {
+  const t = G.newGame(4006);
+  G.addReceipt(t, 'hr_survey_metadata');
+  G.addHeat(t, 'hr', 4);
+  G.coolHR(t, 700);                                       // burned on cooling
+  t.money = 99999; t.soul = 70; G.walkOut(t);
+  return G.earnedStories(t).includes('hr_metadata');
+})());
+ok('collection: earnedStories is pure (same g, same list)', (() => {
+  const t = G.newGame(4007);
+  t.money = 99999; G.walkOut(t);
+  return JSON.stringify(G.earnedStories(t)) === JSON.stringify(G.earnedStories(t));
+})());
+
+// ---- 23. SPECIFIC FAILURES: the ending names what killed you --------------------
+ok('verdict: heavy compliance + Soul death = Became the Notes Person', (() => {
+  const t = G.newGame(5001);
+  t.stats.comply = 9; t.soul = 0; t.failed = 'soul'; t.over = true;
+  return G.verdict(t).title === 'Became the Notes Person';
+})());
+ok('verdict: quick-call diet + Soul death = Emotional Support Employee', (() => {
+  const t = G.newGame(5002);
+  t.npcState.boss.counters.quickCalls = 4; t.soul = 0; t.failed = 'soul'; t.over = true;
+  return G.verdict(t).title === 'Promoted to Emotional Support Employee';
+})());
+ok('verdict: ignored Kayla + Soul death = Productivity Held', (() => {
+  const t = G.newGame(5003);
+  t.npcState.kayla.flags.ignored = true; t.soul = 0; t.failed = 'soul'; t.over = true;
+  return G.verdict(t).title === 'Productivity Held';
+})());
+ok('verdict: five+ approvals ground out + Soul death = Returned With Track Changes', (() => {
+  const t = G.newGame(5004);
+  t.npcState.dennis.counters.approvalsCleared = 6; t.soul = 0; t.failed = 'soul'; t.over = true;
+  return G.verdict(t).title === 'Returned With Track Changes';
+})());
+ok('verdict: HR heat High + Standing death = Identified by Writing Style', (() => {
+  const t = G.newGame(5005);
+  t.heat.hr = G.HEAT_HIGH; t.standing = 0; t.failed = 'standing'; t.over = true;
+  return G.verdict(t).title === 'Identified by Writing Style';
+})());
+ok('verdict: three Brad steals + Standing death = Reassigned Into Brad’s Narrative', (() => {
+  const t = G.newGame(5006);
+  t.stats.bradSteals = 3; t.standing = 0; t.failed = 'standing'; t.over = true;
+  return G.verdict(t).title === 'Reassigned Into Brad’s Narrative';
+})());
+ok('verdict: Adam attrition + Standing death = Followed Up to Death', (() => {
+  const t = G.newGame(5007);
+  t.npcState.adam.counters.concerns = 2; t.npcState.adam.counters.intercepts = 1;
+  t.standing = 0; t.failed = 'standing'; t.over = true;
+  return G.verdict(t).title === 'Followed Up to Death';
+})());
+ok('verdict: a plain death still gets the plain endings', (() => {
+  const t = G.newGame(5008);
+  t.standing = 0; t.failed = 'standing'; t.over = true;
+  const u = G.newGame(5009);
+  u.soul = 0; u.failed = 'soul'; u.over = true;
+  return G.verdict(t).title === 'Managed Out' && G.verdict(u).title === 'Promoted to Middle Management';
+})());
+ok('verdict: the ladder priority is stable (compliance beats quick calls)', (() => {
+  const t = G.newGame(5010);
+  t.stats.comply = 9; t.npcState.boss.counters.quickCalls = 5;
+  t.soul = 0; t.failed = 'soul'; t.over = true;
+  return G.verdict(t).title === 'Became the Notes Person';
+})());
+ok('verdict: specific failures carry into the share text', (() => {
+  const t = G.newGame(5011);
+  t.stats.bradSteals = 4; t.standing = 0; t.failed = 'standing'; t.over = true;
+  return /Reassigned Into Brad’s Narrative/.test(G.shareText(t));
+})());
+ok('applyChoice keeps the compliance ledger', (() => {
+  const t = G.newGame(5012);
+  t.plan = [0]; t.idxInDay = 0;
+  G.applyChoice(t, 0);   // sync: s+8/so-6 = a comply
+  return t.stats.comply === 1;
+})());
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');

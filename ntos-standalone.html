@@ -398,6 +398,8 @@ const NineToSurvive = (() => {
       activeArcs: pickArcs((seed == null ? 1 : seed) | 0),   // this run's storylines
       todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
       receipts: { count: 0, flags: {} },
+      heat: { hr: 0, boss: 0, brad: 0 },   // office heat: who's watching you now
+      schemes: { used: 0, flags: {} },     // the plays you ran on this building
       feed: [],              // today's office feed: [{m: clockMin, text}]
       runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
@@ -417,6 +419,8 @@ const NineToSurvive = (() => {
     const enc = currentEncounter(g);
     const c = enc.choices[choiceIndex];
     if(!c) return null;
+    // the compliance ledger: paying Soul for Standing, again (feeds the verdict)
+    if(c.s > 0 && c.so < 0 && g.stats) g.stats.comply = (g.stats.comply || 0) + 1;
     const before = { standing: g.standing, soul: g.soul };
     g.standing = clamp(g.standing + c.s);
     g.soul     = clamp(g.soul + temperSoulGain(g, c.so));
@@ -474,6 +478,7 @@ const NineToSurvive = (() => {
     const e = WORLD_EFFECTS[kind];
     if(!e) return null;
     if(kind === 'bradSteal' && g.stats) g.stats.bradSteals++;
+    if(kind === 'bradFoiled') addHeat(g, 'brad', 1);   // CHAIN: you were RIGHT THERE — paranoia climbs
     const b = { s: g.standing, so: g.soul };
     const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad')
       ? bossCatchMod(g) + consumeCatchShield(g) : 0;
@@ -563,6 +568,8 @@ const NineToSurvive = (() => {
     g.receipts.flags[name] = true;
     g.receipts.count++;
     g.receipts.earned = (g.receipts.earned || 0) + 1;
+    // CHAIN: collecting evidence is itself evidence — HR heat +1 per receipt
+    addHeat(g, 'hr', 1);
     return true;
   }
   function hasReceipt(g, name){ return !!(g.receipts && g.receipts.flags[name]); }
@@ -571,6 +578,64 @@ const NineToSurvive = (() => {
     delete g.receipts.flags[name];
     g.receipts.count--;
     return true;
+  }
+
+  // ---- Office heat: three ways the building starts watching you -----------------
+  // Deterministic pressure meters raised by what YOU did, spent as consequences.
+  // CHAIN REACTIONS (each link logged where it fires):
+  //   HR heat      ← survey truth, collecting receipts, public receipt-burns,
+  //                  formal warnings  → raises the warning bar at review (High),
+  //                  Meredith starts reading writing styles (morning feed).
+  //   Boss attention ← promotions, dodged quick calls, crunch wins, perfect
+  //                  task days → an extra floor walk at High, plus off-arc
+  //                  "quick call" summons on seeded days.
+  //   Brad paranoia ← the screenshot, backing Priya, the bait, foiled raids
+  //                  → an extra raid at High, and (once) the self-own morning.
+  // All integers on g.heat, clamped 0..HEAT_MAX, serialized with the save.
+  const HEAT_MAX = 8;
+  const HEAT_MED = 3, HEAT_HIGH = 5;
+  const HR_HEAT_WARN = 5;   // at High, the review warns below WARN_AT + this
+  function addHeat(g, kind, n){
+    if(!g.heat) g.heat = { hr: 0, boss: 0, brad: 0 };
+    const before = g.heat[kind] || 0;
+    g.heat[kind] = Math.max(0, Math.min(HEAT_MAX, before + n));
+    return g.heat[kind] - before;
+  }
+  function heatOf(g, kind){ return (g.heat && g.heat[kind]) || 0; }
+  function heatLevel(g, kind){
+    const v = heatOf(g, kind);
+    return v >= HEAT_HIGH ? 'High' : v >= HEAT_MED ? 'Medium' : 'Low';
+  }
+  // one line per meter the first morning it runs High — the tell before the tax
+  const HEAT_FEED = {
+    hr:   'Meredith has been reading old survey responses with a highlighter.',
+    boss: 'There is a dashboard in the corner office now with a sparkline named after you.',
+    brad: 'Brad locks his screen to get water. Both screens.'
+  };
+  function heatMorningFeed(g){
+    if(!g.heatFeedDay) g.heatFeedDay = {};
+    ['hr', 'boss', 'brad'].forEach((k, i) => {
+      if(heatOf(g, k) >= HEAT_HIGH && !g.heatFeedDay[k]){
+        g.heatFeedDay[k] = g.day;
+        pushFeed(g, 551 + i, HEAT_FEED[k]);
+      }
+    });
+    // CHAIN: Brad paranoia High → (once per run, seeded) the self-own morning.
+    // His mistake, not yours — pure comedy plus headline material.
+    const brad = g.npcState && g.npcState.brad;
+    if(brad && heatOf(g, 'brad') >= HEAT_HIGH && !brad.flags.selfOwn && !brad.flags.fired
+       && arcRand(g, 'brad', 'selfown')() < 0.3){
+      brad.flags.selfOwn = true;
+      brad.counters.selfOwnDay = g.day;
+      brad.stress = 3;
+      pushFeed(g, 558, 'Brad reply-alled a spreadsheet named FINAL_v2_BRAD_PRIVATE. It was not private. It was not final.');
+      pushFeed(g, 566, 'Brad has recalled the message. Recalling a message notifies everyone twice.');
+    }
+    // CHAIN: exposing Brad → legal wakes up the next morning (once)
+    if(brad && (brad.flags.burned || brad.flags.fired) && !g.legalFeedDay){
+      g.legalFeedDay = g.day;
+      pushFeed(g, 553, 'Legal asked everyone to “preserve relevant documents.” Everyone suddenly has documents.');
+    }
   }
 
   // ---- The arc engine: serialized office lore -----------------------------------
@@ -670,6 +735,12 @@ const NineToSurvive = (() => {
             pushFeed(g, 540, 'Boss is typing…');
           } else if(!boss.flags.deflected){
             // no answer yet: the quick call keeps being requested
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+          } else if(heatOf(g, 'boss') >= HEAT_MED
+                    && arcRand(g, 'boss', 'spiralcall')() < 0.5){
+            // CHAIN: spiral + Boss attention — deflecting a spiraling boss who
+            // has you on his dashboard only works some days. He "just wants
+            // five minutes." It is never five minutes.
             a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
           }
         }
@@ -908,6 +979,7 @@ const NineToSurvive = (() => {
       brad.counters.discoveryDay = g.day;
       if(c.key === 'screenshot'){
         addReceipt(g, 'screenshot_brad_deck');
+        addHeat(g, 'brad', 2);   // CHAIN: he saw you see him — paranoia climbs
         brad.stress = 3; a.stage = 5;
         pushFeed(g, min, 'Brad deleted a message.');
         pushFeed(g, (min || 0) + 2, 'Brad deleted another message.');
@@ -925,6 +997,7 @@ const NineToSurvive = (() => {
       if(c.key === 'back'){
         priya.trust += 3; priya.flags.backed = true;
         g.npcState.brad.stress = Math.min(3, g.npcState.brad.stress + 1);
+        addHeat(g, 'brad', 1);   // CHAIN: backing Priya reads as choosing a side
         pushFeed(g, min, 'Someone said “this is Priya’s build” out loud, in the room, on the record.');
       } else if(c.key === 'dm'){
         priya.trust += 1; priya.flags.dmed = true;
@@ -937,6 +1010,7 @@ const NineToSurvive = (() => {
         pushFeed(g, min, 'The demo was flawless. The credits were fiction. Productivity held.');
       } else if(c.key === 'bait'){
         priya.flags.baited = true;
+        addHeat(g, 'brad', 2);   // CHAIN: win or lose, he starts checking his files
         if(arcRand(g, 'priya', 'bait')() < 0.5){
           priya.flags.baitWon = true;
           priya.trust += 2; g.npcState.brad.stress = 3;
@@ -958,6 +1032,7 @@ const NineToSurvive = (() => {
       mer.counters.surveyDay = g.day;
       if(c.key === 'truth'){
         mer.flags.truthTold = true;
+        addHeat(g, 'hr', 2);   // CHAIN: seven paragraphs have a writing style
         pushFeed(g, min, 'Someone submitted seven paragraphs. Meredith has opened a thesaurus.');
       } else if(c.key === 'help'){
         const peers = ['kayla', 'priya', 'marcus'];
@@ -1089,6 +1164,12 @@ const NineToSurvive = (() => {
       const d = applyStoryDelta(g, 0, +2);
       return d.dso;
     }
+    // CHAIN: you watched her drown and kept shipping — her chats are "fine"
+    // now ("it's fine") and refill almost nothing, for the rest of the run
+    if(who === 'kayla' && g.npcState.kayla.flags.ignored){
+      const d = applyStoryDelta(g, 0, -2);
+      return d.dso;
+    }
     return 0;
   }
 
@@ -1102,6 +1183,8 @@ const NineToSurvive = (() => {
     else if(how === 'flattered') pushFeed(g, min, '“Nineteen years — the institutional knowledge!” Dennis approved the file while agreeing.');
     else if(how === 'receipt') pushFeed(g, min, 'Dennis received a receipt. Approvals followed at unprecedented speed.');
     else if(how === 'tip') pushFeed(g, min, 'You used Marcus’s phrase. Dennis paused, said “load-bearing, huh,” and approved everything.');
+    else if(how === 'walked') pushFeed(g, min, 'Someone answered Dennis’s questions WHILE WALKING. A file cleared in transit. Witnesses exist.');
+    else if(how === 'adam') pushFeed(g, min, 'Dennis approved a full stack to escape a conversation about index cards.');
   }
   // burn ANY held receipt to clear today's approvals (fixed order, least precious first)
   function burnReceiptForDennis(g){
@@ -1132,9 +1215,129 @@ const NineToSurvive = (() => {
     }
   }
 
+  // ---- Schemes: weaponizing receipts, trust, and what you can see coming --------
+  // Small, deterministic, readable. Each is an extra verb that exists only when
+  // its conditions are met; g.schemes counts them for headlines/awards/share.
+  function schemeUsed(g, name){
+    if(!g.schemes) g.schemes = { used: 0, flags: {} };
+    g.schemes.flags[name] = (g.schemes.flags[name] || 0) + 1;
+    g.schemes.used++;
+  }
+  function schemesUsed(g){ return (g.schemes && g.schemes.used) || 0; }
+
+  // INTERCEPTION: you walked at Brad while he was casing your inbox. Raid off.
+  function bradConfronted(g, min){
+    const brad = g.npcState.brad;
+    brad.counters.confronts = (brad.counters.confronts || 0) + 1;
+    brad.counters.confrontDay = g.day;
+    addHeat(g, 'brad', 1);   // CHAIN: being seen seeing him — paranoia climbs
+    pushFeed(g, min, 'Brad suddenly remembered a call. The water bottle stayed at the fountain, unfilled.');
+    return '“Looking for something?” He was not. He remembered a call, urgently. The raid is off.';
+  }
+  // SCHEME: flash the screenshot. Not spent — shown. His raids end for the run.
+  function bradFlashed(g, min){
+    const brad = g.npcState.brad;
+    if(brad.flags.cowed) return null;
+    if(!hasReceipt(g, 'screenshot_brad_deck')) return null;
+    brad.flags.cowed = true;
+    schemeUsed(g, 'flash');
+    addHeat(g, 'brad', 2);
+    pushFeed(g, min, 'Brad saw a phone wallpaper today that aged him. He has stopped visiting the bullpen.');
+    return 'You angle the phone, casually. He recognizes the deck. You put it away, still yours. He will not be visiting your inbox again.';
+  }
+  // SCHEME: the flawed file, planted where he steals from. He presents poison.
+  function baitPlanted(g, min){
+    pushFeed(g, min, 'A file moved to the top of a stack. Its formulas are, charitably, aspirational.');
+    return 'The flawed file sits on top, gleaming. Now be visibly elsewhere.';
+  }
+  function bradPoisoned(g, min){
+    const brad = g.npcState.brad;
+    brad.counters.poisonedDay = g.day;
+    schemeUsed(g, 'poison');
+    addHeat(g, 'brad', 2);   // CHAIN: he cannot prove it, which is worse
+    const d = applyStoryDelta(g, +3, +2);
+    pushFeed(g, min, 'Brad presented “his” analysis. Cell C9 divides by a word. He said the word “directionally” four times.');
+    pushFeed(g, (min || 0) + 6, 'Brad’s recap email walks back the analysis he “built.” Authorship is suddenly a team concept.');
+    return { ds: d.ds, dso: d.dso,
+      text: 'Brad lifts the flawed file and presents it within the hour, confidently. It detonates on slide two. You watch from your desk, shipping actual work.' };
+  }
+  // INTERCEPTION: caught Dennis mid-carry — the questions get answered en route.
+  function dennisWalked(g, min){
+    dennisApprovalCleared(g, min, 'walked', 1);
+    return 'You fall into step beside him. Nineteen questions over forty meters. He approves the file at the door of The Pipe, almost disappointed.';
+  }
+  // Adam reached HR: the concern lands (on someone; unclear; heat regardless)
+  function adamConcernLanded(g, min){
+    const ad = g.npcState.adam;
+    ad.counters.concerns = (ad.counters.concerns || 0) + 1;
+    ad.counters.concernDay = g.day;
+    addHeat(g, 'hr', 1);   // CHAIN: a raised concern needs a folder; the folder needs names
+    pushFeed(g, min, 'Adam raised a concern with HR. The concern has an appendix. Meredith opened a folder.');
+    return null;
+  }
+  // INTERCEPTION: you asked Adam about 2009. HR never learns of the concern.
+  function adamRedirected(g, min){
+    const ad = g.npcState.adam;
+    ad.counters.redirects = (ad.counters.redirects || 0) + 1;
+    const d = applyStoryDelta(g, 0, -1);   // the anecdote has three parts. You hear all of them.
+    pushFeed(g, min, 'Adam was headed to HR but got a better offer: someone asked how things were done in 2009.');
+    return { dso: d.dso, text: '“Funny you ask—” Twelve minutes on the old approval system. HR never learns of the concern. Your Soul learns about 2009.' };
+  }
+  // SCHEME: point Adam at Dennis. Seeded 50/50 — bypass, or a bigger delay.
+  // CHAIN: Dennis blocker + Adam meddling = either a bypass or a worse day.
+  function adamGrenade(g, min){
+    const ad = g.npcState.adam;
+    ad.counters.grenades = (ad.counters.grenades || 0) + 1;
+    ad.counters.grenadeDay = g.day;
+    schemeUsed(g, 'grenade');
+    const bypass = arcRand(g, 'adam', 'grenade')() < 0.5;
+    if(bypass){
+      dennisApprovalCleared(g, min, 'adam');
+      pushFeed(g, min, 'Adam and Dennis talked about the old system for forty minutes. Everything got approved to end the conversation.');
+      return { bypass: true,
+        text: 'Adam opens with “back when approvals were INDEX CARDS—” and Dennis, cornered by his own kind, approves everything just to make it stop.' };
+    }
+    const d = applyStoryDelta(g, 0, -1);
+    pushFeed(g, min, 'Adam raised a process concern on your behalf. Dennis found it compelling. A previously fine file now needs approval.');
+    return { bypass: false, dso: d.dso,
+      text: 'Adam “helps” by proposing a sub-process. Dennis loves it. Another of your files is now stuck, and there is a meeting about the sub-process. You are invited.' };
+  }
+  // Pre-demo window: the commit log, collected early, in the room
+  function priyaPreCollect(g, min){
+    if(hasReceipt(g, 'priya_commit_log')) return null;
+    addReceipt(g, 'priya_commit_log');
+    g.npcState.priya.flags.collected = true;
+    pushFeed(g, min, 'A commit log was screenshotted in the meeting room, pre-demo. Git remembers everything. So, now, do you.');
+    return 'You lean over the demo laptop. One tab: the commit log, every line with her name on it. Click. Saved. The demo hasn’t even started.';
+  }
+  // Pre-demo window: the flawed backup file, planted before the room fills
+  function priyaPrePlant(g, min){
+    const priya = g.npcState.priya;
+    if(priya.flags.preBaited) return null;
+    priya.flags.preBaited = true;
+    schemeUsed(g, 'preplant');
+    pushFeed(g, min, 'A file named backup_FINAL was quietly renamed FINAL. Nobody saw. Git saw.');
+    return 'Two clicks while the room is empty. The presenter will open the backup — the one that divides by zero. You take a seat in the second row.';
+  }
+  // SCHEME: spend the metadata to cool HR — the OTHER use of the receipt.
+  // (It also defuses a warning at review; you can't have both. A real decision.)
+  function coolHR(g, min){
+    if(!hasReceipt(g, 'hr_survey_metadata')) return null;
+    if(heatOf(g, 'hr') < HEAT_MED) return null;
+    burnReceipt(g, 'hr_survey_metadata');
+    g.heat.hr = 0;
+    schemeUsed(g, 'coolhr');
+    const mer = g.npcState.meredith;
+    mer.counters.cooled = (mer.counters.cooled || 0) + 1;
+    mer.counters.cooledDay = g.day;
+    pushFeed(g, min, 'Someone asked Meredith, hypothetically, how anonymous the survey backend is. The writing-style project ended today.');
+    return 'You ask, hypothetically, about response IDs. Meredith’s highlighter caps itself. Your file gets thinner by the sound of it. The receipt is spent.';
+  }
+
   // Never found time for the quick call: the office reads that as an answer.
   function bossSummonsDodged(g, min){
     const boss = g.npcState.boss;
+    addHeat(g, 'boss', 2);   // CHAIN: an unanswered "got a sec" is an answer he remembers
     if(boss.flags.deflected || boss.flags.sympathetic) return false;
     boss.flags.deflected = true; boss.flags.hardCatch = true;
     pushFeed(g, min, '“got a sec” expired unanswered. It has been noted somewhere with columns.');
@@ -1154,6 +1357,7 @@ const NineToSurvive = (() => {
   // The receipt play: holding the screenshot gives Brad's Credit-Reassigned card
   // a fourth choice that burns it to reverse the theft, with interest.
   const CREDIT_ENC = 2;
+  const CALIB_ENC  = 3;   // "The Meeting About You, Without You"
   function extraChoicesFor(g, encIdx){
     const extras = [];
     if(encIdx === CREDIT_ENC && hasReceipt(g, 'screenshot_brad_deck') && !bradOutOfPlay(g)){
@@ -1164,14 +1368,32 @@ const NineToSurvive = (() => {
       extras.push({ key: 'burn_commit_log',
         t: '“Hold on — pull up the commit log. Every line of the last one had a name on it too.”' });
     }
+    // SCHEME: evidence works in calibration too — submit the commit log as
+    // "context" and the slide about you gets timestamps instead of vibes
+    if(encIdx === CALIB_ENC && hasReceipt(g, 'priya_commit_log')){
+      extras.push({ key: 'burn_calibration',
+        t: 'Attach the commit log to your “context.” Turns out receipts work on slides about you, too.' });
+    }
     return extras;
   }
   function applyExtraChoice(g, encIdx, key, min){
+    if(encIdx === CALIB_ENC && key === 'burn_calibration'){
+      if(!burnReceipt(g, 'priya_commit_log')) return null;
+      schemeUsed(g, 'calibration');
+      const d = applyStoryDelta(g, +5, +2);
+      g.npcState.priya.trust += 1;   // her name rides along, credited
+      pushFeed(g, min, 'Someone submitted calibration context with TIMESTAMPS. The slide changed. The slide never changes.');
+      g.lastChoice = { choiceIndex: 'burn_calibration', ds: d.ds, dso: d.dso,
+        outcome: 'Your “context” arrives as a commit log: dates, diffs, names. The VP squints at a bar chart that suddenly has footnotes. The slide is still wrong — but wrong in your favor now, which is the local definition of justice.' };
+      return g.lastChoice;
+    }
     if(encIdx !== CREDIT_ENC) return null;
     if(key === 'burn_commit_log'){
       if(!burnReceipt(g, 'priya_commit_log')) return null;
       const d = applyStoryDelta(g, +8, +6);
       const brad = g.npcState.brad;
+      // CHAIN: public receipt-burns are a scene — HR notices, Brad spirals
+      addHeat(g, 'hr', 1); addHeat(g, 'brad', 2);
       brad.trust -= 2; brad.stress = Math.min(3, brad.stress + 1);
       g.npcState.priya.trust += 2;
       pushFeed(g, min, 'A commit log appeared on the big screen. Authorship stopped being a vibe.');
@@ -1183,6 +1405,9 @@ const NineToSurvive = (() => {
     if(!burnReceipt(g, 'screenshot_brad_deck')) return null;
     const d = applyStoryDelta(g, +10, +8);   // the theft, reversed, with interest
     const brad = g.npcState.brad;
+    // CHAIN: the projector moment — HR opens a folder; Brad stops raiding
+    // anyone who screen-shares evidence (see noBradRaids in worldFlagsFor)
+    addHeat(g, 'hr', 1); addHeat(g, 'brad', 2);
     brad.trust -= 3; brad.stress = 3; brad.flags.burned = true;
     const a = g.arcs.brad_second_job;
     if(a && a.stage === 8 && !brad.flags.covered){ a.stage = 5; a.waited = 0; }  // the moment un-passes
@@ -1234,11 +1459,21 @@ const NineToSurvive = (() => {
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
       bradFiredToday: b.stage === 6,
       bradGone:       b.stage === 7,     // stage 8 = closed quietly; he's still here
-      noBradRaids:    !!brad.flags.covered || b.stage === 6 || b.stage === 7,
+      // CHAIN: exposing Brad (the projector moment) or flashing him the
+      // screenshot ends his raids — a burned man checks his own screen
+      noBradRaids:    !!brad.flags.covered || !!brad.flags.burned || !!brad.flags.cowed
+                      || b.stage === 6 || b.stage === 7,
       bossArcHot:     bo.stage === 1,
-      extraBossWalks: bo.stage === 1 ? 1 : 0,
+      // CHAIN: Boss attention High adds a floor walk on top of any spiral walk
+      extraBossWalks: (bo.stage === 1 ? 1 : 0) + (heatOf(g, 'boss') >= HEAT_HIGH ? 1 : 0),
+      // CHAIN: Brad paranoia High adds a raid — he is sure YOU are up to something
+      extraBradRaids: (heatOf(g, 'brad') >= HEAT_HIGH && b.stage !== 6 && b.stage !== 7) ? 1 : 0,
       crunchBoost:    bo.stage === 1 ? 0.25 : 0,
-      bossSummonsAt:  (bo.stage === 1 && bo.summonsToday) || null,
+      // CHAIN: Boss attention High summons "quick calls" even with no spiral
+      // running — high performers get calendars done TO them (seeded ~1-in-3)
+      bossSummonsAt:  (bo.stage === 1 && bo.summonsToday)
+        || (heatOf(g, 'boss') >= HEAT_HIGH && arcRand(g, 'boss', 'heatcall')() < 0.35
+            ? 640 + Math.floor(arcRand(g, 'boss', 'heatcallmin')() * 200) : null),
       incidents:      (g.todayIncidents || []).slice()
     };
   }
@@ -1292,12 +1527,16 @@ const NineToSurvive = (() => {
         pushFeed(g, 1019, 'Your survey answers attended your review. Anonymously.');
         if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
       }
+      // CHAIN: HR heat High raises the warning bar — the review reads your file first
+      const warnAt = WARN_AT + (heatOf(g, 'hr') >= HEAT_HIGH ? HR_HEAT_WARN : 0);
       if(g.failed){ /* the bill can end it */ }
       else if(g.standing >= PROMOTE_AT && g.jobIdx < LADDER.length - 1){
         g.jobIdx++; g.standing = PROMOTE_RESET; soulHit(g, PROMOTE_SOUL);
+        addHeat(g, 'boss', 2);   // CHAIN: every rung up is a rung closer to his calendar
         report.promoted = true; report.newTitle = jobTitle(g);
         pushFeed(g, 1020, 'A promotion was announced. The word “journey” was used twice.');
-      } else if(g.standing < WARN_AT){
+      } else if(g.standing < warnAt){
+        if(g.standing >= WARN_AT) report.hrHeatWarned = true;   // heat made the difference
         if(hasReceipt(g, 'hr_survey_metadata')){
           // the receipt defuses exactly one warning, then it's spent
           burnReceipt(g, 'hr_survey_metadata');
@@ -1306,11 +1545,16 @@ const NineToSurvive = (() => {
           pushFeed(g, 1020, 'The warning was withdrawn after you asked, politely, about survey response IDs.');
         } else {
           soulHit(g, WARN_SOUL); report.warned = true;
+          addHeat(g, 'hr', 1);   // CHAIN: warnings compound — the file grows itself now
           if(g.stats) g.stats.warnings++;
           pushFeed(g, 1020, 'Meredith created a document. The filename contains your name and the word “alignment.”');
         }
       }
     }
+    // CHAIN: a perfect ship-day is "high performance" — the corner office notices
+    if(!g.failed && stats.tasksTotal > 0 && stats.tasksDone >= stats.tasksTotal)
+      addHeat(g, 'boss', 1);
+    report.heat = { hr: heatLevel(g, 'hr'), boss: heatLevel(g, 'boss'), brad: heatLevel(g, 'brad') };
     report.money = g.money;
     g.dayReport = report;
     return g.failed ? 'gameover' : 'dayend';
@@ -1327,6 +1571,19 @@ const NineToSurvive = (() => {
       return d + 'Brad was walked out holding a box he was not allowed to carry.';
     if(brad.counters.discoveryDay === rep.day)
       return d + 'a laptop faced the wrong direction for four full seconds.';
+    // the schemes and interceptions write their own headlines
+    if(brad.counters.poisonedDay === rep.day)
+      return d + 'Brad presented a file he stole. Cell C9 divides by a word.';
+    if((g.npcState.adam.counters || {}).grenadeDay === rep.day)
+      return d + 'Adam was deployed at Dennis. It was like watching weather systems collide.';
+    if(brad.counters.selfOwnDay === rep.day)
+      return d + 'FINAL_v2_BRAD_PRIVATE was neither private nor final.';
+    if(brad.counters.confrontDay === rep.day)
+      return d + 'a raid died of eye contact at the water fountain.';
+    if((g.npcState.meredith.counters || {}).cooledDay === rep.day)
+      return d + 'a hypothetical question about response IDs ended a highlighting project.';
+    if((g.npcState.adam.counters || {}).concernDay === rep.day)
+      return d + 'a concern reached HR. It had an appendix.';
     if(boss.counters.callDay === rep.day && boss.flags.sympathetic)
       return d + 'you became the corner office’s emotional support animal.';
     if(boss.counters.callDay === rep.day)
@@ -1354,7 +1611,9 @@ const NineToSurvive = (() => {
     if(rep.warningDefused) return d + 'a warning met a metadata screenshot and blinked first.';
     if(rep.promoted) return d + 'promoted. The bar moved. It saw you coming.';
     if(rep.warned) return d + 'HR opened a document with your name in the filename.';
-    if(rep.deadEyed >= 2) return d + 'three tasks in a row without blinking. HR calls it “flow.”';
+    // CHAIN: an ignored Kayla lowers the bar for the dead-eyed headline
+    if(rep.deadEyed >= 2 || (rep.deadEyed >= 1 && g.npcState.kayla.flags.ignored))
+      return d + 'three tasks in a row without blinking. HR calls it “flow.”';
     if(rep.forgiven) return d + 'Marcus was right about Thursday.';
     if(rep.broke) return d + 'the ATM asked if you were sure.';
     return d + 'survived.';
@@ -1364,6 +1623,9 @@ const NineToSurvive = (() => {
     const brad = g.npcState.brad, boss = g.npcState.boss;
     if(brad.counters.firedDay === rep.day || brad.counters.discoveryDay === rep.day)
       return 'Main Character of the Day';
+    if(brad.counters.poisonedDay === rep.day) return 'Best Supporting Saboteur';
+    if((g.npcState.adam.counters || {}).grenadeDay === rep.day) return 'Regional Director of Chaos';
+    if(brad.counters.confrontDay === rep.day) return 'Human Firewall';
     if(g.receipts && g.receipts.count > 0) return 'Least Legally Defensible';
     if(rep.deadEyed >= 1) return 'Most Dead Inside';
     if(boss.counters.callDay === rep.day && boss.flags.sympathetic)
@@ -1386,6 +1648,7 @@ const NineToSurvive = (() => {
     if(g.dennisBlockerToday)
       pushFeed(g, 549, 'Dennis changed the approval workflow. The change requires approval. His.');
     advanceArcs(g);
+    heatMorningFeed(g);   // heat tells + the Brad self-own + the legal morning
     g.plan = planDay(g);
   }
 
@@ -1395,6 +1658,7 @@ const NineToSurvive = (() => {
   const CRUNCH_WIN = 4, CRUNCH_LOSE = 10, CRUNCH_BONUS = 250;
   function applyCrunch(g, success){
     if(g.stats){ if(success) g.stats.crunchWins++; else g.stats.crunchFails++; }
+    if(success) addHeat(g, 'boss', 1);   // CHAIN: deliver under pressure once, get volunteered forever
     const before = g.standing;
     g.standing = clamp(g.standing + (success ? CRUNCH_WIN : -CRUNCH_LOSE));
     let bonus = 0;
@@ -1432,14 +1696,52 @@ const NineToSurvive = (() => {
       tag:'Day '+days+' · You quit', tone:'soul', title:'Out. Technically.',
       body:'You hit your number and escaped — but the building kept a piece of you at every rung. '+bank+' in '+days+' days, paid at full retail. Spend some of it remembering who you were.'
     };
-    if(g.failed === 'standing') return {
-      tag:'Day '+days+' · Terminated', tone:'danger', title:'Managed Out',
-      body:'Security walked you to your car with '+bank+' saved — not your number, but yours. You kept your dignity; the org kept the ficus. On the bright side: you never have to attend the sync again.'
-    };
-    if(g.failed === 'soul') return {
-      tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Promoted to Middle Management',
-      body:'You schedule the syncs now. You send the 4:57 asks. You say “let’s take this offline.” The '+bank+' you saved will buy things the new you enjoys. This is the real game over.'
-    };
+    // SPECIFIC FAILURES: the ending names what actually killed you. Each is a
+    // first-match ladder over the run's real record — shareable, not generic.
+    const NPC0 = { counters: {}, flags: {} };
+    const npcs = g.npcState || {};
+    if(g.failed === 'standing'){
+      const adam = npcs.adam || NPC0, mer = npcs.meredith || NPC0;
+      if(heatOf(g, 'hr') >= HEAT_HIGH || mer.flags.truthBilled) return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Identified by Writing Style',
+        body:'The survey was anonymous; your semicolons were not. Meredith matched the paragraphs, the paragraphs attended a meeting, and the meeting decided. '+bank+' saved. Your prose remains excellent, which is what did it.'
+      };
+      if(((g.stats || {}).bradSteals || 0) >= 3) return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Reassigned Into Brad’s Narrative',
+        body:'Enough of your work moved into “Team Wins” that the org concluded the team could win without you. Brad presented your absence as a process improvement. '+bank+' saved, authorship pending.'
+      };
+      if((adam.counters.concerns || 0) + (adam.counters.intercepts || 0) >= 3) return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Followed Up to Death',
+        body:'Adam raised concerns. Then follow-ups. Then a follow-up about the follow-ups. Somewhere in that thread, your role was “clarified” out of the org chart. '+bank+' saved. Adam was not consulted about your departure, and it shows, he says.'
+      };
+      return {
+        tag:'Day '+days+' · Terminated', tone:'danger', title:'Managed Out',
+        body:'Security walked you to your car with '+bank+' saved — not your number, but yours. You kept your dignity; the org kept the ficus. On the bright side: you never have to attend the sync again.'
+      };
+    }
+    if(g.failed === 'soul'){
+      const boss = npcs.boss || NPC0, kayla = npcs.kayla || NPC0, dennis = npcs.dennis || NPC0;
+      if(((g.stats || {}).comply || 0) >= 8) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Became the Notes Person',
+        body:'You said yes to everything and now everything is yours: the notes, the trivia, the card for Gerald, the 4:57 asks. Somewhere around yes number '+(g.stats.comply)+', the person doing the agreeing stopped being you. '+bank+' saved. The notes are immaculate.'
+      };
+      if((boss.counters.quickCalls || 0) >= 3) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Promoted to Emotional Support Employee',
+        body:'The quick calls were never quick and never calls. You know about the reorg, the nemesis in Finance, and the boat. He feels much better. You feel '+bank+' worth of nothing at all. The door is always open, which is the problem.'
+      };
+      if(kayla.flags.ignored) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Productivity Held',
+        body:'You watched the kitchen from your desk and kept shipping. The dashboard stayed green the whole way down — hers, then yours. '+bank+' saved. The dashboard is very proud of everyone.'
+      };
+      if((dennis.counters.approvalsCleared || 0) >= 5) return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Returned With Track Changes',
+        body:'You answered every question Dennis had, and Dennis had all of them. Somewhere around approval nineteen, he approved the last of you, with comments. '+bank+' saved. The filename convention outlives us all.'
+      };
+      return {
+        tag:'Day '+days+' · Congratulations (?)', tone:'danger', title:'Promoted to Middle Management',
+        body:'You schedule the syncs now. You send the 4:57 asks. You say “let’s take this offline.” The '+bank+' you saved will buy things the new you enjoys. This is the real game over.'
+      };
+    }
     return {
       tag:'Day '+days, tone:'muted', title:'Still There.',
       body:'The day ended. Another one is coming. '+bank+' banked against a number of '+fmt(FU_TARGET)+'. Keep going.'
@@ -1588,6 +1890,55 @@ const NineToSurvive = (() => {
         return null;
     }
   }
+  // ---- The story collection: what this building has shown you, across runs -----
+  // The brain owns the catalog and the earned-check; the SHELL owns persistence
+  // (localStorage) — the brain stays storage-free. Locked hints tease, never spoil.
+  const STORY_META = {
+    brad_exposed:  { name: 'The Second Laptop',          hint: 'Some decks belong to other companies.' },
+    kayla_helped:  { name: 'Two Chairs in the Kitchen',  hint: 'Someone is “fine.” Check anyway.' },
+    kayla_ignored: { name: 'Productivity Held',          hint: 'Keep shipping. No matter what you hear from the kitchen.' },
+    hr_metadata:   { name: 'Anonymity Has a Schema',     hint: 'Read the URL before you answer anything.' },
+    boss_survived: { name: 'Corner Office Weather',      hint: 'Some quick calls are neither quick nor calls.' },
+    marcus_saved:  { name: 'The Load-Bearing Sentence',  hint: 'Have coffee with the man who has seen everything.' },
+    priya_backed:  { name: 'Say Her Name',               hint: 'The commit log knows who built it.' },
+    dennis_broken: { name: 'The Pipe Flows',             hint: 'Answer every question. All nineteen. Repeatedly.' },
+    escaped_clean: { name: 'Out the Door, Whole',        hint: 'The number, with your soul still attached.' },
+    escaped_dead_inside: { name: 'Mostly the Money',     hint: 'Escaping and escaping intact are different jobs.' },
+    managed_out:   { name: 'Transitioned',               hint: 'Standing has a floor. The floor has security.' },
+    management:    { name: 'The Calls Come From Inside', hint: 'Soul has a floor too. There is a promotion down there.' },
+    adam_meddled:  { name: 'Followed Up to Death',       hint: 'He was not consulted, and you will hear about it.' }
+  };
+  const STORY_ORDER = ['brad_exposed', 'priya_backed', 'kayla_helped', 'kayla_ignored',
+    'hr_metadata', 'boss_survived', 'marcus_saved', 'dennis_broken', 'adam_meddled',
+    'escaped_clean', 'escaped_dead_inside', 'managed_out', 'management'];
+  // Every major outcome this run CLEARLY earned — storyKey's ladder rung first,
+  // then any other rung whose condition independently holds. Ending keys always.
+  function earnedStories(g){
+    if(!g.over) return [];
+    const brad = g.npcState.brad, kayla = g.npcState.kayla, boss = g.npcState.boss;
+    const marcus = g.npcState.marcus, priya = g.npcState.priya, adam = g.npcState.adam;
+    const bossArc = (g.arcs || {}).boss_spiral || { stage: 0 };
+    const keys = [];
+    const add = k => { if(k && STORY_META[k] && keys.indexOf(k) < 0) keys.push(k); };
+    add(storyKey(g));   // the run's lead story, whatever the ladder says
+    if(brad.flags.walkedOut || brad.flags.fired || brad.flags.burned) add('brad_exposed');
+    if(kayla.flags.satWith || kayla.flags.tookTask) add('kayla_helped');
+    if(kayla.flags.ignored) add('kayla_ignored');
+    if(hasReceipt(g, 'hr_survey_metadata') || (g.npcState.meredith.counters.defused || 0) > 0
+       || (g.npcState.meredith.counters.cooled || 0) > 0) add('hr_metadata');
+    if(bossArc.stage === 2 && (boss.counters.quickCalls || 0) > 0) add('boss_survived');
+    if((marcus.counters.saves || 0) > 0) add('marcus_saved');
+    if(priya.flags.backed || priya.flags.baited || priya.flags.preBaited) add('priya_backed');
+    if((g.npcState.dennis.counters.approvalsCleared || 0) >= 3) add('dennis_broken');
+    if(adam && ((adam.counters.concerns || 0) > 0 || (adam.counters.grenades || 0) > 0
+       || (adam.counters.intercepts || 0) >= 2)) add('adam_meddled');
+    if(g.escaped && g.soul >= 50) add('escaped_clean');
+    if(g.escaped && g.soul < 50) add('escaped_dead_inside');
+    if(g.failed === 'standing') add('managed_out');
+    if(g.failed === 'soul') add('management');
+    return keys;
+  }
+
   function shareText(g){
     const headline = g.over ? verdict(g).title : 'Still there. Still counting.';
     const story = storyLine(g);
@@ -1595,6 +1946,8 @@ const NineToSurvive = (() => {
     if(story) lines.push(story);
     lines.push('Day ' + g.day + ' · ' + headline);
     lines.push('Banked ' + fmt(g.money) + ' / ' + fmt(FU_TARGET) + ' · Standing ' + g.standing + ' · Soul ' + g.soul);
+    if(schemesUsed(g) >= 2)
+      lines.push('Schemes run on the building: ' + schemesUsed(g) + '. The building started it.');
     if(!story) lines.push('An unremarkable tenure, which was the plan.');
     lines.push('Ungovernable. Unapologetic.');
     return lines.join('\n');
@@ -1613,14 +1966,19 @@ const NineToSurvive = (() => {
     applyCrunch, applyCoffee, applyWorldEffect,
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
+    addHeat, heatOf, heatLevel, HEAT_MAX, HEAT_MED, HEAT_HIGH, HR_HEAT_WARN,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     dennisApprovalCleared, burnReceiptForDennis, useShieldForDennis, DENNIS_BURN_ORDER,
     adamIntercepted,
+    schemeUsed, schemesUsed, bradConfronted, bradFlashed, baitPlanted, bradPoisoned,
+    dennisWalked, adamConcernLanded, adamRedirected, adamGrenade,
+    priyaPreCollect, priyaPrePlant, coolHR,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,
+    STORY_META, STORY_ORDER, earnedStories,
     policyAction, policyCardChoice, policyIncidentChoice
   };
 })();
@@ -1692,6 +2050,9 @@ const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
 const KITCHEN_CORNER = { x:24, y:12 };   // where Kayla "gets water" on the bad day
 const APPROVAL_SPOT = { x:34, y:21 };    // The Pipe: where approvals go to be questioned
 const APPROVAL_WAIT_SECS = 6;            // his questions, answered in real seconds
+const LURK_SPOT = { x:11, y:14 };        // where Brad "refills his water" pre-raid
+const DEMO_SPOT = { x:16, y:6 };         // meeting room: where demos are performed
+const DEMO_PRESENT_SPOT = { x:17, y:6 }; // where the presenter stands, confidently
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -1906,6 +2267,12 @@ function newDay(seed, day, plan, flags){
     if(adam){ adam.wanderT = 2 + ar() * 6; adam.mood = MOODS[Math.floor(ar() * 3)]; }
     w.adamRolls = Array.from({ length: 12 }, ar);   // interception + usefulness rolls
     w.adamRollIdx = 0;
+    // the concern walk: ~1 day in 3, Adam heads for HR "with a concern." Both
+    // rolls always spent (same side stream, appended AFTER the original 12, so
+    // every pre-existing Adam expectation is byte-identical). Interceptable.
+    const concernRoll = ar(), concernMin = 620 + Math.floor(ar() * 260);
+    w.adamConcern = (adam && concernRoll < 0.35)
+      ? { atMin: concernMin, status: 'pending' } : null;
   })();
   w.adamIntercepts = 0;
   w.adamNextOk = 0;
@@ -1923,6 +2290,16 @@ function newDay(seed, day, plan, flags){
   w.kaylaTaskTaken = false;
   w.kaylaReported = false;
   w.webinarAnnounced = false;
+  // schemes + interceptions: all once-a-day, all serialized on the world
+  w.baitPlanted = false;        // the flawed file, left on top for Brad
+  w.walkedWithDennis = false;   // the mid-carry escort clear (free, once)
+  w.grenadeUsed = false;        // Adam, deployed at Dennis
+  // the demo happens IN THE MEETING ROOM: Priya heads over early — reach her
+  // there before it starts to collect the commit log or plant the flawed file
+  w.demo = null;
+  (flags.incidents || []).forEach(inc => {
+    if(inc.id === 'priya_demo') w.demo = { atMin: inc.atMin, prepped: false };
+  });
   // task drip: seeded daily load, 3 waiting at 9:00, the rest spread to ~3:30
   w.tasks.total = TASKS_MIN + Math.floor(rand(w) * (TASKS_MAX - TASKS_MIN + 1));
   w.tasks.spawnAt = [540, 540, 540];
@@ -1947,6 +2324,11 @@ function newDay(seed, day, plan, flags){
   // maybe a fire drill (likelier while the corner office is spiraling)
   if(rand(w) < CRUNCH_CHANCE + (flags.crunchBoost || 0))
     w.crunch = { atMin: 690 + Math.floor(rand(w) * 120), status: 'pending' };
+  // heat: Brad paranoia adds a raid (rolled LAST so pre-heat staging never shifts)
+  const extraRaids = (flags.noBradRaids || flags.bradGone) ? 0 : (flags.extraBradRaids || 0);
+  for(let i = 0; i < extraRaids; i++)
+    w.bradRaids.push({ atMin: 600 + Math.floor(rand(w) * 360), status: 'pending' });
+  w.bradRaids.sort((a, b) => a.atMin - b.atMin);
   return w;
 }
 
@@ -2060,12 +2442,28 @@ function step(w, dt){
       const r = rand(w);
       // Brad on two payrolls spends his idle time in the stairwell, phone out
       const stairbound = a.id === 'brad' && w.flags.bradCalls;
+      // Dennis with approvals held walks the files themselves, folder visibly
+      // in hand, desk ↔ The Pipe. Catch him mid-carry to answer the questions
+      // en route (a free clear). Destinations overridden only — the rand spend
+      // below is identical, so nobody else's staging shifts on blocker days.
+      const carrying = a.id === 'dennis' && w.flags.dennisBlocker && w.tasks.blocked > 0;
       if(r < 0.30){
+        if(carrying){
+          rand(w); rand(w);   // spend the tx/ty rolls this branch always spends
+          const atPipe = Math.hypot(a.x - APPROVAL_SPOT.x, a.y - APPROVAL_SPOT.y) < 1.5;
+          sendTo(w, a, atPipe ? a.home : APPROVAL_SPOT, 'carry');
+          return;
+        }
         if(stairbound){ sendTo(w, a, STAIRS_SPOT, 'walking'); return; }
         const tx = a.home.x + Math.floor(rand(w) * 7) - 3;
         const ty = a.home.y + Math.floor(rand(w) * 7) - 3;
         if(isWalkable(w, tx, ty)) sendTo(w, a, { x: tx, y: ty }, 'walking');
       } else if(r < 0.42){
+        if(carrying){
+          const atPipe = Math.hypot(a.x - APPROVAL_SPOT.x, a.y - APPROVAL_SPOT.y) < 1.5;
+          sendTo(w, a, atPipe ? a.home : APPROVAL_SPOT, 'carry');
+          return;
+        }
         sendTo(w, a, stairbound ? STAIRS_SPOT : COFFEE_SPOT, 'walking');
       } else if(Math.abs(a.x - a.home.x) + Math.abs(a.y - a.home.y) > 0.6){
         sendTo(w, a, a.home, 'returning');
@@ -2081,9 +2479,13 @@ function step(w, dt){
     return w.sig.shift();
   }
 
-  // ---- boss floor-walk ----
+  // ---- boss floor-walk (telegraphed: he stands up and reads the floor first) ----
   const boss = getActor(w, 'boss');
   w.bossWalks.forEach(bw => {
+    if(bw.status === 'pending' && !bw.warned && w.clockMin >= bw.atMin - 20){
+      bw.warned = true;   // the tell, ~20 game-min of warning to get back to your desk
+      w.sig.push({ type: 'bosswalkwarn', mood: boss.mood });
+    }
     if(bw.status === 'pending' && w.clockMin >= bw.atMin && boss.state === 'idle'){
       // mark 'out' only once the walk actually starts, else it hangs forever
       if(sendTo(w, boss, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'patrol')){
@@ -2093,14 +2495,48 @@ function step(w, dt){
     }
   });
 
-  // ---- brad raid ----
+  // ---- brad raid (telegraphed: he lurks near the bullpen first, watchably) ----
   const brad = getActor(w, 'brad');
   w.bradRaids.forEach(br => {
-    if(br.status === 'pending' && w.clockMin >= br.atMin && brad && !brad.off && brad.state === 'idle'){
+    // the lurk: ~25 game-min before a raid he drifts to the water spot with
+    // line of sight on your inbox. Click him to confront; sit tight to foil;
+    // or leave the flawed file on top and go get coffee (the bait).
+    if(br.status === 'pending' && !br.lurked && w.clockMin >= br.atMin - 25
+       && brad && !brad.off && brad.state === 'idle'){
+      br.lurked = true;
+      if(sendTo(w, brad, LURK_SPOT, 'lurkwalk')) w.sig.push({ type: 'bradlurk' });
+    }
+    if(br.status === 'pending' && w.clockMin >= br.atMin && brad && !brad.off
+       && (brad.state === 'idle' || brad.state === 'lurk')){
       if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'raid'))
         br.status = 'out';
     }
   });
+
+  // ---- Adam's concern walk: he is heading to HR "with a concern" ----
+  // Interceptable mid-walk: redirect him (eat the 2009 anecdote) or, on a
+  // blocker day, point him at Dennis instead. If he lands, HR opens a folder.
+  if(w.adamConcern && w.adamConcern.status === 'pending' && w.clockMin >= w.adamConcern.atMin){
+    const adamC = getActor(w, 'adam');
+    if(adamC && !adamC.off && adamC.state === 'idle' && !w.intercept){
+      adamC.path = [];
+      if(sendTo(w, adamC, adjacentTo(w, getActor(w, 'hr') || { x: 5, y: 6 }), 'concern')){
+        w.adamConcern.status = 'walking';
+        w.sig.push({ type: 'adamconcernstart' });
+      }
+    }
+  }
+
+  // ---- demo day: Priya heads to the meeting room early (the pre-demo window) ----
+  if(w.demo && !w.demo.prepped && w.clockMin >= w.demo.atMin - 40){
+    w.demo.prepped = true;
+    const priyaD = getActor(w, 'priya');
+    if(priyaD && !priyaD.off){
+      priyaD.pinned = false; priyaD.path = [];
+      if(sendTo(w, priyaD, DEMO_SPOT, 'demoprep')) w.sig.push({ type: 'demoprep' });
+      else priyaD.pinned = true;
+    }
+  }
 
   // ---- the deck detour: Brad walks his other job right past your desk ----
   if(w.bradDeck && w.bradDeck.status === 'pending' && w.clockMin >= w.bradDeck.atMin
@@ -2174,8 +2610,12 @@ function step(w, dt){
       if(owner && !owner.off
          && (owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning')){
         owner.path = [];
+        // the demo is performed in the MEETING ROOM (a hotspot you can see
+        // filling up); every other event still walks its owner to your desk
+        const target = (ev.kind === 'incident' && ev.id === 'priya_demo')
+          ? DEMO_PRESENT_SPOT : adjacentTo(w, you);
         // status advances only if the walk starts; otherwise retry next tick
-        if(sendTo(w, owner, adjacentTo(w, you), 'summoned')) ev.status = 'walking';
+        if(sendTo(w, owner, target, 'summoned')) ev.status = 'walking';
       }
     }
     if(ev.status === 'walking'){
@@ -2205,6 +2645,21 @@ function handleArrival(w, a, you){
   if(a.id === 'you') w.moveMarker = null;
   if(a.state === 'summoned'){ a.state = 'atPlayer'; }
   else if(a.state === 'errand' && a.id === 'you'){ a.state = 'idle'; arriveErrand(w, you); }
+  else if(a.state === 'lurkwalk' && a.id === 'brad'){ a.state = 'lurk'; }   // in position, watching
+  else if(a.state === 'concern' && a.id === 'adam'){
+    // he made it to HR. A concern has been raised. About whom is unclear.
+    if(w.adamConcern) w.adamConcern.status = 'landed';
+    w.sig.push({ type: 'adamconcern' });
+    sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'grenade' && a.id === 'adam'){
+    // deployed at Dennis: they go way back. Way, WAY back. Outcome varies.
+    w.sig.push({ type: 'adamgrenade' });
+    sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'demoprep' && a.id === 'priya'){
+    a.state = 'idle'; a.pinned = true;   // in the room, holding the coffee she isn't drinking
+  }
   else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
   else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
   else if(a.state === 'deck' && a.id === 'brad'){
@@ -2320,6 +2775,102 @@ function arriveErrand(w, you){
     } else {
       w.playerErrand = null;
     }
+  } else if(e.type === 'confrontbrad'){
+    // the interception: you walked at him while he was casing your inbox
+    const brad = getActor(w, 'brad');
+    if(!brad || brad.off || (brad.state !== 'lurk' && brad.state !== 'lurkwalk' && brad.state !== 'raid')){
+      w.playerErrand = null;             // the moment passed
+    } else if(Math.hypot(brad.x - you.x, brad.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      // today's telegraphed raid is off; he remembers being seen
+      w.bradRaids.forEach(b => { if(b.status === 'pending' || b.status === 'out') b.status = 'done'; });
+      brad.path = [];
+      sendTo(w, brad, brad.home, 'returning');
+      w.sig.push({ type:'bradconfronted' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, brad), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'flashbrad'){
+    // the scheme: angle the phone. He recognizes the wallpaper. Raids end.
+    const brad = getActor(w, 'brad');
+    if(!brad || brad.off){ w.playerErrand = null; }
+    else if(Math.hypot(brad.x - you.x, brad.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.bradRaids.forEach(b => { if(b.status === 'pending' || b.status === 'out') b.status = 'done'; });
+      if(brad.state === 'lurk' || brad.state === 'raid'){ brad.path = []; sendTo(w, brad, brad.home, 'returning'); }
+      w.sig.push({ type:'bradflashed' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, brad), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'baitdesk'){
+    // back to your own desk to leave the flawed file on top of the stack
+    w.playerErrand = null;
+    if(w.tasks.pending > 0 && !w.baitPlanted){
+      w.baitPlanted = true;
+      w.sig.push({ type:'baitplanted' });
+    }
+  } else if(e.type === 'walkwith'){
+    // caught Dennis mid-carry: answer the questions en route, one file clears
+    const dennis = getActor(w, 'dennis');
+    if(!dennis || dennis.off || !w.tasks.blocked || w.walkedWithDennis){ w.playerErrand = null; }
+    else if(Math.hypot(dennis.x - you.x, dennis.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.walkedWithDennis = true;
+      w.tasks.blocked--; w.tasks.pending++;
+      w.sig.push({ type:'dennisescort', blocked: w.tasks.blocked, pending: w.tasks.pending });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, dennis), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'redirectadam'){
+    // step into his path and ask about 2009. HR never learns of the concern.
+    const adam = getActor(w, 'adam');
+    if(!adam || adam.off || adam.state !== 'concern'){ w.playerErrand = null; }
+    else if(Math.hypot(adam.x - you.x, adam.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      if(w.adamConcern) w.adamConcern.status = 'redirected';
+      adam.path = [];
+      sendTo(w, adam, adam.home, 'returning');
+      w.sig.push({ type:'adamredirected' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, adam), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'grenadeadam'){
+    // the chaos grenade: point Adam at Dennis. He and Dennis go way back.
+    const adam = getActor(w, 'adam');
+    if(!adam || adam.off || w.grenadeUsed || !w.tasks.blocked){ w.playerErrand = null; }
+    else if(Math.hypot(adam.x - you.x, adam.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.grenadeUsed = true;
+      if(w.adamConcern && w.adamConcern.status === 'walking') w.adamConcern.status = 'redirected';
+      adam.path = [];
+      const dennis = getActor(w, 'dennis');
+      if(dennis && sendTo(w, adam, adjacentTo(w, dennis), 'grenade')){ /* he's off */ }
+      else w.sig.push({ type:'adamgrenade' });   // Dennis unreachable: resolve in place
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, adam), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'precollect' || e.type === 'preplant'){
+    // the pre-demo window: reach Priya in the meeting room before it starts
+    const priya = getActor(w, 'priya');
+    const open = w.demo && w.demo.prepped && w.clockMin < w.demo.atMin;
+    if(!priya || priya.off || !open){ w.playerErrand = null; }
+    else if(Math.hypot(priya.x - you.x, priya.y - you.y) <= 2.2){
+      const kind = e.type;
+      w.playerErrand = null;
+      w.sig.push({ type: kind });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, priya), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'coolhr'){
+    // the scheme: ask Meredith about response IDs, hypothetically
+    const hr = getActor(w, 'hr');
+    if(!hr || hr.off){ w.playerErrand = null; }
+    else if(Math.hypot(hr.x - you.x, hr.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.sig.push({ type:'coolhr' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, hr), 'errand');
+    } else { w.playerErrand = null; }
   }
 }
 
@@ -2337,7 +2888,14 @@ function bradArrives(w, brad, you){
   const raid = w.bradRaids.find(b => b.status === 'out');
   if(raid) raid.status = 'done';
   if(!playerAtDesk(w)){
-    if(w.tasks.pending > 0){
+    if(w.tasks.pending > 0 && w.baitPlanted){
+      // THE SCHEME: he lifts the file you left on top. The flawed one.
+      // You lose the task; he gains a presentation he cannot explain.
+      w.baitPlanted = false;
+      w.tasks.pending--;
+      w.tasks.progress = 0;
+      w.sig.push({ type:'bradpoisoned', pending: w.tasks.pending });
+    } else if(w.tasks.pending > 0){
       // he lifts the file you were furthest through
       w.tasks.pending--;
       w.tasks.progress = 0;
@@ -2477,6 +3035,97 @@ function playerGoHome(w){
   w.moveMarker = { x: you.home.x, y: you.home.y };
 }
 
+// ── interceptions + schemes: react to what you can SEE crossing the floor ─────
+function confrontBrad(w){
+  const brad = getActor(w, 'brad');
+  const you = getActor(w, 'you');
+  if(!brad || brad.off || w.playerErrand) return false;
+  if(brad.state !== 'lurk' && brad.state !== 'lurkwalk' && brad.state !== 'raid') return false;
+  if(!sendTo(w, you, adjacentTo(w, brad), 'errand')) return false;
+  w.playerErrand = { type: 'confrontbrad', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function flashBrad(w){
+  const brad = getActor(w, 'brad');
+  const you = getActor(w, 'you');
+  if(!brad || brad.off || w.playerErrand) return false;
+  if(!sendTo(w, you, adjacentTo(w, brad), 'errand')) return false;
+  w.playerErrand = { type: 'flashbrad', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function plantBait(w){
+  const you = getActor(w, 'you');
+  if(w.playerErrand || w.baitPlanted || w.tasks.pending < 1) return false;
+  if(playerAtDesk(w)){
+    w.baitPlanted = true;
+    w.sig.push({ type:'baitplanted' });
+    return true;
+  }
+  if(!sendTo(w, you, you.home, 'errand')) return false;
+  w.playerErrand = { type: 'baitdesk', repaths: 0 };
+  w.moveMarker = { x: you.home.x, y: you.home.y };
+  return true;
+}
+function walkWithDennis(w){
+  const dennis = getActor(w, 'dennis');
+  const you = getActor(w, 'you');
+  if(!dennis || dennis.off || w.playerErrand || w.walkedWithDennis) return false;
+  if(dennis.state !== 'carry' || !w.tasks.blocked) return false;
+  if(!sendTo(w, you, adjacentTo(w, dennis), 'errand')) return false;
+  w.playerErrand = { type: 'walkwith', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function redirectAdam(w){
+  const adam = getActor(w, 'adam');
+  const you = getActor(w, 'you');
+  if(!adam || adam.off || w.playerErrand || adam.state !== 'concern') return false;
+  if(!sendTo(w, you, adjacentTo(w, adam), 'errand')) return false;
+  w.playerErrand = { type: 'redirectadam', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function grenadeAdam(w){
+  const adam = getActor(w, 'adam');
+  const you = getActor(w, 'you');
+  if(!adam || adam.off || w.playerErrand || w.grenadeUsed || !w.tasks.blocked) return false;
+  if(!sendTo(w, you, adjacentTo(w, adam), 'errand')) return false;
+  w.playerErrand = { type: 'grenadeadam', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function goPreDemo(w, kind){          // kind: 'precollect' | 'preplant'
+  const priya = getActor(w, 'priya');
+  const you = getActor(w, 'you');
+  if(!priya || priya.off || w.playerErrand) return false;
+  if(!w.demo || !w.demo.prepped || w.clockMin >= w.demo.atMin) return false;
+  if(!sendTo(w, you, adjacentTo(w, priya), 'errand')) return false;
+  w.playerErrand = { type: kind, repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function goForCoolHR(w){
+  const hr = getActor(w, 'hr');
+  const you = getActor(w, 'you');
+  if(!hr || hr.off || w.playerErrand) return false;
+  if(!sendTo(w, you, adjacentTo(w, hr), 'errand')) return false;
+  w.playerErrand = { type: 'coolhr', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+// the grenade's outcome, applied by the shell after the brain rolls it
+function applyGrenade(w, bypass){
+  if(bypass){
+    const n = w.tasks.blocked;
+    w.tasks.pending += n; w.tasks.blocked = 0;
+    return n;
+  }
+  if(w.tasks.pending > 0){ w.tasks.pending--; w.tasks.blocked++; }
+  return -1;
+}
+
 // ── picking + status ──────────────────────────────────────────────────────────
 function pickActorAt(w, gx, gy){
   let best = null, bestD = 0.75;
@@ -2506,11 +3155,49 @@ function isExitAt(gx, gy){
 function statusOf(w, actor){
   if(actor.id === 'you') return { name:'You', role: actor.role, mood: null,
     line:'Tasks ship at your desk. Soul refills everywhere else. Choose.', face:'🦡', chat:false };
+  // Brad mid-lurk (or mid-raid): the interception window is OPEN
+  if(actor.id === 'brad' && (actor.state === 'lurk' || actor.state === 'lurkwalk' || actor.state === 'raid')){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '👀',
+      line: actor.state === 'raid'
+        ? 'He is heading for your inbox. Right now. This is not a drill, which is ironic, given the fire drills.'
+        : 'He has been refilling his water bottle for six minutes. The fountain faces your inbox.',
+      chat: false,
+      confront: true,
+      plantbait: w.tasks.pending > 0 && !w.baitPlanted,
+      bradLurking: true };
+  }
   // the Brad arc shifts his status line before any card ever fires
   if(actor.id === 'brad' && w.flags && w.flags.bradCalls){
     return { name: actor.name, role: actor.role, mood: actor.mood, face: '📵',
       line: '“On a call.” It is the fourth call today. None of the calls have meeting links.',
       chat: false };
+  }
+  // Dennis mid-carry: catch him between desks and answer the questions en route
+  if(actor.id === 'dennis' && actor.state === 'carry'){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '📁',
+      line: 'He is walking one of YOUR files to The Pipe, at the pace of a man who bills by the step.',
+      chat: false,
+      walkwith: !w.walkedWithDennis && w.tasks.blocked > 0,
+      approval: w.tasks.blocked > 0,
+      flatter: w.tasks.blocked > 0 && !w.flatteredDennis,
+      dennisBlocked: w.tasks.blocked };
+  }
+  // Adam en route to HR: interceptable, redirectable, weaponizable
+  if(actor.id === 'adam' && actor.state === 'concern'){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '📋',
+      line: 'He is walking to HR “with a concern.” The concern has three parts and a cover page.',
+      chat: false,
+      redirect: true,
+      grenade: !w.grenadeUsed && w.tasks.blocked > 0 };
+  }
+  // Priya in the meeting room, pre-demo: the window is open until it starts
+  if(actor.id === 'priya' && w.demo && w.demo.prepped && w.clockMin < w.demo.atMin && !actor.off
+     && Math.hypot(actor.x - DEMO_SPOT.x, actor.y - DEMO_SPOT.y) < 2){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '☕',
+      line: 'In the meeting room early, holding a coffee she isn’t drinking. The demo laptop is open. Unattended.',
+      chat: false,
+      precollect: true,
+      preplant: true };
   }
   // Kayla's panic day: the popup carries the physical options
   if(actor.id === 'kayla' && w.flags && w.flags.kaylaPanic && !actor.off){
@@ -2758,6 +3445,11 @@ function render(w, ctx, cam, vw, vh){
   if(!w.coffeeUsed) drawSpotRing(ctx, cam, COFFEE_SPOT, 'rgba(62,158,94,0.55)', phase + 2);
   if(!w.couchUsed)  drawSpotRing(ctx, cam, COUCH_SPOT, 'rgba(232,129,76,0.55)', phase + 4);
   if(w.walkoutArmed) drawSpotRing(ctx, cam, { x: 1, y: 17 }, 'rgba(46,158,99,0.8)', phase + 1);
+  // hotspots you can see across the floor: stuck approvals at The Pipe, and
+  // the meeting room while a demo is imminent or underway
+  if(w.tasks.blocked > 0) drawSpotRing(ctx, cam, APPROVAL_SPOT, 'rgba(216,68,63,0.6)', phase + 3);
+  if(w.demo && w.demo.prepped && w.clockMin < w.demo.atMin + 15)
+    drawSpotRing(ctx, cam, DEMO_SPOT, 'rgba(124,111,214,0.6)', phase + 5);
 
   // click-to-move marker
   if(w.moveMarker){
@@ -3068,6 +3760,31 @@ function drawActor(ctx, cam, a, w){
     ctx.font = '800 ' + (14 * z) + 'px system-ui';
     ctx.fillText('❗', px - 12 * z, py - 34 * z);
   }
+  // the PRE-tells: trouble you can see coming (and physically answer)
+  if(a.id === 'brad' && (a.state === 'lurk' || a.state === 'lurkwalk')){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('👀', px - 12 * z, py - 34 * z);
+  }
+  if(a.id === 'boss' && a.state === 'idle' && w
+     && w.bossWalks.some(b => b.status === 'pending' && b.warned)){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('📋', px - 12 * z, py - 34 * z);   // he's read the floor; he's next
+  }
+  if(a.id === 'adam' && (a.state === 'concern' || a.state === 'grenade')){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('📋', px + 12 * z, py - 34 * z);
+  }
+  // Dennis carrying an approval: the red folder reads from across the floor
+  if(a.id === 'dennis' && a.state === 'carry'){
+    ctx.fillStyle = '#D8443F';
+    ctx.strokeStyle = 'rgba(21,18,13,0.4)';
+    ctx.lineWidth = 1 * z;
+    ctx.fillRect(px + 7 * z, py - 18 * z, 9 * z, 6.5 * z);
+    ctx.strokeRect(px + 7 * z, py - 18 * z, 9 * z, 6.5 * z);
+  }
   // the approval wait: an amber bar while the questions are answered
   if(a.id === 'you' && w && w.playerErrand && w.playerErrand.type === 'approvalwait'){
     const bw2 = 30 * z;
@@ -3122,6 +3839,8 @@ return {
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
   armWalkout, goForExit, goForBossCall, resolveQuickCall, takeKaylaTask, reportKayla,
   goForApproval, flatterDennis, clearAllBlocked, APPROVAL_WAIT_SECS,
+  confrontBrad, flashBrad, plantBait, walkWithDennis, redirectAdam, grenadeAdam,
+  goPreDemo, goForCoolHR, applyGrenade,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile
@@ -3277,6 +3996,20 @@ button{touch-action:manipulation;}
 #workbtn{background:var(--danger);color:#fff;font-weight:800;letter-spacing:.06em;}
 .crunchresult{font-size:14.5px;line-height:1.5;font-style:italic;border-left:2px solid var(--danger);padding-left:12px;margin:4px 0 14px;color:#3a352a;}
 
+/* the story collection */
+.storiesline{margin-top:18px;font-family:'Poppins',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+.storybtn{font-family:'Poppins',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--standing);text-decoration:underline;cursor:pointer;}
+#storylist{text-align:left;margin:6px 0 16px;max-height:56vh;overflow-y:auto;}
+.storyrow{display:flex;gap:12px;align-items:baseline;padding:9px 2px;border-bottom:1px solid var(--line);font-size:13.5px;}
+.storyrow .sn{font-family:'Poppins',sans-serif;font-weight:700;white-space:nowrap;}
+.storyrow.found .sn{color:var(--money);}
+.storyrow.locked .sn{color:var(--muted2);letter-spacing:.14em;}
+.storyrow .sh{color:var(--muted);font-size:12px;font-style:italic;}
+.storyunlock{font-family:'Poppins',sans-serif;font-size:12.5px;font-weight:700;margin:4px auto;max-width:360px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);}
+.storyunlock.new{color:var(--money);border-color:var(--money);}
+.storyunlock.old{color:var(--muted);}
+#storyunlocks{margin-bottom:18px;}
+
 /* end screen */
 .verdicttag{font-family:'Poppins',sans-serif;font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-bottom:14px;}
 .verdict{font-family:'Poppins',sans-serif;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.02em;margin-bottom:16px;}
@@ -3318,7 +4051,16 @@ button{touch-action:manipulation;}
     </div>
     <button class="cta" onclick="startGame()">Clock in — Day 1</button>
     <button class="cta resumebtn hidden" id="resumebtn" onclick="resumeGame()"></button>
+    <div class="storiesline"><span id="storycount">Stories found 0 / 13</span> · <button class="storybtn" onclick="openStories()">View stories</button></div>
     <div class="foot">Ungovernable. Unapologetic.</div>
+    <div id="storiesoverlay" class="overlay hidden" onclick="if(event.target===this)closeStories()">
+      <div class="card">
+        <div class="tag">📖 The story collection</div>
+        <div class="etitle">What this building has shown you</div>
+        <div id="storylist"></div>
+        <button class="next" onclick="closeStories()">Back</button>
+      </div>
+    </div>
   </section>
 
   <!-- PLAY: the office -->
@@ -3333,6 +4075,7 @@ button{touch-action:manipulation;}
       <div class="jobline"><span id="jobline-l">Day 1 · Wk 1 · Intern</span><span class="pay" id="jobline-r">+$180/day</span></div>
       <div class="jobline taskline"><span id="tasks-l">INBOX · 0 waiting</span><span id="tasks-r">0/0 shipped</span></div>
       <div class="jobline taskline hidden" id="receiptline"><span>🧾 Receipts</span><span id="receipts-r"></span></div>
+      <div class="jobline taskline hidden" id="heatline"><span>🌡 Heat</span><span id="heat-r"></span></div>
       <div class="meters">
         <div class="meter standing">
           <div class="mrow"><div><span class="mname">Standing</span> <span class="msub">how they see you</span></div><div class="mval" id="v-standing">50<span class="delta" id="d-standing"></span></div></div>
@@ -3405,6 +4148,7 @@ button{touch-action:manipulation;}
     <div class="verdicttag" id="vtag">End of day</div>
     <div class="verdict" id="verdict"></div>
     <p class="vbody" id="vbody"></p>
+    <div id="storyunlocks"></div>
     <div class="finalmeters">
       <div class="fm s"><div class="fl">Standing</div><div class="fv" id="fin-standing">0</div></div>
       <div class="fm so"><div class="fl">Soul</div><div class="fv" id="fin-soul">0</div></div>
@@ -3555,6 +4299,14 @@ function handleWorldClick(sx, sy){
 function showStatus(actor, sx, sy){
   const s = W.statusOf(world, actor);
   const pop = $id('statuspop');
+  // shell-composed verbs: the world says WHO is interceptable; the brain's
+  // state (receipts, heat, flags) says which schemes are loaded
+  const canFlash = actor.id === 'brad' && G.hasReceipt(g, 'screenshot_brad_deck')
+    && !g.npcState.brad.flags.cowed && !g.npcState.brad.flags.fired;
+  const adamGren = (s.grenade || (actor.id === 'adam' && world.tasks.blocked > 0 && !world.grenadeUsed))
+    && !actor.off;
+  const canCool = actor.id === 'hr' && G.hasReceipt(g, 'hr_survey_metadata')
+    && G.heatOf(g, 'hr') >= G.HEAT_MED;
   pop.innerHTML = '<span class="sx" onclick="hideStatus()">✕</span>'
     + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
     + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
@@ -3568,7 +4320,18 @@ function showStatus(actor, sx, sy){
     + (s.approval && G.DENNIS_BURN_ORDER.some(r => G.hasReceipt(g, r))
         ? '<span class="schat" onclick="burnForDennis()">🧾 Burn a receipt (clears all)</span>' : '')
     + (s.approval && g.npcState.marcus.flags.shield
-        ? '<span class="schat" onclick="tipForDennis()">Use Marcus’s phrase (clears all)</span>' : '');
+        ? '<span class="schat" onclick="tipForDennis()">Use Marcus’s phrase (clears all)</span>' : '')
+    + (s.confront ? '<span class="schat" onclick="doConfrontBrad()">Walk at him: “Looking for something?”</span>' : '')
+    + (s.bradLurking && canFlash ? '<span class="schat" onclick="doFlashBrad()">🧾 Angle the phone. Let him see the wallpaper.</span>' : '')
+    + (s.plantbait ? '<span class="schat" onclick="doPlantBait()">Leave the flawed file on top. Be elsewhere.</span>' : '')
+    + (s.walkwith ? '<span class="schat" onclick="doWalkWithDennis()">Fall into step — answer the questions en route</span>' : '')
+    + (s.redirect ? '<span class="schat" onclick="doRedirectAdam()">Intercept: “How did approvals work in 2009?”</span>' : '')
+    + (adamGren ? '<span class="schat" onclick="doGrenadeAdam()">Point him at Dennis. They go way back.</span>' : '')
+    + (s.precollect && !G.hasReceipt(g, 'priya_commit_log')
+        ? '<span class="schat" onclick="doPreDemo(\'precollect\')">Collect the commit log now, pre-demo</span>' : '')
+    + (s.preplant && !g.npcState.priya.flags.preBaited
+        ? '<span class="schat" onclick="doPreDemo(\'preplant\')">Swap in the flawed backup file</span>' : '')
+    + (canCool ? '<span class="schat" onclick="doCoolHR()">🧾 Ask about response IDs, hypothetically</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -3614,6 +4377,39 @@ function tipForDennis(){
   G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'tip', n);
   toast('“Load-bearing deliverable.” Dennis blinks. ' + n + ' approval' + (n > 1 ? 's' : '') + ' cleared.');
   saveRun('day');
+}
+/* interceptions + schemes: walk-over verbs; the arrival signal does the rest */
+function doConfrontBrad(){
+  hideStatus();
+  if(W.confrontBrad(world)) toast('Walking at him. Casually. At speed.');
+}
+function doFlashBrad(){
+  hideStatus();
+  if(W.flashBrad(world)) toast('Walking over with your phone out, wallpaper first.');
+}
+function doPlantBait(){
+  hideStatus();
+  if(W.plantBait(world)) { if(!world.baitPlanted) toast('Heading to your desk to dress the stack…'); }
+}
+function doWalkWithDennis(){
+  hideStatus();
+  if(W.walkWithDennis(world)) toast('Catching up to the folder…');
+}
+function doRedirectAdam(){
+  hideStatus();
+  if(W.redirectAdam(world)) toast('Stepping into his path with a question about the old days…');
+}
+function doGrenadeAdam(){
+  hideStatus();
+  if(W.grenadeAdam(world)) toast('Walking over to mention that Dennis “could really use his perspective”…');
+}
+function doPreDemo(kind){
+  hideStatus();
+  if(W.goPreDemo(world, kind)) toast('Heading for the meeting room before the room fills…');
+}
+function doCoolHR(){
+  hideStatus();
+  if(W.goForCoolHR(world)) toast('Walking to HR with a hypothetical…');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -3675,6 +4471,46 @@ function toggleMute(){
   $id('mutebtn').textContent = muted ? '🔇' : '🔊';
 }
 if(muted) $id('mutebtn').textContent = '🔇';
+
+/* ---- the story collection: discovered outcomes persist across runs. The
+   brain owns the catalog (G.STORY_META) and the earned-check (G.earnedStories);
+   this is the only storage side. try/catch everywhere: file:// stays quiet. ---- */
+const STORIES_KEY = 'ntos-stories-v1';
+function loadStories(){
+  try { return JSON.parse(localStorage.getItem(STORIES_KEY)) || {}; } catch(e){ return {}; }
+}
+function saveStories(s){ try { localStorage.setItem(STORIES_KEY, JSON.stringify(s)); } catch(e){} }
+function updateStoryCount(){
+  const found = Object.keys(loadStories()).filter(k => G.STORY_META[k]).length;
+  $id('storycount').textContent = 'Stories found ' + found + ' / ' + G.STORY_ORDER.length;
+}
+function openStories(){
+  const have = loadStories();
+  $id('storylist').innerHTML = G.STORY_ORDER.map(k => {
+    const m = G.STORY_META[k];
+    return have[k]
+      ? '<div class="storyrow found"><span class="sn">' + m.name + '</span><span class="sh">' + m.hint + '</span></div>'
+      : '<div class="storyrow locked"><span class="sn">???</span><span class="sh">' + m.hint + '</span></div>';
+  }).join('');
+  $id('storiesoverlay').classList.remove('hidden');
+}
+function closeStories(){ $id('storiesoverlay').classList.add('hidden'); }
+// at run end: record everything the run clearly earned; say which are new
+function recordStories(){
+  const earned = G.earnedStories(g);
+  const have = loadStories();
+  const rows = earned.map(k => {
+    const isNew = !have[k];
+    have[k] = true;
+    return '<div class="storyunlock ' + (isNew ? 'new' : 'old') + '">'
+      + (isNew ? '★ New story discovered: ' : 'Story recorded: ')
+      + G.STORY_META[k].name + '</div>';
+  });
+  saveStories(have);
+  updateStoryCount();
+  $id('storyunlocks').innerHTML = rows.join('');
+}
+updateStoryCount();
 
 /* ---- run persistence: g + runSeed in localStorage. The world (mid-day
    positions/tasks) is NOT saved — a mid-day save resumes at that morning with
@@ -3767,6 +4603,12 @@ function loop(t){
   const rc = g.receipts ? g.receipts.count : 0;
   $id('receiptline').classList.toggle('hidden', rc === 0);
   if(rc > 0) $id('receipts-r').textContent = rc + ' held · leverage, technically';
+  // office heat: hidden until somebody is actually watching you
+  const heatHot = G.heatOf(g, 'hr') >= G.HEAT_MED || G.heatOf(g, 'boss') >= G.HEAT_MED
+               || G.heatOf(g, 'brad') >= G.HEAT_MED;
+  $id('heatline').classList.toggle('hidden', !heatHot);
+  if(heatHot) $id('heat-r').textContent =
+    'HR ' + G.heatLevel(g, 'hr') + ' · Boss ' + G.heatLevel(g, 'boss') + ' · Brad ' + G.heatLevel(g, 'brad');
   W.render(world, ctx, cam, window.innerWidth, window.innerHeight);
   rafId = requestAnimationFrame(loop);
 }
@@ -3831,12 +4673,18 @@ function handleSignal(s){
       SFX.drill();
       toast('MANDATORY: “Resilience & You,” 90 min, cameras expected. Your inbox will wait. It will not shrink.');
       break;
-    case 'adamintercept':
+    case 'adamintercept': {
       G.adamIntercepted(g, Math.floor(world.clockMin), s.useful);
+      const nInt = (g.npcState.adam.counters.intercepts || 1);
       toast(s.useful
         ? 'Adam stopped you mid-aisle — then called Dennis. An approval just… cleared. Don’t ask.'
-        : 'Adam stopped you for a quick thought. It had three parts. You are eight minutes older.');
+        : nInt <= 1
+        ? 'Adam stopped you for a quick thought. It had three parts. You are eight minutes older.'
+        : nInt === 2
+        ? 'Adam again. The quick thought has a part two. You have been pre-registered for part three.'
+        : 'Adam. The thought is now a series. There is a recap. You were in the recap.');
       break;
+    }
     case 'bosshuman': {
       const line = G.bossHumanBeat(g, Math.floor(world.clockMin));
       if(line){
@@ -3848,7 +4696,12 @@ function handleSignal(s){
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
     case 'taskblocked':
-      toast('A task arrived marked NEEDS APPROVAL. Dennis has questions. (' + s.blocked + ' stuck)');
+      // microcopy escalates with the actual stack, not a dice roll
+      toast(s.blocked === 1
+        ? 'A task arrived marked NEEDS APPROVAL. Dennis has questions. (1 stuck)'
+        : s.blocked === 2
+        ? 'Another file stopped at The Pipe. The questions now have sub-questions. (2 stuck)'
+        : 'A ' + ['third', 'fourth', 'fifth', 'sixth'][Math.min(3, s.blocked - 3)] + ' file held. The Pipe is becoming a district. (' + s.blocked + ' stuck)');
       break;
     case 'approved':
       G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'waited');
@@ -3868,8 +4721,14 @@ function handleSignal(s){
       if(res && res.deadEyed && deadEyedToastDay !== g.day){
         deadEyedToastDay = g.day;
         toast('Dead-eyed productivity: ' + G.GRIND_STREAK + ' in a row without looking up. Soul bills extra until you take literally any break.');
+      } else if(!s.pending && world.tasks.blocked > 0){
+        toast('Task shipped. Inbox “zero” — except the ' + world.tasks.blocked + ' Dennis is holding, which the dashboard politely ignores.');
+      } else if(!s.pending){
+        toast('Task shipped. Standing +2. Inbox zero. For now.');
+      } else if(g.day % 5 === 0){
+        toast('Task shipped before the review. The review counts volume, not content. Volume: +1. (' + s.pending + ' to go.)');
       } else {
-        toast('Task shipped. Standing +2. ' + (s.pending ? s.pending + ' to go.' : 'Inbox zero. For now.'));
+        toast('Task shipped. Standing +2. ' + s.pending + ' to go.');
       }
       break;
     }
@@ -3899,6 +4758,78 @@ function handleSignal(s){
       worldEffect('bradFoiled');
       toast('Brad hovered by your desk. You were sitting right there. He left.');
       break;
+    case 'bradlurk':
+      toast('👀 Brad is “refilling his water” with line of sight on your inbox. Confront him, sit tight — or leave him something special.');
+      break;
+    case 'bradconfronted':
+      toast(G.bradConfronted(g, Math.floor(world.clockMin)));
+      break;
+    case 'bradflashed': {
+      const t = G.bradFlashed(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      break;
+    }
+    case 'baitplanted':
+      toast(G.baitPlanted(g, Math.floor(world.clockMin)));
+      break;
+    case 'bradpoisoned': {
+      const res = G.bradPoisoned(g, Math.floor(world.clockMin));
+      setMeter('standing', g.standing); applyDelta('standing', res.ds);
+      if(res.dso){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast(res.text);
+      break;
+    }
+    case 'bosswalkwarn':
+      toast(s.mood === 'bad'
+        ? '📋 The Boss stood up and read the floor like a list of names. Walk incoming — be at your desk.'
+        : '📋 The Boss stood up and looked at the floor like a to-do list. Walk incoming.');
+      break;
+    case 'dennisescort':
+      toast(G.dennisWalked(g, Math.floor(world.clockMin)));
+      W.playerGoHome(world);
+      break;
+    case 'adamconcernstart':
+      toast('📋 Adam is walking to HR with “a concern.” Intercept him — or let nature take its course.');
+      break;
+    case 'adamconcern':
+      G.adamConcernLanded(g, Math.floor(world.clockMin));
+      toast('Adam reached HR. A concern was raised. A folder was opened. HR heat rises.');
+      break;
+    case 'adamredirected': {
+      const res = G.adamRedirected(g, Math.floor(world.clockMin));
+      if(res.dso){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast(res.text);
+      W.playerGoHome(world);
+      break;
+    }
+    case 'adamgrenade': {
+      const res = G.adamGrenade(g, Math.floor(world.clockMin));
+      const n = W.applyGrenade(world, res.bypass);
+      if(res.dso){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast(res.text + (res.bypass && n > 0 ? ' (' + n + ' cleared.)' : ''));
+      break;
+    }
+    case 'demoprep':
+      toast('☕ Priya is set up in the meeting room early. The demo laptop is open. Unattended.');
+      break;
+    case 'precollect': {
+      const t = G.priyaPreCollect(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      W.playerGoHome(world);
+      break;
+    }
+    case 'preplant': {
+      const t = G.priyaPrePlant(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      W.playerGoHome(world);
+      break;
+    }
+    case 'coolhr': {
+      const t = G.coolHR(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      W.playerGoHome(world);
+      break;
+    }
     case 'bradempty':
       toast('Brad cased your empty desk. Empty inbox, nothing to take. He left disappointed in you specifically.');
       break;
@@ -4141,8 +5072,16 @@ function openIncident(id){
   $id('tag').textContent = def.tag;
   $id('etitle').textContent = def.title;
   $id('escene').textContent = def.scene;
+  // pre-demo work pays off here: a planted file auto-detonates (no choices —
+  // you chose earlier, in the empty room); a collected log drops that option
+  if(id === 'priya_demo' && g.npcState.priya.flags.preBaited){
+    const baitIdx = def.choices.findIndex(c => c.key === 'bait');
+    chooseIncident(baitIdx >= 0 ? baitIdx : 0);
+    return;
+  }
   const box = $id('choices'); box.innerHTML = '';
   def.choices.forEach((c, i) => {
+    if(id === 'priya_demo' && c.key === 'collect' && G.hasReceipt(g, 'priya_commit_log')) return;
     const b = document.createElement('button');
     b.className = 'choice'; b.textContent = c.t;
     b.dataset.idx = i;                 // movie-mode autopilot picks by data-idx
@@ -4265,6 +5204,9 @@ function showDayEnd(){
   if(rep.truthBill) rows.push(['Your “anonymous” answers attended the review', 'Standing −5', 'minus']);
   if(rep.warningDefused) rows.push(['Warning withdrawn — you mentioned response IDs', '🧾 receipt spent', 'plus']);
   if(rep.warned) rows.push(['HR “quick chat” — the word PIP was used', 'Soul −' + G.WARN_SOUL, 'soulhit']);
+  if(rep.hrHeatWarned) rows.push(['HR heat is High — the warning bar moved up to meet you', 'your file attended the review', 'minus']);
+  if(rep.heat && (rep.heat.hr !== 'Low' || rep.heat.boss !== 'Low' || rep.heat.brad !== 'Low'))
+    rows.push(['Office heat — who’s watching', 'HR ' + rep.heat.hr + ' · Boss ' + rep.heat.boss + ' · Brad ' + rep.heat.brad, 'minus']);
   $id('report').innerHTML = rows.map(r =>
     '<div class="rrow"><span class="rk">' + r[0] + '</span><span class="rv ' + r[2] + '">' + r[1] + '</span></div>'
   ).join('');
@@ -4341,6 +5283,7 @@ function endGame(){
   clearSave();
   offerResume();
   screens('end');
+  recordStories();
   $id('fin-standing').textContent = g.standing;
   $id('fin-soul').textContent = g.soul;
   $id('fin-money').textContent = G.fmt(g.money);
