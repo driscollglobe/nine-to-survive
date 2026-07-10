@@ -491,6 +491,140 @@ ok('his seeding rides a side stream (main staging untouched by his existence)', 
   ok('he intercepts at most twice a day', count <= 2 && count >= 1, 'count=' + count);
 })();
 
+// ---- 11b. TELLS + INTERCEPTIONS: trouble crosses the floor before it lands ------
+// Brad telegraphs a raid by lurking near the bullpen ~25 game-min early
+(() => {
+  let w = null;
+  for(let s = 1; s < 60 && !w; s++){
+    const t = W.newDay(s, 2, [], {});
+    if(t.bradRaids.length && t.bradRaids[0].atMin > 640) w = t;
+  }
+  if(!w){ ok('lurk: found a raid day to test', false); return; }
+  const raid = w.bradRaids[0];
+  w.clockMin = raid.atMin - 26;
+  const sig = stepUntil(w, 20, ['bradlurk']);
+  const brad = W.getActor(w, 'brad');
+  ok('Brad telegraphs the raid: lurk fires ~25 min out, he heads for the water spot',
+    !!sig && (brad.state === 'lurkwalk' || brad.state === 'lurk'));
+  // the interception: walk at him and the raid dies
+  ok('confrontBrad verb accepted mid-lurk', W.confrontBrad(w));
+  const c = stepUntil(w, 30, ['bradconfronted']);
+  ok('confronting the lurker cancels the raid', !!c
+    && w.bradRaids.every(b => b.status === 'done'));
+})();
+// the bait: leave the flawed file on top, be elsewhere, watch him take it
+(() => {
+  let w = null;
+  for(let s = 1; s < 60 && !w; s++){
+    const t = W.newDay(s, 2, [], {});
+    if(t.bradRaids.length && t.bradRaids[0].atMin > 640) w = t;
+  }
+  if(!w){ ok('bait: found a raid day to test', false); return; }
+  w.tasks.pending = 3; w.tasks.spawned = 3;
+  ok('plantBait at your own desk is instant', W.plantBait(w) && w.baitPlanted);
+  W.movePlayer(w, { x: 22, y: 20 });                    // be visibly elsewhere
+  w.clockMin = w.bradRaids[0].atMin - 1;
+  const sig = stepUntil(w, 40, ['bradpoisoned', 'bradsteal']);
+  ok('Brad steals the planted file: poisoned, not a plain steal',
+    !!sig && sig.type === 'bradpoisoned' && !w.baitPlanted, sig && sig.type);
+})();
+// the flash: show him the wallpaper; every raid on the books dies
+(() => {
+  let w = null;
+  for(let s = 1; s < 60 && !w; s++){
+    const t = W.newDay(s, 2, [], {});
+    if(t.bradRaids.length >= 1) w = t;
+  }
+  ok('flashBrad walks over and ends the raid schedule', (() => {
+    if(!W.flashBrad(w)) return false;
+    const sig = stepUntil(w, 30, ['bradflashed']);
+    return !!sig && w.bradRaids.every(b => b.status === 'done');
+  })());
+})();
+// the Boss telegraphs his floor walk ~20 min out
+(() => {
+  const w = W.newDay(13, 2, [], {});
+  const walk = w.bossWalks[0];
+  w.clockMin = walk.atMin - 21;
+  const sig = stepUntil(w, 15, ['bosswalkwarn']);
+  ok('boss walk telegraph fires before the walk itself', !!sig && walk.status === 'pending');
+})();
+// Dennis carries the blocked files, visibly; catch him mid-carry for a free clear
+(() => {
+  const w = W.newDay(17, 3, [], { dennisBlocker: true });
+  w.tasks.blocked = 2;
+  const dennis = W.getActor(w, 'dennis');
+  let t = 0;
+  while(dennis.state !== 'carry' && t < 90){ W.step(w, 0.1); t += 0.1; }
+  ok('Dennis visibly walks approvals toward The Pipe on a blocker day',
+    dennis.state === 'carry', 'state=' + dennis.state);
+  ok('walkWithDennis verb accepted mid-carry', W.walkWithDennis(w));
+  const sig = stepUntil(w, 40, ['dennisescort']);
+  ok('the escort clears exactly one approval, free, once a day',
+    !!sig && w.tasks.blocked === 1 && w.walkedWithDennis && !W.walkWithDennis(w));
+})();
+// Adam's concern walk: seeded some days; interceptable; lands as a signal if not
+(() => {
+  let w = null, seed = 0;
+  for(let s = 1; s < 80 && !w; s++){
+    const t = W.newDay(s, 4, [], {});
+    if(t.adamConcern) { w = t; seed = s; }
+  }
+  if(!w){ ok('concern: some days Adam has one (seeded)', false); return; }
+  ok('concern walks exist on a seeded minority of days', !!w.adamConcern, 'seed=' + seed);
+  w.clockMin = w.adamConcern.atMin - 1;
+  const start = stepUntil(w, 20, ['adamconcernstart']);
+  const adam = W.getActor(w, 'adam');
+  ok('Adam visibly heads for HR with the concern', !!start && adam.state === 'concern');
+  const landed = stepUntil(w, 60, ['adamconcern']);
+  ok('unintercepted, the concern lands at HR', !!landed && w.adamConcern.status === 'landed');
+  // and a fresh copy of the same day can be intercepted instead
+  const w2 = W.newDay(seed, 4, [], {});
+  w2.clockMin = w2.adamConcern.atMin - 1;
+  stepUntil(w2, 20, ['adamconcernstart']);
+  ok('redirectAdam verb accepted mid-walk', W.redirectAdam(w2));
+  const red = stepUntil(w2, 40, ['adamredirected']);
+  ok('redirected: HR never hears of it', !!red && w2.adamConcern.status === 'redirected');
+})();
+// the grenade: point Adam at Dennis; outcome applied by the shell either way
+(() => {
+  const w = W.newDay(23, 3, [], { dennisBlocker: true });
+  w.tasks.blocked = 2; w.tasks.pending = 2;
+  ok('grenadeAdam verb accepted on a blocker day', W.grenadeAdam(w));
+  const sig = stepUntil(w, 60, ['adamgrenade']);
+  ok('Adam reaches Dennis and the grenade signal fires', !!sig && w.grenadeUsed);
+  ok('bypass clears the stack; backfire converts a pending task', (() => {
+    const B = w.tasks.blocked, P = w.tasks.pending;   // the drip kept dripping mid-walk
+    const n = W.applyGrenade(w, true);
+    if(n !== B || w.tasks.blocked !== 0) return false;
+    W.applyGrenade(w, false);
+    return w.tasks.blocked === 1 && w.tasks.pending === P + B - 1;
+  })());
+})();
+// demo day: Priya sets up in the MEETING ROOM early; the pre-demo window is real
+(() => {
+  const w = W.newDay(29, 5, [], { priyaGrind: true,
+    incidents: [{ id: 'priya_demo', owner: 'brad', atMin: 820 }] });
+  ok('the demo is staged as a meeting-room event', !!w.demo && w.demo.atMin === 820);
+  w.clockMin = 779;
+  const prep = stepUntil(w, 20, ['demoprep']);
+  const priya = W.getActor(w, 'priya');
+  let t = 0;
+  while(priya.path.length && t < 40){ W.step(w, 0.1); t += 0.1; }
+  ok('Priya walks to the meeting room ~40 min early and pins there',
+    !!prep && priya.pinned && Math.hypot(priya.x - 16, priya.y - 6) < 1.5);
+  ok('pre-demo verb: reach her before it starts', W.goPreDemo(w, 'precollect'));
+  const pc = stepUntil(w, 40, ['precollect']);
+  ok('the pre-collect signal fires in the window', !!pc);
+  // the incident itself fires IN the room (presenter walks there, not to you)
+  const inc = stepUntil(w, 120, ['arcincident']);
+  const brad2 = W.getActor(w, 'brad');
+  ok('the demo card fires with the presenter in the meeting room',
+    !!inc && Math.hypot(brad2.x - 17, brad2.y - 6) < 1.6,
+    inc ? ('brad@' + brad2.x.toFixed(1) + ',' + brad2.y.toFixed(1)) : 'no incident');
+  W.resolveEncounter(w);
+})();
+
 // ---- 12. SOAK: full careers through the real pipeline ---------------------------------
 // A bot plays whole days exactly the way the shell does: newDay each morning,
 // step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.
@@ -647,6 +781,10 @@ function soakRun(seed, opts){
           W.playerGoHome(w); break;
         case 'kaylasenthome': G.kaylaSentHome(g, Math.floor(w.clockMin)); break;
         case 'webinar': break;
+        // tells with no brain-side cost: the bot ignores what it can see coming
+        case 'bosswalkwarn': case 'bradlurk': case 'adamconcernstart': case 'demoprep': break;
+        // Adam's concern LANDS if nobody intercepts (the bot never does): as the shell does
+        case 'adamconcern': G.adamConcernLanded(g, Math.floor(w.clockMin)); break;
         case 'dayover': {
           // arcs must never deadlock or strand a day's staged story beats
           if(incidentsFired < incidentsStaged)

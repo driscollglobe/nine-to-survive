@@ -381,6 +381,7 @@ const NineToSurvive = (() => {
       todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
       receipts: { count: 0, flags: {} },
       heat: { hr: 0, boss: 0, brad: 0 },   // office heat: who's watching you now
+      schemes: { used: 0, flags: {} },     // the plays you ran on this building
       feed: [],              // today's office feed: [{m: clockMin, text}]
       runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
@@ -1162,6 +1163,8 @@ const NineToSurvive = (() => {
     else if(how === 'flattered') pushFeed(g, min, '“Nineteen years — the institutional knowledge!” Dennis approved the file while agreeing.');
     else if(how === 'receipt') pushFeed(g, min, 'Dennis received a receipt. Approvals followed at unprecedented speed.');
     else if(how === 'tip') pushFeed(g, min, 'You used Marcus’s phrase. Dennis paused, said “load-bearing, huh,” and approved everything.');
+    else if(how === 'walked') pushFeed(g, min, 'Someone answered Dennis’s questions WHILE WALKING. A file cleared in transit. Witnesses exist.');
+    else if(how === 'adam') pushFeed(g, min, 'Dennis approved a full stack to escape a conversation about index cards.');
   }
   // burn ANY held receipt to clear today's approvals (fixed order, least precious first)
   function burnReceiptForDennis(g){
@@ -1192,6 +1195,124 @@ const NineToSurvive = (() => {
     }
   }
 
+  // ---- Schemes: weaponizing receipts, trust, and what you can see coming --------
+  // Small, deterministic, readable. Each is an extra verb that exists only when
+  // its conditions are met; g.schemes counts them for headlines/awards/share.
+  function schemeUsed(g, name){
+    if(!g.schemes) g.schemes = { used: 0, flags: {} };
+    g.schemes.flags[name] = (g.schemes.flags[name] || 0) + 1;
+    g.schemes.used++;
+  }
+  function schemesUsed(g){ return (g.schemes && g.schemes.used) || 0; }
+
+  // INTERCEPTION: you walked at Brad while he was casing your inbox. Raid off.
+  function bradConfronted(g, min){
+    const brad = g.npcState.brad;
+    brad.counters.confronts = (brad.counters.confronts || 0) + 1;
+    brad.counters.confrontDay = g.day;
+    addHeat(g, 'brad', 1);   // CHAIN: being seen seeing him — paranoia climbs
+    pushFeed(g, min, 'Brad suddenly remembered a call. The water bottle stayed at the fountain, unfilled.');
+    return '“Looking for something?” He was not. He remembered a call, urgently. The raid is off.';
+  }
+  // SCHEME: flash the screenshot. Not spent — shown. His raids end for the run.
+  function bradFlashed(g, min){
+    const brad = g.npcState.brad;
+    if(brad.flags.cowed) return null;
+    if(!hasReceipt(g, 'screenshot_brad_deck')) return null;
+    brad.flags.cowed = true;
+    schemeUsed(g, 'flash');
+    addHeat(g, 'brad', 2);
+    pushFeed(g, min, 'Brad saw a phone wallpaper today that aged him. He has stopped visiting the bullpen.');
+    return 'You angle the phone, casually. He recognizes the deck. You put it away, still yours. He will not be visiting your inbox again.';
+  }
+  // SCHEME: the flawed file, planted where he steals from. He presents poison.
+  function baitPlanted(g, min){
+    pushFeed(g, min, 'A file moved to the top of a stack. Its formulas are, charitably, aspirational.');
+    return 'The flawed file sits on top, gleaming. Now be visibly elsewhere.';
+  }
+  function bradPoisoned(g, min){
+    const brad = g.npcState.brad;
+    brad.counters.poisonedDay = g.day;
+    schemeUsed(g, 'poison');
+    addHeat(g, 'brad', 2);   // CHAIN: he cannot prove it, which is worse
+    const d = applyStoryDelta(g, +3, +2);
+    pushFeed(g, min, 'Brad presented “his” analysis. Cell C9 divides by a word. He said the word “directionally” four times.');
+    pushFeed(g, (min || 0) + 6, 'Brad’s recap email walks back the analysis he “built.” Authorship is suddenly a team concept.');
+    return { ds: d.ds, dso: d.dso,
+      text: 'Brad lifts the flawed file and presents it within the hour, confidently. It detonates on slide two. You watch from your desk, shipping actual work.' };
+  }
+  // INTERCEPTION: caught Dennis mid-carry — the questions get answered en route.
+  function dennisWalked(g, min){
+    dennisApprovalCleared(g, min, 'walked', 1);
+    return 'You fall into step beside him. Nineteen questions over forty meters. He approves the file at the door of The Pipe, almost disappointed.';
+  }
+  // Adam reached HR: the concern lands (on someone; unclear; heat regardless)
+  function adamConcernLanded(g, min){
+    const ad = g.npcState.adam;
+    ad.counters.concerns = (ad.counters.concerns || 0) + 1;
+    ad.counters.concernDay = g.day;
+    addHeat(g, 'hr', 1);   // CHAIN: a raised concern needs a folder; the folder needs names
+    pushFeed(g, min, 'Adam raised a concern with HR. The concern has an appendix. Meredith opened a folder.');
+    return null;
+  }
+  // INTERCEPTION: you asked Adam about 2009. HR never learns of the concern.
+  function adamRedirected(g, min){
+    const ad = g.npcState.adam;
+    ad.counters.redirects = (ad.counters.redirects || 0) + 1;
+    const d = applyStoryDelta(g, 0, -1);   // the anecdote has three parts. You hear all of them.
+    pushFeed(g, min, 'Adam was headed to HR but got a better offer: someone asked how things were done in 2009.');
+    return { dso: d.dso, text: '“Funny you ask—” Twelve minutes on the old approval system. HR never learns of the concern. Your Soul learns about 2009.' };
+  }
+  // SCHEME: point Adam at Dennis. Seeded 50/50 — bypass, or a bigger delay.
+  // CHAIN: Dennis blocker + Adam meddling = either a bypass or a worse day.
+  function adamGrenade(g, min){
+    const ad = g.npcState.adam;
+    ad.counters.grenades = (ad.counters.grenades || 0) + 1;
+    ad.counters.grenadeDay = g.day;
+    schemeUsed(g, 'grenade');
+    const bypass = arcRand(g, 'adam', 'grenade')() < 0.5;
+    if(bypass){
+      dennisApprovalCleared(g, min, 'adam');
+      pushFeed(g, min, 'Adam and Dennis talked about the old system for forty minutes. Everything got approved to end the conversation.');
+      return { bypass: true,
+        text: 'Adam opens with “back when approvals were INDEX CARDS—” and Dennis, cornered by his own kind, approves everything just to make it stop.' };
+    }
+    const d = applyStoryDelta(g, 0, -1);
+    pushFeed(g, min, 'Adam raised a process concern on your behalf. Dennis found it compelling. A previously fine file now needs approval.');
+    return { bypass: false, dso: d.dso,
+      text: 'Adam “helps” by proposing a sub-process. Dennis loves it. Another of your files is now stuck, and there is a meeting about the sub-process. You are invited.' };
+  }
+  // Pre-demo window: the commit log, collected early, in the room
+  function priyaPreCollect(g, min){
+    if(hasReceipt(g, 'priya_commit_log')) return null;
+    addReceipt(g, 'priya_commit_log');
+    g.npcState.priya.flags.collected = true;
+    pushFeed(g, min, 'A commit log was screenshotted in the meeting room, pre-demo. Git remembers everything. So, now, do you.');
+    return 'You lean over the demo laptop. One tab: the commit log, every line with her name on it. Click. Saved. The demo hasn’t even started.';
+  }
+  // Pre-demo window: the flawed backup file, planted before the room fills
+  function priyaPrePlant(g, min){
+    const priya = g.npcState.priya;
+    if(priya.flags.preBaited) return null;
+    priya.flags.preBaited = true;
+    schemeUsed(g, 'preplant');
+    pushFeed(g, min, 'A file named backup_FINAL was quietly renamed FINAL. Nobody saw. Git saw.');
+    return 'Two clicks while the room is empty. The presenter will open the backup — the one that divides by zero. You take a seat in the second row.';
+  }
+  // SCHEME: spend the metadata to cool HR — the OTHER use of the receipt.
+  // (It also defuses a warning at review; you can't have both. A real decision.)
+  function coolHR(g, min){
+    if(!hasReceipt(g, 'hr_survey_metadata')) return null;
+    if(heatOf(g, 'hr') < HEAT_MED) return null;
+    burnReceipt(g, 'hr_survey_metadata');
+    g.heat.hr = 0;
+    schemeUsed(g, 'coolhr');
+    const mer = g.npcState.meredith;
+    mer.counters.cooled = (mer.counters.cooled || 0) + 1;
+    pushFeed(g, min, 'Someone asked Meredith, hypothetically, how anonymous the survey backend is. The writing-style project ended today.');
+    return 'You ask, hypothetically, about response IDs. Meredith’s highlighter caps itself. Your file gets thinner by the sound of it. The receipt is spent.';
+  }
+
   // Never found time for the quick call: the office reads that as an answer.
   function bossSummonsDodged(g, min){
     const boss = g.npcState.boss;
@@ -1215,6 +1336,7 @@ const NineToSurvive = (() => {
   // The receipt play: holding the screenshot gives Brad's Credit-Reassigned card
   // a fourth choice that burns it to reverse the theft, with interest.
   const CREDIT_ENC = 2;
+  const CALIB_ENC  = 3;   // "The Meeting About You, Without You"
   function extraChoicesFor(g, encIdx){
     const extras = [];
     if(encIdx === CREDIT_ENC && hasReceipt(g, 'screenshot_brad_deck') && !bradOutOfPlay(g)){
@@ -1225,9 +1347,25 @@ const NineToSurvive = (() => {
       extras.push({ key: 'burn_commit_log',
         t: '“Hold on — pull up the commit log. Every line of the last one had a name on it too.”' });
     }
+    // SCHEME: evidence works in calibration too — submit the commit log as
+    // "context" and the slide about you gets timestamps instead of vibes
+    if(encIdx === CALIB_ENC && hasReceipt(g, 'priya_commit_log')){
+      extras.push({ key: 'burn_calibration',
+        t: 'Attach the commit log to your “context.” Turns out receipts work on slides about you, too.' });
+    }
     return extras;
   }
   function applyExtraChoice(g, encIdx, key, min){
+    if(encIdx === CALIB_ENC && key === 'burn_calibration'){
+      if(!burnReceipt(g, 'priya_commit_log')) return null;
+      schemeUsed(g, 'calibration');
+      const d = applyStoryDelta(g, +5, +2);
+      g.npcState.priya.trust += 1;   // her name rides along, credited
+      pushFeed(g, min, 'Someone submitted calibration context with TIMESTAMPS. The slide changed. The slide never changes.');
+      g.lastChoice = { choiceIndex: 'burn_calibration', ds: d.ds, dso: d.dso,
+        outcome: 'Your “context” arrives as a commit log: dates, diffs, names. The VP squints at a bar chart that suddenly has footnotes. The slide is still wrong — but wrong in your favor now, which is the local definition of justice.' };
+      return g.lastChoice;
+    }
     if(encIdx !== CREDIT_ENC) return null;
     if(key === 'burn_commit_log'){
       if(!burnReceipt(g, 'priya_commit_log')) return null;
@@ -1300,9 +1438,10 @@ const NineToSurvive = (() => {
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
       bradFiredToday: b.stage === 6,
       bradGone:       b.stage === 7,     // stage 8 = closed quietly; he's still here
-      // CHAIN: exposing Brad (the projector moment) also ends his raids — a
-      // burned man checks his own screen, not your inbox
-      noBradRaids:    !!brad.flags.covered || !!brad.flags.burned || b.stage === 6 || b.stage === 7,
+      // CHAIN: exposing Brad (the projector moment) or flashing him the
+      // screenshot ends his raids — a burned man checks his own screen
+      noBradRaids:    !!brad.flags.covered || !!brad.flags.burned || !!brad.flags.cowed
+                      || b.stage === 6 || b.stage === 7,
       bossArcHot:     bo.stage === 1,
       // CHAIN: Boss attention High adds a floor walk on top of any spiral walk
       extraBossWalks: (bo.stage === 1 ? 1 : 0) + (heatOf(g, 'boss') >= HEAT_HIGH ? 1 : 0),
@@ -1676,6 +1815,55 @@ const NineToSurvive = (() => {
         return null;
     }
   }
+  // ---- The story collection: what this building has shown you, across runs -----
+  // The brain owns the catalog and the earned-check; the SHELL owns persistence
+  // (localStorage) — the brain stays storage-free. Locked hints tease, never spoil.
+  const STORY_META = {
+    brad_exposed:  { name: 'The Second Laptop',          hint: 'Some decks belong to other companies.' },
+    kayla_helped:  { name: 'Two Chairs in the Kitchen',  hint: 'Someone is “fine.” Check anyway.' },
+    kayla_ignored: { name: 'Productivity Held',          hint: 'Keep shipping. No matter what you hear from the kitchen.' },
+    hr_metadata:   { name: 'Anonymity Has a Schema',     hint: 'Read the URL before you answer anything.' },
+    boss_survived: { name: 'Corner Office Weather',      hint: 'Some quick calls are neither quick nor calls.' },
+    marcus_saved:  { name: 'The Load-Bearing Sentence',  hint: 'Have coffee with the man who has seen everything.' },
+    priya_backed:  { name: 'Say Her Name',               hint: 'The commit log knows who built it.' },
+    dennis_broken: { name: 'The Pipe Flows',             hint: 'Answer every question. All nineteen. Repeatedly.' },
+    escaped_clean: { name: 'Out the Door, Whole',        hint: 'The number, with your soul still attached.' },
+    escaped_dead_inside: { name: 'Mostly the Money',     hint: 'Escaping and escaping intact are different jobs.' },
+    managed_out:   { name: 'Transitioned',               hint: 'Standing has a floor. The floor has security.' },
+    management:    { name: 'The Calls Come From Inside', hint: 'Soul has a floor too. There is a promotion down there.' },
+    adam_meddled:  { name: 'Followed Up to Death',       hint: 'He was not consulted, and you will hear about it.' }
+  };
+  const STORY_ORDER = ['brad_exposed', 'priya_backed', 'kayla_helped', 'kayla_ignored',
+    'hr_metadata', 'boss_survived', 'marcus_saved', 'dennis_broken', 'adam_meddled',
+    'escaped_clean', 'escaped_dead_inside', 'managed_out', 'management'];
+  // Every major outcome this run CLEARLY earned — storyKey's ladder rung first,
+  // then any other rung whose condition independently holds. Ending keys always.
+  function earnedStories(g){
+    if(!g.over) return [];
+    const brad = g.npcState.brad, kayla = g.npcState.kayla, boss = g.npcState.boss;
+    const marcus = g.npcState.marcus, priya = g.npcState.priya, adam = g.npcState.adam;
+    const bossArc = (g.arcs || {}).boss_spiral || { stage: 0 };
+    const keys = [];
+    const add = k => { if(k && STORY_META[k] && keys.indexOf(k) < 0) keys.push(k); };
+    add(storyKey(g));   // the run's lead story, whatever the ladder says
+    if(brad.flags.walkedOut || brad.flags.fired || brad.flags.burned) add('brad_exposed');
+    if(kayla.flags.satWith || kayla.flags.tookTask) add('kayla_helped');
+    if(kayla.flags.ignored) add('kayla_ignored');
+    if(hasReceipt(g, 'hr_survey_metadata') || (g.npcState.meredith.counters.defused || 0) > 0
+       || (g.npcState.meredith.counters.cooled || 0) > 0) add('hr_metadata');
+    if(bossArc.stage === 2 && (boss.counters.quickCalls || 0) > 0) add('boss_survived');
+    if((marcus.counters.saves || 0) > 0) add('marcus_saved');
+    if(priya.flags.backed || priya.flags.baited || priya.flags.preBaited) add('priya_backed');
+    if((g.npcState.dennis.counters.approvalsCleared || 0) >= 3) add('dennis_broken');
+    if(adam && ((adam.counters.concerns || 0) > 0 || (adam.counters.grenades || 0) > 0
+       || (adam.counters.intercepts || 0) >= 2)) add('adam_meddled');
+    if(g.escaped && g.soul >= 50) add('escaped_clean');
+    if(g.escaped && g.soul < 50) add('escaped_dead_inside');
+    if(g.failed === 'standing') add('managed_out');
+    if(g.failed === 'soul') add('management');
+    return keys;
+  }
+
   function shareText(g){
     const headline = g.over ? verdict(g).title : 'Still there. Still counting.';
     const story = storyLine(g);
@@ -1707,9 +1895,13 @@ const NineToSurvive = (() => {
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     dennisApprovalCleared, burnReceiptForDennis, useShieldForDennis, DENNIS_BURN_ORDER,
     adamIntercepted,
+    schemeUsed, schemesUsed, bradConfronted, bradFlashed, baitPlanted, bradPoisoned,
+    dennisWalked, adamConcernLanded, adamRedirected, adamGrenade,
+    priyaPreCollect, priyaPrePlant, coolHR,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,
+    STORY_META, STORY_ORDER, earnedStories,
     policyAction, policyCardChoice, policyIncidentChoice
   };
 })();

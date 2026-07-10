@@ -60,6 +60,9 @@ const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
 const KITCHEN_CORNER = { x:24, y:12 };   // where Kayla "gets water" on the bad day
 const APPROVAL_SPOT = { x:34, y:21 };    // The Pipe: where approvals go to be questioned
 const APPROVAL_WAIT_SECS = 6;            // his questions, answered in real seconds
+const LURK_SPOT = { x:11, y:14 };        // where Brad "refills his water" pre-raid
+const DEMO_SPOT = { x:16, y:6 };         // meeting room: where demos are performed
+const DEMO_PRESENT_SPOT = { x:17, y:6 }; // where the presenter stands, confidently
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -449,12 +452,28 @@ function step(w, dt){
       const r = rand(w);
       // Brad on two payrolls spends his idle time in the stairwell, phone out
       const stairbound = a.id === 'brad' && w.flags.bradCalls;
+      // Dennis with approvals held walks the files themselves, folder visibly
+      // in hand, desk ↔ The Pipe. Catch him mid-carry to answer the questions
+      // en route (a free clear). Destinations overridden only — the rand spend
+      // below is identical, so nobody else's staging shifts on blocker days.
+      const carrying = a.id === 'dennis' && w.flags.dennisBlocker && w.tasks.blocked > 0;
       if(r < 0.30){
+        if(carrying){
+          rand(w); rand(w);   // spend the tx/ty rolls this branch always spends
+          const atPipe = Math.hypot(a.x - APPROVAL_SPOT.x, a.y - APPROVAL_SPOT.y) < 1.5;
+          sendTo(w, a, atPipe ? a.home : APPROVAL_SPOT, 'carry');
+          return;
+        }
         if(stairbound){ sendTo(w, a, STAIRS_SPOT, 'walking'); return; }
         const tx = a.home.x + Math.floor(rand(w) * 7) - 3;
         const ty = a.home.y + Math.floor(rand(w) * 7) - 3;
         if(isWalkable(w, tx, ty)) sendTo(w, a, { x: tx, y: ty }, 'walking');
       } else if(r < 0.42){
+        if(carrying){
+          const atPipe = Math.hypot(a.x - APPROVAL_SPOT.x, a.y - APPROVAL_SPOT.y) < 1.5;
+          sendTo(w, a, atPipe ? a.home : APPROVAL_SPOT, 'carry');
+          return;
+        }
         sendTo(w, a, stairbound ? STAIRS_SPOT : COFFEE_SPOT, 'walking');
       } else if(Math.abs(a.x - a.home.x) + Math.abs(a.y - a.home.y) > 0.6){
         sendTo(w, a, a.home, 'returning');
@@ -470,9 +489,13 @@ function step(w, dt){
     return w.sig.shift();
   }
 
-  // ---- boss floor-walk ----
+  // ---- boss floor-walk (telegraphed: he stands up and reads the floor first) ----
   const boss = getActor(w, 'boss');
   w.bossWalks.forEach(bw => {
+    if(bw.status === 'pending' && !bw.warned && w.clockMin >= bw.atMin - 20){
+      bw.warned = true;   // the tell, ~20 game-min of warning to get back to your desk
+      w.sig.push({ type: 'bosswalkwarn', mood: boss.mood });
+    }
     if(bw.status === 'pending' && w.clockMin >= bw.atMin && boss.state === 'idle'){
       // mark 'out' only once the walk actually starts, else it hangs forever
       if(sendTo(w, boss, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'patrol')){
@@ -482,14 +505,48 @@ function step(w, dt){
     }
   });
 
-  // ---- brad raid ----
+  // ---- brad raid (telegraphed: he lurks near the bullpen first, watchably) ----
   const brad = getActor(w, 'brad');
   w.bradRaids.forEach(br => {
-    if(br.status === 'pending' && w.clockMin >= br.atMin && brad && !brad.off && brad.state === 'idle'){
+    // the lurk: ~25 game-min before a raid he drifts to the water spot with
+    // line of sight on your inbox. Click him to confront; sit tight to foil;
+    // or leave the flawed file on top and go get coffee (the bait).
+    if(br.status === 'pending' && !br.lurked && w.clockMin >= br.atMin - 25
+       && brad && !brad.off && brad.state === 'idle'){
+      br.lurked = true;
+      if(sendTo(w, brad, LURK_SPOT, 'lurkwalk')) w.sig.push({ type: 'bradlurk' });
+    }
+    if(br.status === 'pending' && w.clockMin >= br.atMin && brad && !brad.off
+       && (brad.state === 'idle' || brad.state === 'lurk')){
       if(sendTo(w, brad, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'raid'))
         br.status = 'out';
     }
   });
+
+  // ---- Adam's concern walk: he is heading to HR "with a concern" ----
+  // Interceptable mid-walk: redirect him (eat the 2009 anecdote) or, on a
+  // blocker day, point him at Dennis instead. If he lands, HR opens a folder.
+  if(w.adamConcern && w.adamConcern.status === 'pending' && w.clockMin >= w.adamConcern.atMin){
+    const adamC = getActor(w, 'adam');
+    if(adamC && !adamC.off && adamC.state === 'idle' && !w.intercept){
+      adamC.path = [];
+      if(sendTo(w, adamC, adjacentTo(w, getActor(w, 'hr') || { x: 5, y: 6 }), 'concern')){
+        w.adamConcern.status = 'walking';
+        w.sig.push({ type: 'adamconcernstart' });
+      }
+    }
+  }
+
+  // ---- demo day: Priya heads to the meeting room early (the pre-demo window) ----
+  if(w.demo && !w.demo.prepped && w.clockMin >= w.demo.atMin - 40){
+    w.demo.prepped = true;
+    const priyaD = getActor(w, 'priya');
+    if(priyaD && !priyaD.off){
+      priyaD.pinned = false; priyaD.path = [];
+      if(sendTo(w, priyaD, DEMO_SPOT, 'demoprep')) w.sig.push({ type: 'demoprep' });
+      else priyaD.pinned = true;
+    }
+  }
 
   // ---- the deck detour: Brad walks his other job right past your desk ----
   if(w.bradDeck && w.bradDeck.status === 'pending' && w.clockMin >= w.bradDeck.atMin
@@ -563,8 +620,12 @@ function step(w, dt){
       if(owner && !owner.off
          && (owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning')){
         owner.path = [];
+        // the demo is performed in the MEETING ROOM (a hotspot you can see
+        // filling up); every other event still walks its owner to your desk
+        const target = (ev.kind === 'incident' && ev.id === 'priya_demo')
+          ? DEMO_PRESENT_SPOT : adjacentTo(w, you);
         // status advances only if the walk starts; otherwise retry next tick
-        if(sendTo(w, owner, adjacentTo(w, you), 'summoned')) ev.status = 'walking';
+        if(sendTo(w, owner, target, 'summoned')) ev.status = 'walking';
       }
     }
     if(ev.status === 'walking'){
@@ -594,6 +655,21 @@ function handleArrival(w, a, you){
   if(a.id === 'you') w.moveMarker = null;
   if(a.state === 'summoned'){ a.state = 'atPlayer'; }
   else if(a.state === 'errand' && a.id === 'you'){ a.state = 'idle'; arriveErrand(w, you); }
+  else if(a.state === 'lurkwalk' && a.id === 'brad'){ a.state = 'lurk'; }   // in position, watching
+  else if(a.state === 'concern' && a.id === 'adam'){
+    // he made it to HR. A concern has been raised. About whom is unclear.
+    if(w.adamConcern) w.adamConcern.status = 'landed';
+    w.sig.push({ type: 'adamconcern' });
+    sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'grenade' && a.id === 'adam'){
+    // deployed at Dennis: they go way back. Way, WAY back. Outcome varies.
+    w.sig.push({ type: 'adamgrenade' });
+    sendTo(w, a, a.home, 'returning');
+  }
+  else if(a.state === 'demoprep' && a.id === 'priya'){
+    a.state = 'idle'; a.pinned = true;   // in the room, holding the coffee she isn't drinking
+  }
   else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
   else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
   else if(a.state === 'deck' && a.id === 'brad'){
@@ -709,6 +785,102 @@ function arriveErrand(w, you){
     } else {
       w.playerErrand = null;
     }
+  } else if(e.type === 'confrontbrad'){
+    // the interception: you walked at him while he was casing your inbox
+    const brad = getActor(w, 'brad');
+    if(!brad || brad.off || (brad.state !== 'lurk' && brad.state !== 'lurkwalk' && brad.state !== 'raid')){
+      w.playerErrand = null;             // the moment passed
+    } else if(Math.hypot(brad.x - you.x, brad.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      // today's telegraphed raid is off; he remembers being seen
+      w.bradRaids.forEach(b => { if(b.status === 'pending' || b.status === 'out') b.status = 'done'; });
+      brad.path = [];
+      sendTo(w, brad, brad.home, 'returning');
+      w.sig.push({ type:'bradconfronted' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, brad), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'flashbrad'){
+    // the scheme: angle the phone. He recognizes the wallpaper. Raids end.
+    const brad = getActor(w, 'brad');
+    if(!brad || brad.off){ w.playerErrand = null; }
+    else if(Math.hypot(brad.x - you.x, brad.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.bradRaids.forEach(b => { if(b.status === 'pending' || b.status === 'out') b.status = 'done'; });
+      if(brad.state === 'lurk' || brad.state === 'raid'){ brad.path = []; sendTo(w, brad, brad.home, 'returning'); }
+      w.sig.push({ type:'bradflashed' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, brad), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'baitdesk'){
+    // back to your own desk to leave the flawed file on top of the stack
+    w.playerErrand = null;
+    if(w.tasks.pending > 0 && !w.baitPlanted){
+      w.baitPlanted = true;
+      w.sig.push({ type:'baitplanted' });
+    }
+  } else if(e.type === 'walkwith'){
+    // caught Dennis mid-carry: answer the questions en route, one file clears
+    const dennis = getActor(w, 'dennis');
+    if(!dennis || dennis.off || !w.tasks.blocked || w.walkedWithDennis){ w.playerErrand = null; }
+    else if(Math.hypot(dennis.x - you.x, dennis.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.walkedWithDennis = true;
+      w.tasks.blocked--; w.tasks.pending++;
+      w.sig.push({ type:'dennisescort', blocked: w.tasks.blocked, pending: w.tasks.pending });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, dennis), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'redirectadam'){
+    // step into his path and ask about 2009. HR never learns of the concern.
+    const adam = getActor(w, 'adam');
+    if(!adam || adam.off || adam.state !== 'concern'){ w.playerErrand = null; }
+    else if(Math.hypot(adam.x - you.x, adam.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      if(w.adamConcern) w.adamConcern.status = 'redirected';
+      adam.path = [];
+      sendTo(w, adam, adam.home, 'returning');
+      w.sig.push({ type:'adamredirected' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, adam), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'grenadeadam'){
+    // the chaos grenade: point Adam at Dennis. He and Dennis go way back.
+    const adam = getActor(w, 'adam');
+    if(!adam || adam.off || w.grenadeUsed || !w.tasks.blocked){ w.playerErrand = null; }
+    else if(Math.hypot(adam.x - you.x, adam.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.grenadeUsed = true;
+      if(w.adamConcern && w.adamConcern.status === 'walking') w.adamConcern.status = 'redirected';
+      adam.path = [];
+      const dennis = getActor(w, 'dennis');
+      if(dennis && sendTo(w, adam, adjacentTo(w, dennis), 'grenade')){ /* he's off */ }
+      else w.sig.push({ type:'adamgrenade' });   // Dennis unreachable: resolve in place
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, adam), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'precollect' || e.type === 'preplant'){
+    // the pre-demo window: reach Priya in the meeting room before it starts
+    const priya = getActor(w, 'priya');
+    const open = w.demo && w.demo.prepped && w.clockMin < w.demo.atMin;
+    if(!priya || priya.off || !open){ w.playerErrand = null; }
+    else if(Math.hypot(priya.x - you.x, priya.y - you.y) <= 2.2){
+      const kind = e.type;
+      w.playerErrand = null;
+      w.sig.push({ type: kind });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, priya), 'errand');
+    } else { w.playerErrand = null; }
+  } else if(e.type === 'coolhr'){
+    // the scheme: ask Meredith about response IDs, hypothetically
+    const hr = getActor(w, 'hr');
+    if(!hr || hr.off){ w.playerErrand = null; }
+    else if(Math.hypot(hr.x - you.x, hr.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.sig.push({ type:'coolhr' });
+    } else if(e.repaths < 3){
+      e.repaths++; sendTo(w, you, adjacentTo(w, hr), 'errand');
+    } else { w.playerErrand = null; }
   }
 }
 
@@ -726,7 +898,14 @@ function bradArrives(w, brad, you){
   const raid = w.bradRaids.find(b => b.status === 'out');
   if(raid) raid.status = 'done';
   if(!playerAtDesk(w)){
-    if(w.tasks.pending > 0){
+    if(w.tasks.pending > 0 && w.baitPlanted){
+      // THE SCHEME: he lifts the file you left on top. The flawed one.
+      // You lose the task; he gains a presentation he cannot explain.
+      w.baitPlanted = false;
+      w.tasks.pending--;
+      w.tasks.progress = 0;
+      w.sig.push({ type:'bradpoisoned', pending: w.tasks.pending });
+    } else if(w.tasks.pending > 0){
       // he lifts the file you were furthest through
       w.tasks.pending--;
       w.tasks.progress = 0;
@@ -866,6 +1045,97 @@ function playerGoHome(w){
   w.moveMarker = { x: you.home.x, y: you.home.y };
 }
 
+// ── interceptions + schemes: react to what you can SEE crossing the floor ─────
+function confrontBrad(w){
+  const brad = getActor(w, 'brad');
+  const you = getActor(w, 'you');
+  if(!brad || brad.off || w.playerErrand) return false;
+  if(brad.state !== 'lurk' && brad.state !== 'lurkwalk' && brad.state !== 'raid') return false;
+  if(!sendTo(w, you, adjacentTo(w, brad), 'errand')) return false;
+  w.playerErrand = { type: 'confrontbrad', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function flashBrad(w){
+  const brad = getActor(w, 'brad');
+  const you = getActor(w, 'you');
+  if(!brad || brad.off || w.playerErrand) return false;
+  if(!sendTo(w, you, adjacentTo(w, brad), 'errand')) return false;
+  w.playerErrand = { type: 'flashbrad', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function plantBait(w){
+  const you = getActor(w, 'you');
+  if(w.playerErrand || w.baitPlanted || w.tasks.pending < 1) return false;
+  if(playerAtDesk(w)){
+    w.baitPlanted = true;
+    w.sig.push({ type:'baitplanted' });
+    return true;
+  }
+  if(!sendTo(w, you, you.home, 'errand')) return false;
+  w.playerErrand = { type: 'baitdesk', repaths: 0 };
+  w.moveMarker = { x: you.home.x, y: you.home.y };
+  return true;
+}
+function walkWithDennis(w){
+  const dennis = getActor(w, 'dennis');
+  const you = getActor(w, 'you');
+  if(!dennis || dennis.off || w.playerErrand || w.walkedWithDennis) return false;
+  if(dennis.state !== 'carry' || !w.tasks.blocked) return false;
+  if(!sendTo(w, you, adjacentTo(w, dennis), 'errand')) return false;
+  w.playerErrand = { type: 'walkwith', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function redirectAdam(w){
+  const adam = getActor(w, 'adam');
+  const you = getActor(w, 'you');
+  if(!adam || adam.off || w.playerErrand || adam.state !== 'concern') return false;
+  if(!sendTo(w, you, adjacentTo(w, adam), 'errand')) return false;
+  w.playerErrand = { type: 'redirectadam', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function grenadeAdam(w){
+  const adam = getActor(w, 'adam');
+  const you = getActor(w, 'you');
+  if(!adam || adam.off || w.playerErrand || w.grenadeUsed || !w.tasks.blocked) return false;
+  if(!sendTo(w, you, adjacentTo(w, adam), 'errand')) return false;
+  w.playerErrand = { type: 'grenadeadam', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function goPreDemo(w, kind){          // kind: 'precollect' | 'preplant'
+  const priya = getActor(w, 'priya');
+  const you = getActor(w, 'you');
+  if(!priya || priya.off || w.playerErrand) return false;
+  if(!w.demo || !w.demo.prepped || w.clockMin >= w.demo.atMin) return false;
+  if(!sendTo(w, you, adjacentTo(w, priya), 'errand')) return false;
+  w.playerErrand = { type: kind, repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function goForCoolHR(w){
+  const hr = getActor(w, 'hr');
+  const you = getActor(w, 'you');
+  if(!hr || hr.off || w.playerErrand) return false;
+  if(!sendTo(w, you, adjacentTo(w, hr), 'errand')) return false;
+  w.playerErrand = { type: 'coolhr', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+// the grenade's outcome, applied by the shell after the brain rolls it
+function applyGrenade(w, bypass){
+  if(bypass){
+    const n = w.tasks.blocked;
+    w.tasks.pending += n; w.tasks.blocked = 0;
+    return n;
+  }
+  if(w.tasks.pending > 0){ w.tasks.pending--; w.tasks.blocked++; }
+  return -1;
+}
+
 // ── picking + status ──────────────────────────────────────────────────────────
 function pickActorAt(w, gx, gy){
   let best = null, bestD = 0.75;
@@ -895,11 +1165,49 @@ function isExitAt(gx, gy){
 function statusOf(w, actor){
   if(actor.id === 'you') return { name:'You', role: actor.role, mood: null,
     line:'Tasks ship at your desk. Soul refills everywhere else. Choose.', face:'🦡', chat:false };
+  // Brad mid-lurk (or mid-raid): the interception window is OPEN
+  if(actor.id === 'brad' && (actor.state === 'lurk' || actor.state === 'lurkwalk' || actor.state === 'raid')){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '👀',
+      line: actor.state === 'raid'
+        ? 'He is heading for your inbox. Right now. This is not a drill, which is ironic, given the fire drills.'
+        : 'He has been refilling his water bottle for six minutes. The fountain faces your inbox.',
+      chat: false,
+      confront: true,
+      plantbait: w.tasks.pending > 0 && !w.baitPlanted,
+      bradLurking: true };
+  }
   // the Brad arc shifts his status line before any card ever fires
   if(actor.id === 'brad' && w.flags && w.flags.bradCalls){
     return { name: actor.name, role: actor.role, mood: actor.mood, face: '📵',
       line: '“On a call.” It is the fourth call today. None of the calls have meeting links.',
       chat: false };
+  }
+  // Dennis mid-carry: catch him between desks and answer the questions en route
+  if(actor.id === 'dennis' && actor.state === 'carry'){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '📁',
+      line: 'He is walking one of YOUR files to The Pipe, at the pace of a man who bills by the step.',
+      chat: false,
+      walkwith: !w.walkedWithDennis && w.tasks.blocked > 0,
+      approval: w.tasks.blocked > 0,
+      flatter: w.tasks.blocked > 0 && !w.flatteredDennis,
+      dennisBlocked: w.tasks.blocked };
+  }
+  // Adam en route to HR: interceptable, redirectable, weaponizable
+  if(actor.id === 'adam' && actor.state === 'concern'){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '📋',
+      line: 'He is walking to HR “with a concern.” The concern has three parts and a cover page.',
+      chat: false,
+      redirect: true,
+      grenade: !w.grenadeUsed && w.tasks.blocked > 0 };
+  }
+  // Priya in the meeting room, pre-demo: the window is open until it starts
+  if(actor.id === 'priya' && w.demo && w.demo.prepped && w.clockMin < w.demo.atMin && !actor.off
+     && Math.hypot(actor.x - DEMO_SPOT.x, actor.y - DEMO_SPOT.y) < 2){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '☕',
+      line: 'In the meeting room early, holding a coffee she isn’t drinking. The demo laptop is open. Unattended.',
+      chat: false,
+      precollect: true,
+      preplant: true };
   }
   // Kayla's panic day: the popup carries the physical options
   if(actor.id === 'kayla' && w.flags && w.flags.kaylaPanic && !actor.off){
@@ -1147,6 +1455,11 @@ function render(w, ctx, cam, vw, vh){
   if(!w.coffeeUsed) drawSpotRing(ctx, cam, COFFEE_SPOT, 'rgba(62,158,94,0.55)', phase + 2);
   if(!w.couchUsed)  drawSpotRing(ctx, cam, COUCH_SPOT, 'rgba(232,129,76,0.55)', phase + 4);
   if(w.walkoutArmed) drawSpotRing(ctx, cam, { x: 1, y: 17 }, 'rgba(46,158,99,0.8)', phase + 1);
+  // hotspots you can see across the floor: stuck approvals at The Pipe, and
+  // the meeting room while a demo is imminent or underway
+  if(w.tasks.blocked > 0) drawSpotRing(ctx, cam, APPROVAL_SPOT, 'rgba(216,68,63,0.6)', phase + 3);
+  if(w.demo && w.demo.prepped && w.clockMin < w.demo.atMin + 15)
+    drawSpotRing(ctx, cam, DEMO_SPOT, 'rgba(124,111,214,0.6)', phase + 5);
 
   // click-to-move marker
   if(w.moveMarker){
@@ -1457,6 +1770,31 @@ function drawActor(ctx, cam, a, w){
     ctx.font = '800 ' + (14 * z) + 'px system-ui';
     ctx.fillText('❗', px - 12 * z, py - 34 * z);
   }
+  // the PRE-tells: trouble you can see coming (and physically answer)
+  if(a.id === 'brad' && (a.state === 'lurk' || a.state === 'lurkwalk')){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('👀', px - 12 * z, py - 34 * z);
+  }
+  if(a.id === 'boss' && a.state === 'idle' && w
+     && w.bossWalks.some(b => b.status === 'pending' && b.warned)){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('📋', px - 12 * z, py - 34 * z);   // he's read the floor; he's next
+  }
+  if(a.id === 'adam' && (a.state === 'concern' || a.state === 'grenade')){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('📋', px + 12 * z, py - 34 * z);
+  }
+  // Dennis carrying an approval: the red folder reads from across the floor
+  if(a.id === 'dennis' && a.state === 'carry'){
+    ctx.fillStyle = '#D8443F';
+    ctx.strokeStyle = 'rgba(21,18,13,0.4)';
+    ctx.lineWidth = 1 * z;
+    ctx.fillRect(px + 7 * z, py - 18 * z, 9 * z, 6.5 * z);
+    ctx.strokeRect(px + 7 * z, py - 18 * z, 9 * z, 6.5 * z);
+  }
   // the approval wait: an amber bar while the questions are answered
   if(a.id === 'you' && w && w.playerErrand && w.playerErrand.type === 'approvalwait'){
     const bw2 = 30 * z;
@@ -1511,6 +1849,8 @@ return {
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
   armWalkout, goForExit, goForBossCall, resolveQuickCall, takeKaylaTask, reportKayla,
   goForApproval, flatterDennis, clearAllBlocked, APPROVAL_WAIT_SECS,
+  confrontBrad, flashBrad, plantBait, walkWithDennis, redirectAdam, grenadeAdam,
+  goPreDemo, goForCoolHR, applyGrenade,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile

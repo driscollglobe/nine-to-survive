@@ -1365,6 +1365,88 @@ ok('CHAIN: deflected + Boss attention → the spiral keeps summoning some days',
   return summoned > 0 && quiet > 0 && uSummoned === 0;
 })());
 
+// ---- 21. SCHEMES: weaponizing receipts, trust, and line of sight ---------------
+ok('scheme/flash: needs the screenshot, cows Brad, ends raids, counts once', (() => {
+  const t = G.newGame(3001);
+  if(G.bradFlashed(t, 700) !== null) return false;        // no receipt, no flash
+  G.addReceipt(t, 'screenshot_brad_deck');
+  const text = G.bradFlashed(t, 700);
+  if(!text || !t.npcState.brad.flags.cowed) return false;
+  if(!G.hasReceipt(t, 'screenshot_brad_deck')) return false;   // flashed, not spent
+  if(!G.worldFlagsFor(t).noBradRaids) return false;
+  if(G.bradFlashed(t, 710) !== null) return false;        // already cowed
+  return G.schemesUsed(t) === 1;
+})());
+ok('scheme/poison: Brad presents the flawed file — Standing +3, paranoia +2', (() => {
+  const t = G.newGame(3002);
+  const before = t.standing;
+  const res = G.bradPoisoned(t, 800);
+  return res.ds === 3 && t.standing === before + 3
+    && G.heatOf(t, 'brad') === 2 && G.schemesUsed(t) === 1
+    && t.npcState.brad.counters.poisonedDay === t.day;
+})());
+ok('scheme/grenade: seeded, deterministic, both outcomes exist across days', (() => {
+  const t = G.newGame(3003);
+  t.soul = 50;
+  let saw = { true: 0, false: 0 };
+  for(let d = 0; d < 10; d++){
+    const copy = JSON.parse(JSON.stringify(t)); copy.day = 1 + d;
+    const r1 = G.adamGrenade(copy, 700);
+    const copy2 = JSON.parse(JSON.stringify(t)); copy2.day = 1 + d;
+    const r2 = G.adamGrenade(copy2, 700);
+    if(r1.bypass !== r2.bypass) return false;             // same day, same outcome
+    saw[r1.bypass]++;
+  }
+  return saw.true > 0 && saw.false > 0;
+})());
+ok('scheme/coolhr: burns the metadata, zeroes HR heat, needs Medium+', (() => {
+  const t = G.newGame(3004);
+  G.addReceipt(t, 'hr_survey_metadata');                  // heat hr → 1
+  if(G.coolHR(t, 700) !== null) return false;             // below Medium: no play
+  G.addHeat(t, 'hr', 4);                                  // → 5, High
+  const text = G.coolHR(t, 700);
+  return !!text && !G.hasReceipt(t, 'hr_survey_metadata')
+    && G.heatOf(t, 'hr') === 0 && G.schemesUsed(t) === 1
+    && G.coolHR(t, 710) === null;                         // spent is spent
+})());
+ok('pre-demo: collect early = the receipt, once; plant early = auto-bait flag', (() => {
+  const t = G.newGame(3005);
+  const c1 = G.priyaPreCollect(t, 780);
+  if(!c1 || !G.hasReceipt(t, 'priya_commit_log')) return false;
+  if(G.priyaPreCollect(t, 781) !== null) return false;
+  const p1 = G.priyaPrePlant(t, 782);
+  return !!p1 && t.npcState.priya.flags.preBaited && G.priyaPrePlant(t, 783) === null;
+})());
+ok('scheme/calibration: the commit log becomes context (+5 Standing, spent)', (() => {
+  const t = G.newGame(3006);
+  G.addReceipt(t, 'priya_commit_log');
+  const extras = G.extraChoicesFor(t, 3);
+  if(!extras.some(x => x.key === 'burn_calibration')) return false;
+  const before = t.standing;
+  const res = G.applyExtraChoice(t, 3, 'burn_calibration', 700);
+  return res && t.standing === before + 5
+    && !G.hasReceipt(t, 'priya_commit_log') && G.schemesUsed(t) === 1
+    && G.extraChoicesFor(t, 3).length === 0;
+})());
+ok('interceptions: confront heats Brad; the escort clears via Dennis; the concern lands on HR', (() => {
+  const t = G.newGame(3007);
+  G.bradConfronted(t, 700);
+  if(G.heatOf(t, 'brad') !== 1 || t.npcState.brad.counters.confronts !== 1) return false;
+  G.dennisWalked(t, 710);
+  if(t.npcState.dennis.counters.approvalsCleared !== 1) return false;
+  G.adamConcernLanded(t, 720);
+  if(G.heatOf(t, 'hr') !== 1 || t.npcState.adam.counters.concerns !== 1) return false;
+  const r = G.adamRedirected(t, 730);
+  return r.dso === -1 && t.npcState.adam.counters.redirects === 1;
+})());
+ok('schemes serialize cleanly with the save', (() => {
+  const t = G.newGame(3008);
+  G.addReceipt(t, 'screenshot_brad_deck');
+  G.bradFlashed(t, 700);
+  const u = JSON.parse(JSON.stringify(t));
+  return G.schemesUsed(u) === 1 && u.schemes.flags.flash === 1;
+})());
+
 // ---- report -----------------------------------------------------------------
 lines.forEach(l=>console.log(l));
 console.log('');

@@ -162,6 +162,20 @@ button{touch-action:manipulation;}
 #workbtn{background:var(--danger);color:#fff;font-weight:800;letter-spacing:.06em;}
 .crunchresult{font-size:14.5px;line-height:1.5;font-style:italic;border-left:2px solid var(--danger);padding-left:12px;margin:4px 0 14px;color:#3a352a;}
 
+/* the story collection */
+.storiesline{margin-top:18px;font-family:'Poppins',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+.storybtn{font-family:'Poppins',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--standing);text-decoration:underline;cursor:pointer;}
+#storylist{text-align:left;margin:6px 0 16px;max-height:56vh;overflow-y:auto;}
+.storyrow{display:flex;gap:12px;align-items:baseline;padding:9px 2px;border-bottom:1px solid var(--line);font-size:13.5px;}
+.storyrow .sn{font-family:'Poppins',sans-serif;font-weight:700;white-space:nowrap;}
+.storyrow.found .sn{color:var(--money);}
+.storyrow.locked .sn{color:var(--muted2);letter-spacing:.14em;}
+.storyrow .sh{color:var(--muted);font-size:12px;font-style:italic;}
+.storyunlock{font-family:'Poppins',sans-serif;font-size:12.5px;font-weight:700;margin:4px auto;max-width:360px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);}
+.storyunlock.new{color:var(--money);border-color:var(--money);}
+.storyunlock.old{color:var(--muted);}
+#storyunlocks{margin-bottom:18px;}
+
 /* end screen */
 .verdicttag{font-family:'Poppins',sans-serif;font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-bottom:14px;}
 .verdict{font-family:'Poppins',sans-serif;font-weight:800;font-size:32px;line-height:1.05;letter-spacing:-.02em;margin-bottom:16px;}
@@ -203,7 +217,16 @@ button{touch-action:manipulation;}
     </div>
     <button class="cta" onclick="startGame()">Clock in — Day 1</button>
     <button class="cta resumebtn hidden" id="resumebtn" onclick="resumeGame()"></button>
+    <div class="storiesline"><span id="storycount">Stories found 0 / 13</span> · <button class="storybtn" onclick="openStories()">View stories</button></div>
     <div class="foot">Ungovernable. Unapologetic.</div>
+    <div id="storiesoverlay" class="overlay hidden" onclick="if(event.target===this)closeStories()">
+      <div class="card">
+        <div class="tag">📖 The story collection</div>
+        <div class="etitle">What this building has shown you</div>
+        <div id="storylist"></div>
+        <button class="next" onclick="closeStories()">Back</button>
+      </div>
+    </div>
   </section>
 
   <!-- PLAY: the office -->
@@ -291,6 +314,7 @@ button{touch-action:manipulation;}
     <div class="verdicttag" id="vtag">End of day</div>
     <div class="verdict" id="verdict"></div>
     <p class="vbody" id="vbody"></p>
+    <div id="storyunlocks"></div>
     <div class="finalmeters">
       <div class="fm s"><div class="fl">Standing</div><div class="fv" id="fin-standing">0</div></div>
       <div class="fm so"><div class="fl">Soul</div><div class="fv" id="fin-soul">0</div></div>
@@ -441,6 +465,14 @@ function handleWorldClick(sx, sy){
 function showStatus(actor, sx, sy){
   const s = W.statusOf(world, actor);
   const pop = $id('statuspop');
+  // shell-composed verbs: the world says WHO is interceptable; the brain's
+  // state (receipts, heat, flags) says which schemes are loaded
+  const canFlash = actor.id === 'brad' && G.hasReceipt(g, 'screenshot_brad_deck')
+    && !g.npcState.brad.flags.cowed && !g.npcState.brad.flags.fired;
+  const adamGren = (s.grenade || (actor.id === 'adam' && world.tasks.blocked > 0 && !world.grenadeUsed))
+    && !actor.off;
+  const canCool = actor.id === 'hr' && G.hasReceipt(g, 'hr_survey_metadata')
+    && G.heatOf(g, 'hr') >= G.HEAT_MED;
   pop.innerHTML = '<span class="sx" onclick="hideStatus()">✕</span>'
     + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
     + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
@@ -454,7 +486,18 @@ function showStatus(actor, sx, sy){
     + (s.approval && G.DENNIS_BURN_ORDER.some(r => G.hasReceipt(g, r))
         ? '<span class="schat" onclick="burnForDennis()">🧾 Burn a receipt (clears all)</span>' : '')
     + (s.approval && g.npcState.marcus.flags.shield
-        ? '<span class="schat" onclick="tipForDennis()">Use Marcus’s phrase (clears all)</span>' : '');
+        ? '<span class="schat" onclick="tipForDennis()">Use Marcus’s phrase (clears all)</span>' : '')
+    + (s.confront ? '<span class="schat" onclick="doConfrontBrad()">Walk at him: “Looking for something?”</span>' : '')
+    + (s.bradLurking && canFlash ? '<span class="schat" onclick="doFlashBrad()">🧾 Angle the phone. Let him see the wallpaper.</span>' : '')
+    + (s.plantbait ? '<span class="schat" onclick="doPlantBait()">Leave the flawed file on top. Be elsewhere.</span>' : '')
+    + (s.walkwith ? '<span class="schat" onclick="doWalkWithDennis()">Fall into step — answer the questions en route</span>' : '')
+    + (s.redirect ? '<span class="schat" onclick="doRedirectAdam()">Intercept: “How did approvals work in 2009?”</span>' : '')
+    + (adamGren ? '<span class="schat" onclick="doGrenadeAdam()">Point him at Dennis. They go way back.</span>' : '')
+    + (s.precollect && !G.hasReceipt(g, 'priya_commit_log')
+        ? '<span class="schat" onclick="doPreDemo(\'precollect\')">Collect the commit log now, pre-demo</span>' : '')
+    + (s.preplant && !g.npcState.priya.flags.preBaited
+        ? '<span class="schat" onclick="doPreDemo(\'preplant\')">Swap in the flawed backup file</span>' : '')
+    + (canCool ? '<span class="schat" onclick="doCoolHR()">🧾 Ask about response IDs, hypothetically</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -500,6 +543,39 @@ function tipForDennis(){
   G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'tip', n);
   toast('“Load-bearing deliverable.” Dennis blinks. ' + n + ' approval' + (n > 1 ? 's' : '') + ' cleared.');
   saveRun('day');
+}
+/* interceptions + schemes: walk-over verbs; the arrival signal does the rest */
+function doConfrontBrad(){
+  hideStatus();
+  if(W.confrontBrad(world)) toast('Walking at him. Casually. At speed.');
+}
+function doFlashBrad(){
+  hideStatus();
+  if(W.flashBrad(world)) toast('Walking over with your phone out, wallpaper first.');
+}
+function doPlantBait(){
+  hideStatus();
+  if(W.plantBait(world)) { if(!world.baitPlanted) toast('Heading to your desk to dress the stack…'); }
+}
+function doWalkWithDennis(){
+  hideStatus();
+  if(W.walkWithDennis(world)) toast('Catching up to the folder…');
+}
+function doRedirectAdam(){
+  hideStatus();
+  if(W.redirectAdam(world)) toast('Stepping into his path with a question about the old days…');
+}
+function doGrenadeAdam(){
+  hideStatus();
+  if(W.grenadeAdam(world)) toast('Walking over to mention that Dennis “could really use his perspective”…');
+}
+function doPreDemo(kind){
+  hideStatus();
+  if(W.goPreDemo(world, kind)) toast('Heading for the meeting room before the room fills…');
+}
+function doCoolHR(){
+  hideStatus();
+  if(W.goForCoolHR(world)) toast('Walking to HR with a hypothetical…');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -561,6 +637,46 @@ function toggleMute(){
   $id('mutebtn').textContent = muted ? '🔇' : '🔊';
 }
 if(muted) $id('mutebtn').textContent = '🔇';
+
+/* ---- the story collection: discovered outcomes persist across runs. The
+   brain owns the catalog (G.STORY_META) and the earned-check (G.earnedStories);
+   this is the only storage side. try/catch everywhere: file:// stays quiet. ---- */
+const STORIES_KEY = 'ntos-stories-v1';
+function loadStories(){
+  try { return JSON.parse(localStorage.getItem(STORIES_KEY)) || {}; } catch(e){ return {}; }
+}
+function saveStories(s){ try { localStorage.setItem(STORIES_KEY, JSON.stringify(s)); } catch(e){} }
+function updateStoryCount(){
+  const found = Object.keys(loadStories()).filter(k => G.STORY_META[k]).length;
+  $id('storycount').textContent = 'Stories found ' + found + ' / ' + G.STORY_ORDER.length;
+}
+function openStories(){
+  const have = loadStories();
+  $id('storylist').innerHTML = G.STORY_ORDER.map(k => {
+    const m = G.STORY_META[k];
+    return have[k]
+      ? '<div class="storyrow found"><span class="sn">' + m.name + '</span><span class="sh">' + m.hint + '</span></div>'
+      : '<div class="storyrow locked"><span class="sn">???</span><span class="sh">' + m.hint + '</span></div>';
+  }).join('');
+  $id('storiesoverlay').classList.remove('hidden');
+}
+function closeStories(){ $id('storiesoverlay').classList.add('hidden'); }
+// at run end: record everything the run clearly earned; say which are new
+function recordStories(){
+  const earned = G.earnedStories(g);
+  const have = loadStories();
+  const rows = earned.map(k => {
+    const isNew = !have[k];
+    have[k] = true;
+    return '<div class="storyunlock ' + (isNew ? 'new' : 'old') + '">'
+      + (isNew ? '★ New story discovered: ' : 'Story recorded: ')
+      + G.STORY_META[k].name + '</div>';
+  });
+  saveStories(have);
+  updateStoryCount();
+  $id('storyunlocks').innerHTML = rows.join('');
+}
+updateStoryCount();
 
 /* ---- run persistence: g + runSeed in localStorage. The world (mid-day
    positions/tasks) is NOT saved — a mid-day save resumes at that morning with
@@ -791,6 +907,78 @@ function handleSignal(s){
       worldEffect('bradFoiled');
       toast('Brad hovered by your desk. You were sitting right there. He left.');
       break;
+    case 'bradlurk':
+      toast('👀 Brad is “refilling his water” with line of sight on your inbox. Confront him, sit tight — or leave him something special.');
+      break;
+    case 'bradconfronted':
+      toast(G.bradConfronted(g, Math.floor(world.clockMin)));
+      break;
+    case 'bradflashed': {
+      const t = G.bradFlashed(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      break;
+    }
+    case 'baitplanted':
+      toast(G.baitPlanted(g, Math.floor(world.clockMin)));
+      break;
+    case 'bradpoisoned': {
+      const res = G.bradPoisoned(g, Math.floor(world.clockMin));
+      setMeter('standing', g.standing); applyDelta('standing', res.ds);
+      if(res.dso){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast(res.text);
+      break;
+    }
+    case 'bosswalkwarn':
+      toast(s.mood === 'bad'
+        ? '📋 The Boss stood up and read the floor like a list of names. Walk incoming — be at your desk.'
+        : '📋 The Boss stood up and looked at the floor like a to-do list. Walk incoming.');
+      break;
+    case 'dennisescort':
+      toast(G.dennisWalked(g, Math.floor(world.clockMin)));
+      W.playerGoHome(world);
+      break;
+    case 'adamconcernstart':
+      toast('📋 Adam is walking to HR with “a concern.” Intercept him — or let nature take its course.');
+      break;
+    case 'adamconcern':
+      G.adamConcernLanded(g, Math.floor(world.clockMin));
+      toast('Adam reached HR. A concern was raised. A folder was opened. HR heat rises.');
+      break;
+    case 'adamredirected': {
+      const res = G.adamRedirected(g, Math.floor(world.clockMin));
+      if(res.dso){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast(res.text);
+      W.playerGoHome(world);
+      break;
+    }
+    case 'adamgrenade': {
+      const res = G.adamGrenade(g, Math.floor(world.clockMin));
+      const n = W.applyGrenade(world, res.bypass);
+      if(res.dso){ setMeter('soul', g.soul); applyDelta('soul', res.dso); }
+      toast(res.text + (res.bypass && n > 0 ? ' (' + n + ' cleared.)' : ''));
+      break;
+    }
+    case 'demoprep':
+      toast('☕ Priya is set up in the meeting room early. The demo laptop is open. Unattended.');
+      break;
+    case 'precollect': {
+      const t = G.priyaPreCollect(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      W.playerGoHome(world);
+      break;
+    }
+    case 'preplant': {
+      const t = G.priyaPrePlant(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      W.playerGoHome(world);
+      break;
+    }
+    case 'coolhr': {
+      const t = G.coolHR(g, Math.floor(world.clockMin));
+      if(t) toast(t);
+      W.playerGoHome(world);
+      break;
+    }
     case 'bradempty':
       toast('Brad cased your empty desk. Empty inbox, nothing to take. He left disappointed in you specifically.');
       break;
@@ -1033,8 +1221,16 @@ function openIncident(id){
   $id('tag').textContent = def.tag;
   $id('etitle').textContent = def.title;
   $id('escene').textContent = def.scene;
+  // pre-demo work pays off here: a planted file auto-detonates (no choices —
+  // you chose earlier, in the empty room); a collected log drops that option
+  if(id === 'priya_demo' && g.npcState.priya.flags.preBaited){
+    const baitIdx = def.choices.findIndex(c => c.key === 'bait');
+    chooseIncident(baitIdx >= 0 ? baitIdx : 0);
+    return;
+  }
   const box = $id('choices'); box.innerHTML = '';
   def.choices.forEach((c, i) => {
+    if(id === 'priya_demo' && c.key === 'collect' && G.hasReceipt(g, 'priya_commit_log')) return;
     const b = document.createElement('button');
     b.className = 'choice'; b.textContent = c.t;
     b.dataset.idx = i;                 // movie-mode autopilot picks by data-idx
@@ -1236,6 +1432,7 @@ function endGame(){
   clearSave();
   offerResume();
   screens('end');
+  recordStories();
   $id('fin-standing').textContent = g.standing;
   $id('fin-soul').textContent = g.soul;
   $id('fin-money').textContent = G.fmt(g.money);
