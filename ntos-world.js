@@ -254,6 +254,11 @@ function newDay(seed, day, plan, flags){
     const kayla = getActor(w, 'kayla');
     if(kayla){ kayla.x = KITCHEN_CORNER.x; kayla.y = KITCHEN_CORNER.y; kayla.pinned = true; kayla.mood = 'bad'; }
   }
+  // Priya's build week: heads down at her desk, visibly, until the demo lands
+  if(flags.priyaGrind){
+    const priya = getActor(w, 'priya');
+    if(priya) priya.pinned = true;
+  }
   w.kaylaTaskTaken = false;
   w.kaylaReported = false;
   w.webinarAnnounced = false;
@@ -449,7 +454,14 @@ function step(w, dt){
   if(w.nextEvent < w.events.length){
     const ev = w.events[w.nextEvent];
     if(ev.status === 'pending' && w.clockMin >= ev.atMin){
-      const owner = getActor(w, ev.owner);
+      let owner = getActor(w, ev.owner);
+      // the owner left the floor mid-day (fired, sent home): somebody else
+      // delivers the news — a card may never strand the day
+      if(!owner || owner.off){
+        const sub = ['marcus', 'priya', 'kayla', 'boss', 'hr']
+          .find(id => { const a = getActor(w, id); return a && !a.off; });
+        if(sub){ ev.owner = sub; owner = getActor(w, sub); }
+      }
       if(owner && !owner.off
          && (owner.state === 'idle' || owner.state === 'walking' || owner.state === 'returning')){
         owner.path = [];
@@ -758,6 +770,12 @@ function statusOf(w, actor){
       chat: !w.chatted[actor.id],           // "chat" = walk over and sit with her
       sitWith: !w.chatted[actor.id],
       kaylatask: !w.kaylaTaskTaken };
+  }
+  // Priya's build week: the grind is visible from her status line
+  if(actor.id === 'priya' && w.flags && w.flags.priyaGrind && !actor.off){
+    return { name: actor.name, role: actor.role, mood: actor.mood, face: '🎧',
+      line: 'Do not ask if it’s done. It’s almost done. It has been almost done at 2 AM three nights running.',
+      chat: !!actor.chat && !w.chatted[actor.id] };
   }
   if(actor.id === 'hr' && w.flags && w.flags.kaylaPanic && !w.kaylaReported){
     return { name: actor.name, role: actor.role, mood: actor.mood,

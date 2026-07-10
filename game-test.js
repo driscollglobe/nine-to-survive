@@ -888,6 +888,102 @@ ok('the temper never touches losses or the struggling', (() => {
   return r1.dso === -1 && r2.dso === 3;
 })());
 
+// ---- 16e. Priya's arc: every branch ---------------------------------------------
+function toDemo(seed){
+  const g2 = G.newGame(seed);
+  g2.activeArcs = { marcus_survivor: true, priya_credit: true };   // isolate the arc under test
+  let guard = 0;
+  while(!g2.todayIncidents.some(i => i.id === 'priya_demo') && guard++ < 12){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 60; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return g2;
+}
+const gPd = toDemo(901);
+ok('the build is visible before the demo: grind flag + feed', (() => {
+  const g2 = G.newGame(901);
+  g2.activeArcs.priya_credit = true;
+  let sawGrind = false, sawFeed = false;
+  for(let d = 0; d < 10; d++){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 60; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+    if(G.worldFlagsFor(g2).priyaGrind) sawGrind = true;
+    if(g2.feed.some(f => /commit history has no gaps/.test(f.text))) sawFeed = true;
+  }
+  return sawGrind && sawFeed;
+})());
+ok('demo day: staged with Brad presenting', gPd.arcs.priya_credit.stage === 2
+  && gPd.todayIncidents.some(i => i.id === 'priya_demo' && i.owner === 'brad'));
+ok('if Brad is out of play, the Boss presents', (() => {
+  const g2 = G.newGame(902);
+  g2.activeArcs.priya_credit = true;
+  g2.npcState.brad.flags.fired = true;
+  let guard = 0;
+  while(!g2.todayIncidents.some(i => i.id === 'priya_demo') && guard++ < 12){
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 60; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return g2.todayIncidents.some(i => i.id === 'priya_demo' && i.owner === 'boss');
+})());
+// branch: BACK HER PUBLICLY
+const gPr1 = toDemo(901); gPr1.standing = 50; gPr1.soul = 50;
+const rPr1 = G.applyIncidentChoice(gPr1, 'priya_demo', 0, 800);
+ok('back publicly: −3/+5, trust +3, flagged', rPr1.ds === -3 && rPr1.dso === 5
+  && gPr1.npcState.priya.trust === 3 && gPr1.npcState.priya.flags.backed
+  && G.storyKey(gPr1) === 'priya_backed');
+// branch: DM
+const gPr2 = toDemo(901); gPr2.soul = 50;
+G.applyIncidentChoice(gPr2, 'priya_demo', 1, 800);
+ok('DM support: trust +1, quiet', gPr2.npcState.priya.trust === 1 && gPr2.npcState.priya.flags.dmed);
+// branch: COLLECT THE RECEIPT
+const gPr3 = toDemo(901);
+G.applyIncidentChoice(gPr3, 'priya_demo', 2, 800);
+ok('collect: priya_commit_log banked', G.hasReceipt(gPr3, 'priya_commit_log')
+  && gPr3.npcState.priya.flags.collected);
+ok('the held receipt matters later: Credit Reassigned gains the commit-log play', (() => {
+  const extras = G.extraChoicesFor(gPr3, 2);
+  return extras.some(x => x.key === 'burn_commit_log');
+})());
+ok('burning the commit log reverses the theft and credits her', (() => {
+  gPr3.standing = 50; gPr3.soul = 50;
+  const r = G.applyExtraChoice(gPr3, 2, 'burn_commit_log', 820);
+  return r.ds === 8 && r.dso === 6 && !G.hasReceipt(gPr3, 'priya_commit_log')
+    && gPr3.npcState.priya.trust >= 2
+    && G.extraChoicesFor(gPr3, 2).every(x => x.key !== 'burn_commit_log');
+})());
+// branch: LET IT SLIDE
+const gPr4 = toDemo(901); gPr4.soul = 50;
+const rPr4 = G.applyIncidentChoice(gPr4, 'priya_demo', 3, 800);
+ok('let it slide: Soul −4, dead-eyed headline', rPr4.dso === -4 && gPr4.npcState.priya.flags.slid
+  && (() => { G.closeDay(gPr4, { tasksDone: 8, tasksTotal: 8 });
+       return /The team was one person/.test(G.dayHeadline(gPr4)); })());
+// branch: BAIT — seeded, both outcomes occur across seeds
+let baitWins = 0, baitLosses = 0, winG = null, loseG = null;
+for(let sd = 901; sd < 941; sd++){
+  const g2 = toDemo(sd); g2.standing = 50; g2.soul = 50;
+  const r = G.applyIncidentChoice(g2, 'priya_demo', 4, 800);
+  if(g2.npcState.priya.flags.baitWon){ baitWins++; winG = winG || { g: g2, r }; }
+  else if(g2.npcState.priya.flags.baitLost){ baitLosses++; loseG = loseG || { g: g2, r }; }
+}
+ok('bait is seeded: both outcomes occur', baitWins > 0 && baitLosses > 0,
+  baitWins + ' wins / ' + baitLosses + ' losses of 40');
+ok('bait win: +8 Standing, Brad rattled, comedy in the outcome', winG.r.ds === 8
+  && winG.g.npcState.brad.stress === 3 && /divides by zero/.test(winG.r.outcome));
+ok('bait loss: −7 Standing, the apology deck is about you', loseG.r.ds === -7
+  && /apology deck/.test(loseG.r.outcome));
+ok('the aftermath thanks “the team”', (() => {
+  const g2 = toDemo(901);
+  G.applyIncidentChoice(g2, 'priya_demo', 0, 800);
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  g2.standing = 60; g2.soul = 60; g2.failed = null; g2.over = false;
+  G.nextDay(g2);
+  return g2.arcs.priya_credit.stage === 3
+    && g2.feed.some(f => /thanked .the team./.test(f.text));
+})());
+
 // ---- 17. share copy carries the story ------------------------------------------
 const gS0 = G.newGame(501);
 ok('a storyless run falls back to the plain format', G.storyLine(gS0) === null

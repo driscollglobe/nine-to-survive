@@ -353,6 +353,22 @@ ok('no tasks ship during Resilience & You', wW.tasks.done === 0 && wW.clockMin <
 const afterSig = stepUntil(wW, 60, ['taskdone']);
 ok('work resumes when the webinar ends', !!afterSig && wW.clockMin >= 630);
 
+// ---- 11g. Priya's build week + absent-owner delivery --------------------------------------
+const wPg = W.newDay(81, 6, [], { priyaGrind: true });
+const priyaG = W.getActor(wPg, 'priya');
+ok('the grind is visible: pinned at her desk, status shifted', priyaG.pinned === true
+  && /almost done/.test(W.statusOf(wPg, priyaG).line));
+// an event whose owner has left the floor still gets delivered
+const wSub = W.newDay(83, 6, [], { incidents: [{ id: 'priya_demo', owner: 'kayla', atMin: 560 }] });
+wSub.bossWalks = []; wSub.bradRaids = []; wSub.crunch = null;
+W.getActor(wSub, 'kayla').off = true;                       // she was sent home
+const subSig = stepUntil(wSub, 120, ['arcincident']);
+ok('an off-floor owner is substituted — the card never strands', !!subSig
+  && subSig.id === 'priya_demo', subSig ? 'delivered' : 'STRANDED');
+W.resolveEncounter(wSub);
+const subOver = stepUntil(wSub, 500, ['dayover']);
+ok('and 5 PM still arrives', !!subOver);
+
 // ---- 12. SOAK: full careers through the real pipeline ---------------------------------
 // A bot plays whole days exactly the way the shell does: newDay each morning,
 // step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.

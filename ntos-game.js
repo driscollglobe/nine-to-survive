@@ -347,7 +347,8 @@ const NineToSurvive = (() => {
     { key: 'brad_second_job', wt: 0.5 },   // the scandal headlines a minority of runs
     { key: 'boss_spiral', wt: 1 },
     { key: 'hr_survey', wt: 1 },
-    { key: 'kayla_presentation', wt: 1 }
+    { key: 'kayla_presentation', wt: 1 },
+    { key: 'priya_credit', wt: 1 }
   ];
   function pickArcs(runSeed){
     const r = localRand((runSeed ^ hashStr('arc_select')) | 0);
@@ -685,6 +686,52 @@ const NineToSurvive = (() => {
       }
     },
 
+    // PRIYA BUILT THE THING. Six late nights of visible grind, then Brad demos
+    // it and the Boss thanks "the team." Stages: 0 dormant · 1 the build (two
+    // days, feed notices, she doesn't leave her desk) · 2 demo day (the card) ·
+    // 3 aftermath · 4 filed. If Brad is already out of play, the Boss presents
+    // it himself — credit rolls uphill either way.
+    priya_credit: {
+      npc: 'priya',
+      advance(g, a){
+        const priya = g.npcState.priya;
+        if(a.stage === 0){
+          if(a.startDay == null)
+            a.startDay = 4 + Math.floor(localRand((g.runSeed ^ hashStr('priya_start')) | 0)() * 4);
+          if(g.day >= a.startDay){
+            a.stage = 1; priya.stress = 2;
+            pushFeed(g, 547, 'Priya’s commit history has no gaps this week. Including the 2 AMs.');
+          }
+        } else if(a.stage === 1){
+          if(g.day >= a.startDay + 2){
+            a.stage = 2;
+            a.presenter = bradOutOfPlay(g) ? 'boss' : 'brad';
+            pushFeed(g, 542, 'Demo at 2:00. Presenter: ' + (a.presenter === 'brad' ? 'Brad' : 'the Boss')
+              + '. Builder: not the presenter.');
+            g.todayIncidents.push({ id: 'priya_demo', owner: a.presenter,
+              atMin: 780 + Math.floor(arcRand(g, 'priya', 'demo')() * 120) });
+          } else {
+            pushFeed(g, 552, 'Priya declined two meetings. The thing is almost the thing.');
+          }
+        } else if(a.stage === 2){
+          if(!priya.counters.demoDay){
+            // unanswered somehow: the demo re-runs (nothing strands)
+            g.todayIncidents.push({ id: 'priya_demo', owner: a.presenter || 'brad',
+              atMin: 780 + Math.floor(arcRand(g, 'priya', 'demo')() * 120) });
+          } else {
+            a.stage = 3;
+            pushFeed(g, 544, 'The Boss thanked “the team” for the dashboard. The team checked its one-person Slack channel and said nothing.');
+            if(priya.flags.backed)
+              pushFeed(g, 560, 'Someone renamed the dashboard file to include a byline. IT did not object.');
+            else if(priya.flags.baitWon)
+              pushFeed(g, 560, 'Slide four is now a teaching moment. Attendance at the retro is mandatory.');
+          }
+        } else if(a.stage === 3){
+          a.stage = 4;
+        }
+      }
+    },
+
     // THE ANONYMOUS SURVEY IS NOT. Meredith launches a Pulse Survey; the next
     // day she starts identifying authors, for culture. Stages: 0 dormant ·
     // 1 survey day (the card comes) · 2 the hunt · 3 filed. The comedy target
@@ -768,6 +815,23 @@ const NineToSurvive = (() => {
           o:'You turn back to your monitor and let the universe keep its own books. Whatever happens to Brad now was always going to happen. You are merely no longer load-bearing.' }
       ]
     },
+    priya_demo: {
+      tag: 'Incident · The Demo',
+      title: 'Built by Priya. Presented by Someone Else.',
+      scene: 'The dashboard Priya built across six late nights is on the big screen, driven with the confidence of authorship by someone who did not author it. “Something I’ve been noodling on,” he says. Priya is in the second row, holding a coffee she isn’t drinking. The commit log is one tab away. Everyone can see the screen. Only you are looking at her.',
+      choices: [
+        { key:'back', t:'“Quick context — this is Priya’s build. She should walk us through it.”', s:-3, so:+5,
+          o:'The room recalibrates. “Obviously a team effort,” the presenter says, at a volume that means it wasn’t. Priya walks the room through it in nine flawless minutes, and something in the org chart shifts a millimeter.' },
+        { key:'dm', t:'DM her: “Everyone knows. For what it’s worth.”', s:0, so:+3,
+          o:'“ha. thanks.” Two seconds later: “it’s fine.” It is not fine, and you have contributed one (1) grape to the fineness. Still — witnessed beats invisible.' },
+        { key:'collect', t:'Screenshot the commit log. Every line has her name on it.', s:0, so:+1,
+          o:'Authorship, timestamped, saved. You fixed nothing today. You made it fixable.' },
+        { key:'slide', t:'Let it slide. The demo is going great.', s:+1, so:-4,
+          o:'The demo lands. The presenter bows at the neck. Priya closes her laptop with two hands, quietly, like it’s a casket. Your monitor is suddenly fascinating.' },
+        { key:'bait', t:'Swap in the flawed backup file before the demo starts.', s:0, so:0,
+          o:'(the swap goes in)' }
+      ]
+    },
     hr_survey: {
       tag: 'Incident · The Pulse Survey',
       title: '“Anonymous. We Promise.”',
@@ -830,6 +894,40 @@ const NineToSurvive = (() => {
       } else {
         a.stage = 5;
         pushFeed(g, min, 'Brad turned his desk eleven degrees away from the aisle. Feng shui, he said.');
+      }
+    }
+    if(id === 'priya_demo'){
+      const priya = g.npcState.priya;
+      priya.counters.demoDay = g.day;
+      if(c.key === 'back'){
+        priya.trust += 3; priya.flags.backed = true;
+        g.npcState.brad.stress = Math.min(3, g.npcState.brad.stress + 1);
+        pushFeed(g, min, 'Someone said “this is Priya’s build” out loud, in the room, on the record.');
+      } else if(c.key === 'dm'){
+        priya.trust += 1; priya.flags.dmed = true;
+      } else if(c.key === 'collect'){
+        addReceipt(g, 'priya_commit_log');
+        priya.flags.collected = true;
+        pushFeed(g, min, 'A commit log was screenshotted. Git remembers everything. So, now, do you.');
+      } else if(c.key === 'slide'){
+        priya.flags.slid = true;
+        pushFeed(g, min, 'The demo was flawless. The credits were fiction. Productivity held.');
+      } else if(c.key === 'bait'){
+        priya.flags.baited = true;
+        if(arcRand(g, 'priya', 'bait')() < 0.5){
+          priya.flags.baitWon = true;
+          priya.trust += 2; g.npcState.brad.stress = 3;
+          const d2 = applyStoryDelta(g, +8, 0);
+          g.lastChoice = { choiceIndex, ds: d.ds + d2.ds, dso: d.dso + d2.dso,
+            outcome: 'Slide four divides by zero, live, on the projector. The presenter, who “built this,” cannot say why. Priya, asked to help, fixes it in forty seconds with HER NAME in the file path on screen. You are a terrible person. The day is perfect.' };
+          return g.lastChoice;
+        }
+        priya.flags.baitLost = true;
+        const d3 = applyStoryDelta(g, -7, 0);
+        pushFeed(g, min, 'IT traced a file swap “in about ten minutes, honestly.” HR was less impressed than IT.');
+        g.lastChoice = { choiceIndex, ds: d.ds + d3.ds, dso: d.dso + d3.dso,
+          outcome: 'The swap traces to your login by end of day. IT is impressed. HR is not. The presenter delivers an apology deck — about you. It has your headshot in it.' };
+        return g.lastChoice;
       }
     }
     if(id === 'hr_survey'){
@@ -943,8 +1041,10 @@ const NineToSurvive = (() => {
     const hs = A.hr_survey || { stage: 0 };
     const ka = A.kayla_presentation || { stage: 0 };
     const br = A.brad_second_job || { stage: 0 };
+    const pr = A.priya_credit || { stage: 0 };
     return bo.stage === 1 || hs.stage === 1 || hs.stage === 2 || ka.stage === 1
-      || (br.stage >= 3 && br.stage <= 6);   // carrying his secret is also work
+      || (br.stage >= 3 && br.stage <= 6)    // carrying his secret is also work
+      || pr.stage === 1 || pr.stage === 2;   // so is watching the credit line
   }
 
   // The dead-eyed play: you watched and kept shipping. Priced at day end.
@@ -991,14 +1091,31 @@ const NineToSurvive = (() => {
   // a fourth choice that burns it to reverse the theft, with interest.
   const CREDIT_ENC = 2;
   function extraChoicesFor(g, encIdx){
+    const extras = [];
     if(encIdx === CREDIT_ENC && hasReceipt(g, 'screenshot_brad_deck') && !bradOutOfPlay(g)){
-      return [{ key: 'burn_screenshot',
-        t: '“Quick question before we move on — Brad, how’s Q3 tracking at the other place?” Screen-share the screenshot.' }];
+      extras.push({ key: 'burn_screenshot',
+        t: '“Quick question before we move on — Brad, how’s Q3 tracking at the other place?” Screen-share the screenshot.' });
     }
-    return [];
+    if(encIdx === CREDIT_ENC && hasReceipt(g, 'priya_commit_log') && !bradOutOfPlay(g)){
+      extras.push({ key: 'burn_commit_log',
+        t: '“Hold on — pull up the commit log. Every line of the last one had a name on it too.”' });
+    }
+    return extras;
   }
   function applyExtraChoice(g, encIdx, key, min){
-    if(key !== 'burn_screenshot' || encIdx !== CREDIT_ENC) return null;
+    if(encIdx !== CREDIT_ENC) return null;
+    if(key === 'burn_commit_log'){
+      if(!burnReceipt(g, 'priya_commit_log')) return null;
+      const d = applyStoryDelta(g, +8, +6);
+      const brad = g.npcState.brad;
+      brad.trust -= 2; brad.stress = Math.min(3, brad.stress + 1);
+      g.npcState.priya.trust += 2;
+      pushFeed(g, min, 'A commit log appeared on the big screen. Authorship stopped being a vibe.');
+      g.lastChoice = { choiceIndex: 'burn_commit_log', ds: d.ds, dso: d.dso,
+        outcome: 'You put Priya’s commit log on the screen next to Brad’s “initiative.” Same move, same guy, receipts this time. The boss looks at Brad the way auditors look at expense reports. Your analysis is yours again — and so, retroactively, is hers.' };
+      return g.lastChoice;
+    }
+    if(key !== 'burn_screenshot') return null;
     if(!burnReceipt(g, 'screenshot_brad_deck')) return null;
     const d = applyStoryDelta(g, +10, +8);   // the theft, reversed, with interest
     const brad = g.npcState.brad;
@@ -1042,9 +1159,11 @@ const NineToSurvive = (() => {
     const ka = A.kayla_presentation || { stage: 0 };
     const brad = (g.npcState && g.npcState.brad) || { flags: {} };
     const kayla = (g.npcState && g.npcState.kayla) || { flags: {} };
+    const pr = A.priya_credit || { stage: 0 };
     return {
       kaylaPanic:     ka.stage === 1 && !kayla.flags.toldHR,
       webinarUntil:   (ka.stage === 2 && ka.webinarDay === g.day) ? 630 : null,
+      priyaGrind:     pr.stage === 1 || pr.stage === 2,   // heads-down until the demo lands
       bradLaptop:     b.stage >= 1 && b.stage <= 6,   // the second laptop, drawn
       bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
@@ -1147,6 +1266,14 @@ const NineToSurvive = (() => {
       return d + 'you became the corner office’s emotional support animal.';
     if(boss.counters.callDay === rep.day)
       return d + 'a quick call was survived at async speed.';
+    const priyaC = g.npcState.priya;
+    if(priyaC.counters.demoDay === rep.day){
+      if(priyaC.flags.backed) return d + 'you said her name in a room where it counted.';
+      if(priyaC.flags.baitWon) return d + 'Brad demoed the wrong file, beautifully.';
+      if(priyaC.flags.baitLost) return d + 'a file swap traced back to your login in one afternoon.';
+      if(priyaC.flags.slid) return d + 'the team was thanked. The team was one person.';
+      return d + 'a demo happened. The commit log knows more than the room does.';
+    }
     if(g.npcState.meredith.counters.surveyDay === rep.day)
       return d + 'HR discovered anonymity has a font.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.toldHR)
@@ -1358,6 +1485,10 @@ const NineToSurvive = (() => {
       case 'marcus_saved':
         return 'Marcus said one sentence over coffee that saved my quarter. He has seen this exact quarter before.';
       case 'priya_backed':
+        if(g.npcState.priya.flags.baitWon)
+          return 'Brad demoed Priya’s stolen dashboard, so I fed him a flawed file. Slide four divided by zero, live. She fixed it with her name on screen.';
+        if(g.npcState.priya.flags.baitLost)
+          return 'I sabotaged the demo of Priya’s stolen work. IT traced it to me in an afternoon. Worth it. Mostly.';
         return 'Brad demoed Priya’s work, so I put her name back on it in front of everyone who mattered.';
       case 'dennis_broken':
         return 'I outlasted Dennis. Approval by approval, question by question. The Pipe flows for me now.';
