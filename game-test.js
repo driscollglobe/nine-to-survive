@@ -1195,6 +1195,23 @@ ok('collapsing Soul forces recovery even off-streak', (() => {
 ok('nothing to fix: go be at your desk', (() => {
   return G.policyAction(G.newGame(801), fakeWorld()).type === 'home';
 })());
+ok('TASK 6 case: back Priya publicly from comfort, else DM', (() => {
+  const t = G.newGame(802);
+  t.standing = 60; const a = G.policyIncidentChoice(t, 'priya_demo');
+  t.standing = 45; const b = G.policyIncidentChoice(t, 'priya_demo');
+  return a === 0 && b === 1;
+})());
+ok('TASK 6 case: approvals — shield when 2+ stuck, Pipe when idle, else work on', (() => {
+  const t = G.newGame(802);
+  const w2 = fakeWorld({ tasks: { pending: 0, done: 0, total: 8, blocked: 2 } });
+  t.npcState.marcus.flags.shield = true;
+  const a = G.policyAction(t, w2).type;
+  delete t.npcState.marcus.flags.shield;
+  const b = G.policyAction(t, w2).type;
+  const w3 = fakeWorld({ tasks: { pending: 3, done: 0, total: 8, blocked: 1 } });
+  const c = G.policyAction(t, w3).type;
+  return a === 'dennis_tip' && b === 'approval' && c === 'home';
+})());
 ok('policy is pure: same inputs, same action', (() => {
   const t = G.newGame(801);
   return JSON.stringify(G.policyAction(t, fakeWorld())) === JSON.stringify(G.policyAction(t, fakeWorld()));

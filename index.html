@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n17"></script>
+<script src="ntos-game.js?v=n18"></script>
 <script src="ntos-world.js?v=w17"></script>
 <style>
 :root{
@@ -913,6 +913,10 @@ if(MOVIE){
       else if(act.type === 'chat') W.requestChat(world, act.id);
       else if(act.type === 'bosscall') W.goForBossCall(world);
       else if(act.type === 'approval') W.goForApproval(world);
+      else if(act.type === 'dennis_tip' && G.useShieldForDennis(g)){
+        const clearedN = W.clearAllBlocked(world);
+        G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'tip', clearedN);
+      }
       else if(act.type === 'home' && !W.playerAtDesk(world)){
         const you = W.getActor(world, 'you');
         if(!you.path.length) W.playerGoHome(world);

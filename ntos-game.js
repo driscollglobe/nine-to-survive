@@ -1435,6 +1435,7 @@ const NineToSurvive = (() => {
     if(id === 'brad_discovery') return g.soul < 25 ? 2 : 0;   // screenshot, unless drowning
     if(id === 'hr_survey') return hasReceipt(g, 'hr_survey_metadata') ? 2 : 3;  // metadata, else help
     if(id === 'boss_quick_call') return g.soul >= 65 ? 0 : 1; // sympathy only from comfort
+    if(id === 'priya_demo') return g.standing >= 55 ? 0 : 1;  // back her publicly from comfort, else DM
     return 0;
   }
 
@@ -1472,8 +1473,11 @@ const NineToSurvive = (() => {
       if(pick) return { type: 'chat', id: pick };
       // the recovery economy is spent; nothing left but the desk
     }
-    // approvals: batch them into idle time — the walk to The Pipe costs more
-    // than the miss unless the desk is empty anyway
+    // approvals, cheapest path first: Marcus's phrase when 2+ are stuck (free
+    // and instant), else batch a Pipe trip into idle time. Receipts are never
+    // burned on Dennis — they're story capital.
+    if(w.tasks && w.tasks.blocked >= 2 && g.npcState.marcus && g.npcState.marcus.flags.shield)
+      return { type: 'dennis_tip' };
     if(w.tasks && w.tasks.blocked > 0 && w.tasks.pending === 0) return { type: 'approval' };
     return { type: 'home' };
   }

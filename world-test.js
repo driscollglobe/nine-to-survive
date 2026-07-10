@@ -478,6 +478,10 @@ function soakRun(seed, opts){
           else if(act.type === 'chat') W.requestChat(w, act.id);
           else if(act.type === 'bosscall') W.goForBossCall(w);
           else if(act.type === 'approval') W.goForApproval(w);
+          else if(act.type === 'dennis_tip' && G.useShieldForDennis(g)){
+            const cleared = W.clearAllBlocked(w);
+            G.dennisApprovalCleared(g, Math.floor(w.clockMin), 'tip', cleared);
+          }
           else if(act.type === 'home' && !W.playerAtDesk(w)){
             const you = W.getActor(w, 'you');
             if(!you.path.length) W.playerGoHome(w);
