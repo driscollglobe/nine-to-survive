@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n16"></script>
-<script src="ntos-world.js?v=w16"></script>
+<script src="ntos-game.js?v=n17"></script>
+<script src="ntos-world.js?v=w17"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -447,7 +447,13 @@ function showStatus(actor, sx, sy){
     + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">' + (s.sitWith ? 'Walk over & sit with her' : 'Walk over & chat') + '</span>' : '')
     + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '')
     + (s.kaylatask ? '<span class="schat" onclick="takeKaylaTask()">Take one of her tasks</span>' : '')
-    + (s.reportkayla ? '<span class="schat" onclick="reportKaylaToHR()">Mention Kayla to HR</span>' : '');
+    + (s.reportkayla ? '<span class="schat" onclick="reportKaylaToHR()">Mention Kayla to HR</span>' : '')
+    + (s.approval ? '<span class="schat" onclick="carryToPipe()">Carry a file to The Pipe</span>' : '')
+    + (s.flatter ? '<span class="schat" onclick="flatterDennis()">“Nineteen years — wow.”</span>' : '')
+    + (s.approval && G.DENNIS_BURN_ORDER.some(r => G.hasReceipt(g, r))
+        ? '<span class="schat" onclick="burnForDennis()">🧾 Burn a receipt (clears all)</span>' : '')
+    + (s.approval && g.npcState.marcus.flags.shield
+        ? '<span class="schat" onclick="tipForDennis()">Use Marcus’s phrase (clears all)</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -468,6 +474,31 @@ function takeKaylaTask(){
 function reportKaylaToHR(){
   hideStatus();
   if(W.reportKayla(world)) toast('You mention it to Meredith. Gently. Meaning well. Watch.');
+}
+function carryToPipe(){
+  hideStatus();
+  if(W.goForApproval(world)) toast('Carrying the file to The Pipe. Bring answers. He has questions.');
+}
+function flatterDennis(){
+  hideStatus();
+  if(W.flatterDennis(world)) toast('Walking over to admire nineteen years of institutional knowledge…');
+}
+function burnForDennis(){
+  hideStatus();
+  const name = G.burnReceiptForDennis(g);
+  if(!name) return;
+  const n = W.clearAllBlocked(world);
+  G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'receipt', n);
+  toast('Receipt burned (' + name.replace(/_/g, ' ') + '). ' + n + ' approval' + (n > 1 ? 's' : '') + ' cleared, instantly.');
+  saveRun('day');
+}
+function tipForDennis(){
+  hideStatus();
+  if(!G.useShieldForDennis(g)) return;
+  const n = W.clearAllBlocked(world);
+  G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'tip', n);
+  toast('“Load-bearing deliverable.” Dennis blinks. ' + n + ' approval' + (n > 1 ? 's' : '') + ' cleared.');
+  saveRun('day');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -609,7 +640,8 @@ function loop(t){
     const parts = c.split(' ');
     return '<b>' + parts[0] + '</b> ' + parts[1];
   })();
-  $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
+  $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting'
+    + (world.tasks.blocked ? ' · ' + world.tasks.blocked + ' NEED APPROVAL' : '');
   $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
   if(g.feed.length !== feedShown) renderFeed();
   // a crunch bonus can bank the number mid-day: the door goes live immediately
@@ -694,6 +726,21 @@ function handleSignal(s){
     }
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
+    case 'taskblocked':
+      toast('A task arrived marked NEEDS APPROVAL. Dennis has questions. (' + s.blocked + ' stuck)');
+      break;
+    case 'approved':
+      G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'waited');
+      toast('Questions answered. One file unstuck. ' + (s.blocked ? s.blocked + ' still held.' : 'The Pipe is clear.'));
+      W.playerGoHome(world);
+      break;
+    case 'flattered': {
+      worldEffect('dennisFlatter');
+      G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'flattered');
+      toast('He approved one mid-anecdote. Soul −2. ' + (s.blocked ? s.blocked + ' still held.' : 'All clear.'));
+      W.playerGoHome(world);
+      break;
+    }
     case 'taskdone': {
       const res = worldEffect('taskDone');
       SFX.task();
@@ -865,6 +912,7 @@ if(MOVIE){
       else if(act.type === 'couch') W.goForCouch(world);
       else if(act.type === 'chat') W.requestChat(world, act.id);
       else if(act.type === 'bosscall') W.goForBossCall(world);
+      else if(act.type === 'approval') W.goForApproval(world);
       else if(act.type === 'home' && !W.playerAtDesk(world)){
         const you = W.getActor(world, 'you');
         if(!you.path.length) W.playerGoHome(world);

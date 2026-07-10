@@ -984,6 +984,56 @@ ok('the aftermath thanks “the team”', (() => {
     && g2.feed.some(f => /thanked .the team./.test(f.text));
 })());
 
+// ---- 16f. Dennis the blocker: brain side --------------------------------------------
+ok('blocker days are seeded around one-in-four', (() => {
+  let hot = 0;
+  const g2 = G.newGame(1101);
+  for(let d = 0; d < 160; d++){
+    if(g2.dennisBlockerToday) hot++;
+    G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+    g2.standing = 60; g2.soul = 60; g2.failed = null; g2.over = false;
+    G.nextDay(g2);
+  }
+  return hot >= 160 * 0.12 && hot <= 160 * 0.40;
+})());
+ok('blocker roll is deterministic and serialized on g', (() => {
+  const a = G.newGame(1102), b = G.newGame(1102);
+  for(let d = 0; d < 6; d++){
+    if(a.dennisBlockerToday !== b.dennisBlockerToday) return false;
+    [a, b].forEach(x => { G.closeDay(x, { tasksDone: 8, tasksTotal: 8 });
+      x.standing = 60; x.soul = 60; x.failed = null; x.over = false; G.nextDay(x); });
+  }
+  return typeof a.dennisBlockerToday === 'boolean'
+    && G.worldFlagsFor(a).dennisBlocker === a.dennisBlockerToday;
+})());
+ok('flattery is priced: Soul −2', G.WORLD_EFFECTS.dennisFlatter.so === -2);
+ok('receipt burn order: least precious first', (() => {
+  const g2 = G.newGame(1103);
+  G.addReceipt(g2, 'screenshot_brad_deck');
+  G.addReceipt(g2, 'hr_survey_metadata');
+  const first = G.burnReceiptForDennis(g2);
+  return first === 'hr_survey_metadata' && G.hasReceipt(g2, 'screenshot_brad_deck')
+    && G.burnReceiptForDennis(g2) === 'screenshot_brad_deck'
+    && G.burnReceiptForDennis(g2) === null;
+})());
+ok('the Marcus phrase unsticks Dennis and counts as a save', (() => {
+  const g2 = G.newGame(1104);
+  g2.npcState.marcus.flags.shield = true;
+  return G.useShieldForDennis(g2) === true && !g2.npcState.marcus.flags.shield
+    && g2.npcState.marcus.counters.saves === 1 && G.useShieldForDennis(g2) === false;
+})());
+ok('cleared approvals feed the counters, the headline, and the story', (() => {
+  const g2 = G.newGame(1105);
+  G.dennisApprovalCleared(g2, 700, 'waited');
+  G.dennisApprovalCleared(g2, 720, 'flattered');
+  G.dennisApprovalCleared(g2, 740, 'receipt', 2);
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  return g2.npcState.dennis.counters.approvalsCleared === 4
+    && /family land/.test(G.dayHeadline(g2))
+    && G.storyKey(g2) === 'dennis_broken'
+    && g2.feed.some(f => /family land/.test(f.text));
+})());
+
 // ---- 17. share copy carries the story ------------------------------------------
 const gS0 = G.newGame(501);
 ok('a storyless run falls back to the plain format', G.storyLine(gS0) === null

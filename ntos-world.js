@@ -57,6 +57,8 @@ const COUCH_SPOT  = { x:3,  y:21 };
 const EXIT_SPOT   = { x:1,  y:17 };
 const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
 const KITCHEN_CORNER = { x:24, y:12 };   // where Kayla "gets water" on the bad day
+const APPROVAL_SPOT = { x:34, y:21 };    // The Pipe: where approvals go to be questioned
+const APPROVAL_WAIT_SECS = 6;            // his questions, answered in real seconds
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -224,7 +226,8 @@ function newDay(seed, day, plan, flags){
     activeEvent: null,
     // the actual work: tasks land in your inbox through the day (load seeded below)
     tasks: { pending: 0, done: 0, spawned: 0, total: 0, progress: 0,
-             spawnAt: [] },
+             spawnAt: [], blocked: 0, blockedAt: [] },
+    flatteredDennis: false,
     // threats
     bossWalks: [],           // [{atMin, status:'pending'|'out'|'done'}]
     bradRaids: [],
@@ -267,6 +270,10 @@ function newDay(seed, day, plan, flags){
   w.tasks.spawnAt = [540, 540, 540];
   const drip = Math.floor(390 / Math.max(1, w.tasks.total - 3));
   for(let i = 3; i < w.tasks.total; i++) w.tasks.spawnAt.push(560 + (i - 3) * drip);
+  // Dennis's blocker day: some arrivals are marked needs-approval at staging
+  // (never the 9:00 three — the morning starts workable)
+  w.tasks.blockedAt = w.tasks.spawnAt.map((at, i) =>
+    !!flags.dennisBlocker && i >= 3 && rand(w) < 0.30);
   // boss floor-walks: two, spaced through the day (+1 while his arc runs hot)
   const walks = BOSS_WALKS_PER_DAY + (flags.extraBossWalks || 0);
   for(let i = 0; i < walks; i++)
@@ -333,8 +340,15 @@ function step(w, dt){
 
   // ---- task drip + working at your desk ----
   while(w.tasks.spawned < w.tasks.total && w.clockMin >= w.tasks.spawnAt[w.tasks.spawned]){
-    w.tasks.spawned++; w.tasks.pending++;
-    w.sig.push({ type:'task', pending: w.tasks.pending });
+    const needsApproval = !!w.tasks.blockedAt[w.tasks.spawned];
+    w.tasks.spawned++;
+    if(needsApproval){
+      w.tasks.blocked++;
+      w.sig.push({ type:'taskblocked', blocked: w.tasks.blocked });
+    } else {
+      w.tasks.pending++;
+      w.sig.push({ type:'task', pending: w.tasks.pending });
+    }
   }
   if(w.tasks.pending > 0 && playerAtDesk(w) && !you.path.length && !inWebinar){
     w.tasks.progress += dt / TASK_WORK_SECS;
@@ -423,6 +437,16 @@ function step(w, dt){
       sendTo(w, brad, brad.home, 'returning');                   // he's asked to "grab a room"
       hr.path = [];
       if(sendTo(w, hr, adjacentTo(w, brad.home), 'escort')) w.firing.phase = 'collect';
+    }
+  }
+
+  // ---- the approval wait: standing in The Pipe, answering the questions ----
+  if(w.playerErrand && w.playerErrand.type === 'approvalwait'){
+    w.playerErrand.t += dt;
+    if(w.playerErrand.t >= APPROVAL_WAIT_SECS){
+      w.playerErrand = null;
+      if(w.tasks.blocked > 0){ w.tasks.blocked--; w.tasks.pending++; }
+      w.sig.push({ type:'approved', blocked: w.tasks.blocked, pending: w.tasks.pending });
     }
   }
 
@@ -580,6 +604,22 @@ function arriveErrand(w, you){
     } else {
       w.playerErrand = null;
     }
+  } else if(e.type === 'approval'){
+    // you made it to The Pipe: now you wait out the questions, visibly
+    w.playerErrand = { type: 'approvalwait', t: 0 };
+  } else if(e.type === 'flatter'){
+    const dennis = getActor(w, 'dennis');
+    if(!dennis || dennis.off || !w.tasks.blocked){ w.playerErrand = null; }
+    else if(Math.hypot(dennis.x - you.x, dennis.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.tasks.blocked--; w.tasks.pending++;
+      w.sig.push({ type:'flattered', blocked: w.tasks.blocked, pending: w.tasks.pending });
+    } else if(e.repaths < 3){
+      e.repaths++;
+      sendTo(w, you, adjacentTo(w, dennis), 'errand');
+    } else {
+      w.playerErrand = null;
+    }
   } else if(e.type === 'quickcall'){
     const boss = getActor(w, 'boss');
     if(!w.summons || w.summons.status !== 'open'){
@@ -699,6 +739,30 @@ function reportKayla(w){
   w.kaylaReported = true;
   return true;
 }
+function goForApproval(w){
+  if(!w.tasks.blocked || w.playerErrand) return false;
+  const you = getActor(w, 'you');
+  if(!sendTo(w, you, APPROVAL_SPOT, 'errand')) return false;
+  w.playerErrand = { type: 'approval', repaths: 0 };
+  w.moveMarker = APPROVAL_SPOT;
+  return true;
+}
+function flatterDennis(w){
+  if(!w.tasks.blocked || w.flatteredDennis || w.playerErrand) return false;
+  const dennis = getActor(w, 'dennis');
+  const you = getActor(w, 'you');
+  if(!dennis || dennis.off || !sendTo(w, you, adjacentTo(w, dennis), 'errand')) return false;
+  w.flatteredDennis = true;
+  w.playerErrand = { type: 'flatter', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function clearAllBlocked(w){
+  const n = w.tasks.blocked;
+  w.tasks.pending += n;
+  w.tasks.blocked = 0;
+  return n;
+}
 function goForBossCall(w){
   if(!w.summons || w.summons.status !== 'open') return false;
   const boss = getActor(w, 'boss');
@@ -770,6 +834,18 @@ function statusOf(w, actor){
       chat: !w.chatted[actor.id],           // "chat" = walk over and sit with her
       sitWith: !w.chatted[actor.id],
       kaylatask: !w.kaylaTaskTaken };
+  }
+  // Dennis on a blocker day: the popup explains the stack and offers the paths
+  if(actor.id === 'dennis' && w.flags && w.flags.dennisBlocker){
+    return { name: actor.name, role: actor.role, mood: actor.mood,
+      face: MOOD_FACE[actor.mood],
+      line: w.tasks.blocked > 0
+        ? 'He “has questions” about ' + w.tasks.blocked + ' of your files. He has numbered the questions.'
+        : 'Approvals required today. Nothing of yours is stuck. Yet.',
+      chat: false,
+      approval: w.tasks.blocked > 0,
+      flatter: w.tasks.blocked > 0 && !w.flatteredDennis,
+      dennisBlocked: w.tasks.blocked };
   }
   // Priya's build week: the grind is visible from her status line
   if(actor.id === 'priya' && w.flags && w.flags.priyaGrind && !actor.off){
@@ -1240,6 +1316,23 @@ function drawBox(ctx, cam, f, w){
     ctx.textAlign = 'center';
     ctx.fillText('×' + w.tasks.pending, ix, iy - hpx - Math.min(8, w.tasks.pending) * 3.2 * z - 6 * z);
   }
+  // needs-approval stack: red-edged papers, stuck until Dennis is dealt with
+  if(f.id === 'desk-you' && w && w.tasks.blocked > 0){
+    const [bx2, by2] = proj(cam, f.x - 0.15, f.y - 0.15);
+    for(let i = 0; i < Math.min(6, w.tasks.blocked); i++){
+      ctx.fillStyle = '#f5e3df';
+      ctx.strokeStyle = '#D8443F'; ctx.lineWidth = 1.4;
+      const py2 = by2 - hpx - i * 3.2 * z;
+      ctx.beginPath();
+      ctx.moveTo(bx2, py2 - 4 * z); ctx.lineTo(bx2 + 9 * z, py2);
+      ctx.lineTo(bx2, py2 + 4 * z); ctx.lineTo(bx2 - 9 * z, py2);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = '#b3322e';
+    ctx.font = '800 ' + Math.max(9, 11 * z) + 'px Poppins, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('!' + w.tasks.blocked, bx2, by2 - hpx - Math.min(6, w.tasks.blocked) * 3.2 * z - 6 * z);
+  }
 }
 
 function drawActor(ctx, cam, a, w){
@@ -1274,6 +1367,14 @@ function drawActor(ctx, cam, a, w){
     ctx.fillStyle = '#D8443F';
     ctx.font = '800 ' + (14 * z) + 'px system-ui';
     ctx.fillText('❗', px - 12 * z, py - 34 * z);
+  }
+  // the approval wait: an amber bar while the questions are answered
+  if(a.id === 'you' && w && w.playerErrand && w.playerErrand.type === 'approvalwait'){
+    const bw2 = 30 * z;
+    ctx.fillStyle = 'rgba(21,18,13,0.25)';
+    ctx.fillRect(px - bw2 / 2, py - 40 * z, bw2, 5 * z);
+    ctx.fillStyle = '#E8814C';
+    ctx.fillRect(px - bw2 / 2, py - 40 * z, bw2 * Math.min(1, w.playerErrand.t / APPROVAL_WAIT_SECS), 5 * z);
   }
   // your work-in-progress bar
   if(a.id === 'you' && w && w.tasks.progress > 0 && playerAtDesk(w)){
@@ -1320,6 +1421,7 @@ return {
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
   armWalkout, goForExit, goForBossCall, resolveQuickCall, takeKaylaTask, reportKayla,
+  goForApproval, flatterDennis, clearAllBlocked, APPROVAL_WAIT_SECS,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile

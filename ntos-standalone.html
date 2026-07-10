@@ -402,6 +402,7 @@ const NineToSurvive = (() => {
       runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
     };
+    g.dennisBlockerToday = arcRand(g, 'dennis', 'blocker')() < 0.25;
     g.plan = planDay(g);
     return g;
   }
@@ -452,7 +453,8 @@ const NineToSurvive = (() => {
     chatBad:    { s: 0, so:+2 },   // you listened to them vent; still counts
     couch:      { s:-1, so:+3 },   // seen lounging; worth it, barely
     coffee:     { s: 0, so:+2 },
-    bossHuman:  { s: 0, so:+2 }    // he was, briefly, a person
+    bossHuman:  { s: 0, so:+2 },   // he was, briefly, a person
+    dennisFlatter: { s: 0, so:-2 } // "nineteen years, wow" — it costs you to say it
   };
   // The Boss-spiral trap, priced: his confidant gets softer catches; the one
   // who deflected gets harder ones — for the arc's duration only (the arc
@@ -1062,7 +1064,8 @@ const NineToSurvive = (() => {
     const pr = A.priya_credit || { stage: 0 };
     return bo.stage === 1 || hs.stage === 1 || hs.stage === 2 || ka.stage === 1
       || (br.stage >= 3 && br.stage <= 6)    // carrying his secret is also work
-      || pr.stage === 1 || pr.stage === 2;   // so is watching the credit line
+      || pr.stage === 1 || pr.stage === 2    // so is watching the credit line
+      || !!g.dennisBlockerToday;             // and so is a day of numbered questions
   }
 
   // The dead-eyed play: you watched and kept shipping. Priced at day end.
@@ -1084,6 +1087,32 @@ const NineToSurvive = (() => {
       return d.dso;
     }
     return 0;
+  }
+
+  // ---- Dennis's approvals: the brain's side of the blocker ------------------------
+  const DENNIS_BURN_ORDER = ['hr_survey_metadata', 'priya_commit_log', 'screenshot_brad_deck'];
+  function dennisApprovalCleared(g, min, how, n){
+    const dn = g.npcState.dennis;
+    dn.counters.approvalsCleared = (dn.counters.approvalsCleared || 0) + (n || 1);
+    dn.counters.clearDay = g.day;
+    if(how === 'waited') pushFeed(g, min, 'Dennis had questions. You stood in The Pipe and answered all of them. A filename was defended like family land.');
+    else if(how === 'flattered') pushFeed(g, min, '“Nineteen years — the institutional knowledge!” Dennis approved the file while agreeing.');
+    else if(how === 'receipt') pushFeed(g, min, 'Dennis received a receipt. Approvals followed at unprecedented speed.');
+    else if(how === 'tip') pushFeed(g, min, 'You used Marcus’s phrase. Dennis paused, said “load-bearing, huh,” and approved everything.');
+  }
+  // burn ANY held receipt to clear today's approvals (fixed order, least precious first)
+  function burnReceiptForDennis(g){
+    for(const name of DENNIS_BURN_ORDER)
+      if(burnReceipt(g, name)) return name;
+    return null;
+  }
+  // Marcus's one-shot phrase also unsticks Dennis
+  function useShieldForDennis(g){
+    const m = g.npcState.marcus;
+    if(!m || !m.flags.shield) return false;
+    delete m.flags.shield;
+    m.counters.saves = (m.counters.saves || 0) + 1;
+    return true;
   }
 
   // Never found time for the quick call: the office reads that as an answer.
@@ -1182,6 +1211,7 @@ const NineToSurvive = (() => {
       kaylaPanic:     ka.stage === 1 && !kayla.flags.toldHR,
       webinarUntil:   (ka.stage === 2 && ka.webinarDay === g.day) ? 630 : null,
       priyaGrind:     pr.stage === 1 || pr.stage === 2,   // heads-down until the demo lands
+      dennisBlocker:  !!g.dennisBlockerToday,
       bradLaptop:     b.stage >= 1 && b.stage <= 6,   // the second laptop, drawn
       bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
@@ -1294,6 +1324,8 @@ const NineToSurvive = (() => {
     }
     if(g.npcState.meredith.counters.surveyDay === rep.day)
       return d + 'HR discovered anonymity has a font.';
+    if(g.npcState.dennis.counters.clearDay === rep.day)
+      return d + 'Dennis defended a filename like it was family land.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.toldHR)
       return d + 'HR solved a person instead of a workload.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.satWith)
@@ -1330,6 +1362,10 @@ const NineToSurvive = (() => {
     g.taskStreak = 0; g.deadEyedToday = 0;
     g.taskForgivenessToday = false;
     g.feed = []; g.todayIncidents = [];
+    // Dennis's blocker behavior: roughly one day in four, approvals required
+    g.dennisBlockerToday = arcRand(g, 'dennis', 'blocker')() < 0.25;
+    if(g.dennisBlockerToday)
+      pushFeed(g, 549, 'Dennis changed the approval workflow. The change requires approval. His.');
     advanceArcs(g);
     g.plan = planDay(g);
   }
@@ -1454,6 +1490,9 @@ const NineToSurvive = (() => {
       if(pick) return { type: 'chat', id: pick };
       // the recovery economy is spent; nothing left but the desk
     }
+    // approvals: batch them into idle time — the walk to The Pipe costs more
+    // than the miss unless the desk is empty anyway
+    if(w.tasks && w.tasks.blocked > 0 && w.tasks.pending === 0) return { type: 'approval' };
     return { type: 'home' };
   }
 
@@ -1554,6 +1593,7 @@ const NineToSurvive = (() => {
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
+    dennisApprovalCleared, burnReceiptForDennis, useShieldForDennis, DENNIS_BURN_ORDER,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,
@@ -1625,6 +1665,8 @@ const COUCH_SPOT  = { x:3,  y:21 };
 const EXIT_SPOT   = { x:1,  y:17 };
 const STAIRS_SPOT = { x:37, y:13 };   // where the private calls happen
 const KITCHEN_CORNER = { x:24, y:12 };   // where Kayla "gets water" on the bad day
+const APPROVAL_SPOT = { x:34, y:21 };    // The Pipe: where approvals go to be questioned
+const APPROVAL_WAIT_SECS = 6;            // his questions, answered in real seconds
 
 // ── zones: colored floor rugs with labels ─────────────────────────────────────
 const ZONES = [
@@ -1792,7 +1834,8 @@ function newDay(seed, day, plan, flags){
     activeEvent: null,
     // the actual work: tasks land in your inbox through the day (load seeded below)
     tasks: { pending: 0, done: 0, spawned: 0, total: 0, progress: 0,
-             spawnAt: [] },
+             spawnAt: [], blocked: 0, blockedAt: [] },
+    flatteredDennis: false,
     // threats
     bossWalks: [],           // [{atMin, status:'pending'|'out'|'done'}]
     bradRaids: [],
@@ -1835,6 +1878,10 @@ function newDay(seed, day, plan, flags){
   w.tasks.spawnAt = [540, 540, 540];
   const drip = Math.floor(390 / Math.max(1, w.tasks.total - 3));
   for(let i = 3; i < w.tasks.total; i++) w.tasks.spawnAt.push(560 + (i - 3) * drip);
+  // Dennis's blocker day: some arrivals are marked needs-approval at staging
+  // (never the 9:00 three — the morning starts workable)
+  w.tasks.blockedAt = w.tasks.spawnAt.map((at, i) =>
+    !!flags.dennisBlocker && i >= 3 && rand(w) < 0.30);
   // boss floor-walks: two, spaced through the day (+1 while his arc runs hot)
   const walks = BOSS_WALKS_PER_DAY + (flags.extraBossWalks || 0);
   for(let i = 0; i < walks; i++)
@@ -1901,8 +1948,15 @@ function step(w, dt){
 
   // ---- task drip + working at your desk ----
   while(w.tasks.spawned < w.tasks.total && w.clockMin >= w.tasks.spawnAt[w.tasks.spawned]){
-    w.tasks.spawned++; w.tasks.pending++;
-    w.sig.push({ type:'task', pending: w.tasks.pending });
+    const needsApproval = !!w.tasks.blockedAt[w.tasks.spawned];
+    w.tasks.spawned++;
+    if(needsApproval){
+      w.tasks.blocked++;
+      w.sig.push({ type:'taskblocked', blocked: w.tasks.blocked });
+    } else {
+      w.tasks.pending++;
+      w.sig.push({ type:'task', pending: w.tasks.pending });
+    }
   }
   if(w.tasks.pending > 0 && playerAtDesk(w) && !you.path.length && !inWebinar){
     w.tasks.progress += dt / TASK_WORK_SECS;
@@ -1991,6 +2045,16 @@ function step(w, dt){
       sendTo(w, brad, brad.home, 'returning');                   // he's asked to "grab a room"
       hr.path = [];
       if(sendTo(w, hr, adjacentTo(w, brad.home), 'escort')) w.firing.phase = 'collect';
+    }
+  }
+
+  // ---- the approval wait: standing in The Pipe, answering the questions ----
+  if(w.playerErrand && w.playerErrand.type === 'approvalwait'){
+    w.playerErrand.t += dt;
+    if(w.playerErrand.t >= APPROVAL_WAIT_SECS){
+      w.playerErrand = null;
+      if(w.tasks.blocked > 0){ w.tasks.blocked--; w.tasks.pending++; }
+      w.sig.push({ type:'approved', blocked: w.tasks.blocked, pending: w.tasks.pending });
     }
   }
 
@@ -2148,6 +2212,22 @@ function arriveErrand(w, you){
     } else {
       w.playerErrand = null;
     }
+  } else if(e.type === 'approval'){
+    // you made it to The Pipe: now you wait out the questions, visibly
+    w.playerErrand = { type: 'approvalwait', t: 0 };
+  } else if(e.type === 'flatter'){
+    const dennis = getActor(w, 'dennis');
+    if(!dennis || dennis.off || !w.tasks.blocked){ w.playerErrand = null; }
+    else if(Math.hypot(dennis.x - you.x, dennis.y - you.y) <= 2.2){
+      w.playerErrand = null;
+      w.tasks.blocked--; w.tasks.pending++;
+      w.sig.push({ type:'flattered', blocked: w.tasks.blocked, pending: w.tasks.pending });
+    } else if(e.repaths < 3){
+      e.repaths++;
+      sendTo(w, you, adjacentTo(w, dennis), 'errand');
+    } else {
+      w.playerErrand = null;
+    }
   } else if(e.type === 'quickcall'){
     const boss = getActor(w, 'boss');
     if(!w.summons || w.summons.status !== 'open'){
@@ -2267,6 +2347,30 @@ function reportKayla(w){
   w.kaylaReported = true;
   return true;
 }
+function goForApproval(w){
+  if(!w.tasks.blocked || w.playerErrand) return false;
+  const you = getActor(w, 'you');
+  if(!sendTo(w, you, APPROVAL_SPOT, 'errand')) return false;
+  w.playerErrand = { type: 'approval', repaths: 0 };
+  w.moveMarker = APPROVAL_SPOT;
+  return true;
+}
+function flatterDennis(w){
+  if(!w.tasks.blocked || w.flatteredDennis || w.playerErrand) return false;
+  const dennis = getActor(w, 'dennis');
+  const you = getActor(w, 'you');
+  if(!dennis || dennis.off || !sendTo(w, you, adjacentTo(w, dennis), 'errand')) return false;
+  w.flatteredDennis = true;
+  w.playerErrand = { type: 'flatter', repaths: 0 };
+  w.moveMarker = null;
+  return true;
+}
+function clearAllBlocked(w){
+  const n = w.tasks.blocked;
+  w.tasks.pending += n;
+  w.tasks.blocked = 0;
+  return n;
+}
 function goForBossCall(w){
   if(!w.summons || w.summons.status !== 'open') return false;
   const boss = getActor(w, 'boss');
@@ -2338,6 +2442,18 @@ function statusOf(w, actor){
       chat: !w.chatted[actor.id],           // "chat" = walk over and sit with her
       sitWith: !w.chatted[actor.id],
       kaylatask: !w.kaylaTaskTaken };
+  }
+  // Dennis on a blocker day: the popup explains the stack and offers the paths
+  if(actor.id === 'dennis' && w.flags && w.flags.dennisBlocker){
+    return { name: actor.name, role: actor.role, mood: actor.mood,
+      face: MOOD_FACE[actor.mood],
+      line: w.tasks.blocked > 0
+        ? 'He “has questions” about ' + w.tasks.blocked + ' of your files. He has numbered the questions.'
+        : 'Approvals required today. Nothing of yours is stuck. Yet.',
+      chat: false,
+      approval: w.tasks.blocked > 0,
+      flatter: w.tasks.blocked > 0 && !w.flatteredDennis,
+      dennisBlocked: w.tasks.blocked };
   }
   // Priya's build week: the grind is visible from her status line
   if(actor.id === 'priya' && w.flags && w.flags.priyaGrind && !actor.off){
@@ -2808,6 +2924,23 @@ function drawBox(ctx, cam, f, w){
     ctx.textAlign = 'center';
     ctx.fillText('×' + w.tasks.pending, ix, iy - hpx - Math.min(8, w.tasks.pending) * 3.2 * z - 6 * z);
   }
+  // needs-approval stack: red-edged papers, stuck until Dennis is dealt with
+  if(f.id === 'desk-you' && w && w.tasks.blocked > 0){
+    const [bx2, by2] = proj(cam, f.x - 0.15, f.y - 0.15);
+    for(let i = 0; i < Math.min(6, w.tasks.blocked); i++){
+      ctx.fillStyle = '#f5e3df';
+      ctx.strokeStyle = '#D8443F'; ctx.lineWidth = 1.4;
+      const py2 = by2 - hpx - i * 3.2 * z;
+      ctx.beginPath();
+      ctx.moveTo(bx2, py2 - 4 * z); ctx.lineTo(bx2 + 9 * z, py2);
+      ctx.lineTo(bx2, py2 + 4 * z); ctx.lineTo(bx2 - 9 * z, py2);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = '#b3322e';
+    ctx.font = '800 ' + Math.max(9, 11 * z) + 'px Poppins, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('!' + w.tasks.blocked, bx2, by2 - hpx - Math.min(6, w.tasks.blocked) * 3.2 * z - 6 * z);
+  }
 }
 
 function drawActor(ctx, cam, a, w){
@@ -2842,6 +2975,14 @@ function drawActor(ctx, cam, a, w){
     ctx.fillStyle = '#D8443F';
     ctx.font = '800 ' + (14 * z) + 'px system-ui';
     ctx.fillText('❗', px - 12 * z, py - 34 * z);
+  }
+  // the approval wait: an amber bar while the questions are answered
+  if(a.id === 'you' && w && w.playerErrand && w.playerErrand.type === 'approvalwait'){
+    const bw2 = 30 * z;
+    ctx.fillStyle = 'rgba(21,18,13,0.25)';
+    ctx.fillRect(px - bw2 / 2, py - 40 * z, bw2, 5 * z);
+    ctx.fillStyle = '#E8814C';
+    ctx.fillRect(px - bw2 / 2, py - 40 * z, bw2 * Math.min(1, w.playerErrand.t / APPROVAL_WAIT_SECS), 5 * z);
   }
   // your work-in-progress bar
   if(a.id === 'you' && w && w.tasks.progress > 0 && playerAtDesk(w)){
@@ -2888,6 +3029,7 @@ return {
   setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
   armWalkout, goForExit, goForBossCall, resolveQuickCall, takeKaylaTask, reportKayla,
+  goForApproval, flatterDennis, clearAllBlocked, APPROVAL_WAIT_SECS,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile
@@ -3328,7 +3470,13 @@ function showStatus(actor, sx, sy){
     + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">' + (s.sitWith ? 'Walk over & sit with her' : 'Walk over & chat') + '</span>' : '')
     + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '')
     + (s.kaylatask ? '<span class="schat" onclick="takeKaylaTask()">Take one of her tasks</span>' : '')
-    + (s.reportkayla ? '<span class="schat" onclick="reportKaylaToHR()">Mention Kayla to HR</span>' : '');
+    + (s.reportkayla ? '<span class="schat" onclick="reportKaylaToHR()">Mention Kayla to HR</span>' : '')
+    + (s.approval ? '<span class="schat" onclick="carryToPipe()">Carry a file to The Pipe</span>' : '')
+    + (s.flatter ? '<span class="schat" onclick="flatterDennis()">“Nineteen years — wow.”</span>' : '')
+    + (s.approval && G.DENNIS_BURN_ORDER.some(r => G.hasReceipt(g, r))
+        ? '<span class="schat" onclick="burnForDennis()">🧾 Burn a receipt (clears all)</span>' : '')
+    + (s.approval && g.npcState.marcus.flags.shield
+        ? '<span class="schat" onclick="tipForDennis()">Use Marcus’s phrase (clears all)</span>' : '');
   pop.classList.remove('hidden');
   pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
@@ -3349,6 +3497,31 @@ function takeKaylaTask(){
 function reportKaylaToHR(){
   hideStatus();
   if(W.reportKayla(world)) toast('You mention it to Meredith. Gently. Meaning well. Watch.');
+}
+function carryToPipe(){
+  hideStatus();
+  if(W.goForApproval(world)) toast('Carrying the file to The Pipe. Bring answers. He has questions.');
+}
+function flatterDennis(){
+  hideStatus();
+  if(W.flatterDennis(world)) toast('Walking over to admire nineteen years of institutional knowledge…');
+}
+function burnForDennis(){
+  hideStatus();
+  const name = G.burnReceiptForDennis(g);
+  if(!name) return;
+  const n = W.clearAllBlocked(world);
+  G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'receipt', n);
+  toast('Receipt burned (' + name.replace(/_/g, ' ') + '). ' + n + ' approval' + (n > 1 ? 's' : '') + ' cleared, instantly.');
+  saveRun('day');
+}
+function tipForDennis(){
+  hideStatus();
+  if(!G.useShieldForDennis(g)) return;
+  const n = W.clearAllBlocked(world);
+  G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'tip', n);
+  toast('“Load-bearing deliverable.” Dennis blinks. ' + n + ' approval' + (n > 1 ? 's' : '') + ' cleared.');
+  saveRun('day');
 }
 
 /* ---- the office feed (render only — the brain writes g.feed) ---- */
@@ -3490,7 +3663,8 @@ function loop(t){
     const parts = c.split(' ');
     return '<b>' + parts[0] + '</b> ' + parts[1];
   })();
-  $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting';
+  $id('tasks-l').textContent = 'INBOX · ' + world.tasks.pending + ' waiting'
+    + (world.tasks.blocked ? ' · ' + world.tasks.blocked + ' NEED APPROVAL' : '');
   $id('tasks-r').textContent = world.tasks.done + '/' + world.tasks.total + ' shipped';
   if(g.feed.length !== feedShown) renderFeed();
   // a crunch bonus can bank the number mid-day: the door goes live immediately
@@ -3575,6 +3749,21 @@ function handleSignal(s){
     }
     case 'task':
       toast('New task in your inbox. (' + s.pending + ' waiting)'); break;
+    case 'taskblocked':
+      toast('A task arrived marked NEEDS APPROVAL. Dennis has questions. (' + s.blocked + ' stuck)');
+      break;
+    case 'approved':
+      G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'waited');
+      toast('Questions answered. One file unstuck. ' + (s.blocked ? s.blocked + ' still held.' : 'The Pipe is clear.'));
+      W.playerGoHome(world);
+      break;
+    case 'flattered': {
+      worldEffect('dennisFlatter');
+      G.dennisApprovalCleared(g, Math.floor(world.clockMin), 'flattered');
+      toast('He approved one mid-anecdote. Soul −2. ' + (s.blocked ? s.blocked + ' still held.' : 'All clear.'));
+      W.playerGoHome(world);
+      break;
+    }
     case 'taskdone': {
       const res = worldEffect('taskDone');
       SFX.task();
@@ -3746,6 +3935,7 @@ if(MOVIE){
       else if(act.type === 'couch') W.goForCouch(world);
       else if(act.type === 'chat') W.requestChat(world, act.id);
       else if(act.type === 'bosscall') W.goForBossCall(world);
+      else if(act.type === 'approval') W.goForApproval(world);
       else if(act.type === 'home' && !W.playerAtDesk(world)){
         const you = W.getActor(world, 'you');
         if(!you.path.length) W.playerGoHome(world);

@@ -384,6 +384,7 @@ const NineToSurvive = (() => {
       runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
     };
+    g.dennisBlockerToday = arcRand(g, 'dennis', 'blocker')() < 0.25;
     g.plan = planDay(g);
     return g;
   }
@@ -434,7 +435,8 @@ const NineToSurvive = (() => {
     chatBad:    { s: 0, so:+2 },   // you listened to them vent; still counts
     couch:      { s:-1, so:+3 },   // seen lounging; worth it, barely
     coffee:     { s: 0, so:+2 },
-    bossHuman:  { s: 0, so:+2 }    // he was, briefly, a person
+    bossHuman:  { s: 0, so:+2 },   // he was, briefly, a person
+    dennisFlatter: { s: 0, so:-2 } // "nineteen years, wow" — it costs you to say it
   };
   // The Boss-spiral trap, priced: his confidant gets softer catches; the one
   // who deflected gets harder ones — for the arc's duration only (the arc
@@ -1044,7 +1046,8 @@ const NineToSurvive = (() => {
     const pr = A.priya_credit || { stage: 0 };
     return bo.stage === 1 || hs.stage === 1 || hs.stage === 2 || ka.stage === 1
       || (br.stage >= 3 && br.stage <= 6)    // carrying his secret is also work
-      || pr.stage === 1 || pr.stage === 2;   // so is watching the credit line
+      || pr.stage === 1 || pr.stage === 2    // so is watching the credit line
+      || !!g.dennisBlockerToday;             // and so is a day of numbered questions
   }
 
   // The dead-eyed play: you watched and kept shipping. Priced at day end.
@@ -1066,6 +1069,32 @@ const NineToSurvive = (() => {
       return d.dso;
     }
     return 0;
+  }
+
+  // ---- Dennis's approvals: the brain's side of the blocker ------------------------
+  const DENNIS_BURN_ORDER = ['hr_survey_metadata', 'priya_commit_log', 'screenshot_brad_deck'];
+  function dennisApprovalCleared(g, min, how, n){
+    const dn = g.npcState.dennis;
+    dn.counters.approvalsCleared = (dn.counters.approvalsCleared || 0) + (n || 1);
+    dn.counters.clearDay = g.day;
+    if(how === 'waited') pushFeed(g, min, 'Dennis had questions. You stood in The Pipe and answered all of them. A filename was defended like family land.');
+    else if(how === 'flattered') pushFeed(g, min, '“Nineteen years — the institutional knowledge!” Dennis approved the file while agreeing.');
+    else if(how === 'receipt') pushFeed(g, min, 'Dennis received a receipt. Approvals followed at unprecedented speed.');
+    else if(how === 'tip') pushFeed(g, min, 'You used Marcus’s phrase. Dennis paused, said “load-bearing, huh,” and approved everything.');
+  }
+  // burn ANY held receipt to clear today's approvals (fixed order, least precious first)
+  function burnReceiptForDennis(g){
+    for(const name of DENNIS_BURN_ORDER)
+      if(burnReceipt(g, name)) return name;
+    return null;
+  }
+  // Marcus's one-shot phrase also unsticks Dennis
+  function useShieldForDennis(g){
+    const m = g.npcState.marcus;
+    if(!m || !m.flags.shield) return false;
+    delete m.flags.shield;
+    m.counters.saves = (m.counters.saves || 0) + 1;
+    return true;
   }
 
   // Never found time for the quick call: the office reads that as an answer.
@@ -1164,6 +1193,7 @@ const NineToSurvive = (() => {
       kaylaPanic:     ka.stage === 1 && !kayla.flags.toldHR,
       webinarUntil:   (ka.stage === 2 && ka.webinarDay === g.day) ? 630 : null,
       priyaGrind:     pr.stage === 1 || pr.stage === 2,   // heads-down until the demo lands
+      dennisBlocker:  !!g.dennisBlockerToday,
       bradLaptop:     b.stage >= 1 && b.stage <= 6,   // the second laptop, drawn
       bradCalls:      b.stage >= 2 && b.stage <= 6,   // status shifts + stairwell trips
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
@@ -1276,6 +1306,8 @@ const NineToSurvive = (() => {
     }
     if(g.npcState.meredith.counters.surveyDay === rep.day)
       return d + 'HR discovered anonymity has a font.';
+    if(g.npcState.dennis.counters.clearDay === rep.day)
+      return d + 'Dennis defended a filename like it was family land.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.toldHR)
       return d + 'HR solved a person instead of a workload.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.satWith)
@@ -1312,6 +1344,10 @@ const NineToSurvive = (() => {
     g.taskStreak = 0; g.deadEyedToday = 0;
     g.taskForgivenessToday = false;
     g.feed = []; g.todayIncidents = [];
+    // Dennis's blocker behavior: roughly one day in four, approvals required
+    g.dennisBlockerToday = arcRand(g, 'dennis', 'blocker')() < 0.25;
+    if(g.dennisBlockerToday)
+      pushFeed(g, 549, 'Dennis changed the approval workflow. The change requires approval. His.');
     advanceArcs(g);
     g.plan = planDay(g);
   }
@@ -1436,6 +1472,9 @@ const NineToSurvive = (() => {
       if(pick) return { type: 'chat', id: pick };
       // the recovery economy is spent; nothing left but the desk
     }
+    // approvals: batch them into idle time — the walk to The Pipe costs more
+    // than the miss unless the desk is empty anyway
+    if(w.tasks && w.tasks.blocked > 0 && w.tasks.pending === 0) return { type: 'approval' };
     return { type: 'home' };
   }
 
@@ -1536,6 +1575,7 @@ const NineToSurvive = (() => {
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
+    dennisApprovalCleared, burnReceiptForDennis, useShieldForDennis, DENNIS_BURN_ORDER,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,
