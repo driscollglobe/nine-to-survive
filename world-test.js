@@ -43,7 +43,7 @@ const w1 = W.newDay(7, 1, [0, 9]);
 ok('every cast spot is walkable', W.CAST.every(c => W.isWalkable(w1, c.spot.x, c.spot.y)));
 const desk = W.FURNITURE[0];
 ok('furniture tiles are blocked', !W.isWalkable(w1, desk.x, desk.y));
-ok('all 8 actors on the floor', w1.actors.length === 8 && !!W.getActor(w1, 'you'));
+ok('all 9 actors on the floor (Adam makes nine)', w1.actors.length === 9 && !!W.getActor(w1, 'adam'));
 const you1 = W.getActor(w1, 'you');
 ok('every NPC can path to your desk', W.CAST.filter(c => c.id !== 'you').every(c =>
   W.bfsPath(w1, c.spot, W.adjacentTo(w1, you1)) !== null));
@@ -245,7 +245,7 @@ ok('deck detour fires the braddeck signal near your desk', !!deckSig && (() => {
 ok('noBradRaids flag: zero raids staged', W.newDay(43, 5, [9], { noBradRaids: true }).bradRaids.length === 0);
 ok('same seed+day without the flag: raids exist', W.newDay(43, 5, [9]).bradRaids.length >= 1);
 const wGone = W.newDay(43, 6, [0], { bradGone: true });
-ok('bradGone: off the floor entirely, no raids', wGone.actors.length === 7
+ok('bradGone: off the floor entirely, no raids', wGone.actors.length === 8
   && !W.getActor(wGone, 'brad') && wGone.bradRaids.length === 0);
 ok('the floor still paths without him', W.CAST.filter(c => c.id !== 'you' && c.id !== 'brad')
   .every(c => W.bfsPath(wGone, c.spot, W.adjacentTo(wGone, W.getActor(wGone, 'you'))) !== null));
@@ -426,6 +426,71 @@ ok('the marked arrival lands in the blocked stack, announced', !!blkSig && wDb.t
   ok('clearAllBlocked moves the whole stack to workable', n >= 2 && w2.tasks.blocked === 0);
 })();
 
+// ---- 11i. Adam the meddler --------------------------------------------------------------
+const wAd = W.newDay(7, 1, [0, 9]);
+ok('Adam has a desk, a mood, and a spot on the floor', !!W.getActor(wAd, 'adam')
+  && !W.isWalkable(wAd, 18, 15) && ['good','meh','bad'].includes(W.getActor(wAd, 'adam').mood));
+ok('his status line is in his voice', /consulted|concerns|lanes/.test(W.statusOf(wAd, W.getActor(wAd, 'adam')).line));
+ok('his seeding rides a side stream (main staging untouched by his existence)', (() => {
+  // the real proof is every pre-Adam seeded test above still passing; this
+  // adds determinism: same seed+day = same Adam
+  const a = W.newDay(7, 3, [9]), b = W.newDay(7, 3, [9]);
+  return W.getActor(a, 'adam').mood === W.getActor(b, 'adam').mood
+    && JSON.stringify(a.adamRolls) === JSON.stringify(b.adamRolls);
+})());
+// the interception: forced rolls, walk right past him
+(() => {
+  const w2 = W.newDay(19, 2, [9]);
+  w2.bossWalks = []; w2.bradRaids = []; w2.crunch = null;
+  w2.adamRolls = [0.0, 0.9, 0.0, 0.0];   // intercept! (not useful), then intercept+useful
+  w2.adamRollIdx = 0;
+  W.movePlayer(w2, { x: 22, y: 16 });     // route passes his desk row
+  let sig = null, frozeAt = null;
+  for(let t = 0; t < 60 && !sig; t += 0.1){
+    const s = W.step(w2, 0.1);
+    if(w2.intercept && frozeAt === null){
+      const you = W.getActor(w2, 'you');
+      frozeAt = { x: you.x, y: you.y, path: you.path.length };
+    }
+    if(s && s.type === 'adamintercept') sig = s;
+  }
+  ok('walking past Adam gets you intercepted (visible pause, path held)',
+    !!sig && frozeAt && frozeAt.path > 0, sig ? 'intercepted' : 'no intercept');
+  ok('the advice was not useful this time', sig && sig.useful === false);
+  const clockAfter = w2.clockMin;
+  ok('the pause cost real clock', clockAfter > 545);
+  // the useful one: he and Dennis go way back
+  const w3 = W.newDay(23, 2, [9], { dennisBlocker: true });
+  w3.bossWalks = []; w3.bradRaids = []; w3.crunch = null;
+  w3.tasks.blocked = 1;
+  w3.adamRolls = [0.0, 0.05];
+  w3.adamRollIdx = 0;
+  W.movePlayer(w3, { x: 22, y: 16 });
+  let sig3 = null;
+  for(let t = 0; t < 60 && !sig3; t += 0.1){
+    const s = W.step(w3, 0.1);
+    if(s && s.type === 'adamintercept') sig3 = s;
+  }
+  ok('the rare useful intercept clears a Dennis approval for free',
+    !!sig3 && sig3.useful === true && w3.tasks.blocked === 0 && w3.tasks.pending >= 1);
+  // at most two a day
+  const w4 = W.newDay(29, 2, [9]);
+  w4.bossWalks = []; w4.bradRaids = []; w4.crunch = null;
+  w4.adamRolls = new Array(12).fill(0.0);
+  w4.adamRollIdx = 0;
+  let count = 0;
+  for(let trip = 0; trip < 6; trip++){
+    W.movePlayer(w4, trip % 2 ? { x: 22, y: 16 } : { x: 16, y: 16 });
+    for(let t = 0; t < 40; t += 0.1){
+      const s = W.step(w4, 0.1);
+      if(s && s.type === 'adamintercept') count++;
+      const you = W.getActor(w4, 'you');
+      if(!you.path.length && !w4.intercept) break;
+    }
+  }
+  ok('he intercepts at most twice a day', count <= 2 && count >= 1, 'count=' + count);
+})();
+
 // ---- 12. SOAK: full careers through the real pipeline ---------------------------------
 // A bot plays whole days exactly the way the shell does: newDay each morning,
 // step(w, 0.1) in a loop, signals fed into the rules, closeDay at 5 PM, nextDay.
@@ -572,6 +637,7 @@ function soakRun(seed, opts){
           W.playerGoHome(w); break;
         case 'kaylatask':     G.kaylaTaskTaken(g, Math.floor(w.clockMin)); W.playerGoHome(w); break;
         case 'taskblocked':   break;
+        case 'adamintercept': G.adamIntercepted(g, Math.floor(w.clockMin), s.useful); break;
         case 'approved':
           G.dennisApprovalCleared(g, Math.floor(w.clockMin), 'waited');
           W.playerGoHome(w); break;

@@ -312,7 +312,7 @@ ok('resumed career is identical to the uninterrupted one',
 
 // ---- 12. the arc engine + npcState --------------------------------------------
 const ga = G.newGame(55);
-ok('npcState: all seven coworkers tracked', G.NPC_IDS.length === 7 && G.NPC_IDS.every(id =>
+ok('npcState: all eight coworkers tracked (Adam included)', G.NPC_IDS.length === 8 && G.NPC_IDS.every(id =>
   ga.npcState[id] && typeof ga.npcState[id].stress === 'number' && typeof ga.npcState[id].trust === 'number'
   && typeof ga.npcState[id].arcStage === 'number' && !!ga.npcState[id].flags && !!ga.npcState[id].counters));
 ok('day 1: arcs dormant, world flags quiet', (() => {
@@ -1032,6 +1032,23 @@ ok('cleared approvals feed the counters, the headline, and the story', (() => {
     && /family land/.test(G.dayHeadline(g2))
     && G.storyKey(g2) === 'dennis_broken'
     && g2.feed.some(f => /family land/.test(f.text));
+})());
+
+// ---- 16g. Adam: the brain's side --------------------------------------------------
+ok('interceptions feed the record (and the useful one gets a headline)', (() => {
+  const g2 = G.newGame(1201);
+  G.adamIntercepted(g2, 700, false);
+  if(!g2.feed.some(f => /context was from 2009/.test(f.text))) return false;
+  G.adamIntercepted(g2, 720, true);
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  return g2.npcState.adam.counters.intercepts === 2
+    && g2.feed.some(f => /Nobody understands the mechanism/.test(f.text))
+    && /Adam knew a guy/.test(G.dayHeadline(g2));
+})());
+ok('his moods gossip in his voice', (() => {
+  const g2 = G.newGame(1202);
+  G.moodFeed(g2, [{ id: 'adam', mood: 'bad' }]);
+  return g2.feed.some(f => /follow-up about lanes/.test(f.text));
 })());
 
 // ---- 17. share copy carries the story ------------------------------------------

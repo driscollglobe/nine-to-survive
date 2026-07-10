@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n18"></script>
-<script src="ntos-world.js?v=w17"></script>
+<script src="ntos-game.js?v=n19"></script>
+<script src="ntos-world.js?v=w18"></script>
 <style>
 :root{
   /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
@@ -715,6 +715,12 @@ function handleSignal(s){
     case 'webinar':
       SFX.drill();
       toast('MANDATORY: “Resilience & You,” 90 min, cameras expected. Your inbox will wait. It will not shrink.');
+      break;
+    case 'adamintercept':
+      G.adamIntercepted(g, Math.floor(world.clockMin), s.useful);
+      toast(s.useful
+        ? 'Adam stopped you mid-aisle — then called Dennis. An approval just… cleared. Don’t ask.'
+        : 'Adam stopped you for a quick thought. It had three parts. You are eight minutes older.');
       break;
     case 'bosshuman': {
       const line = G.bossHumanBeat(g, Math.floor(world.clockMin));

@@ -332,7 +332,7 @@ const NineToSurvive = (() => {
   // The office lore layer: everyone you work with carries persistent state now.
   // stress/trust move with incidents; flags hold arc secrets; counters feed
   // headlines and share copy. All plain data — it rides the existing save.
-  const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya'];
+  const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya', 'adam'];
   function freshNpcState(){
     const st = {};
     NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {} }; });
@@ -496,7 +496,10 @@ const NineToSurvive = (() => {
     'priya|meh':     'Priya booked a focus block. Three people booked over it.',
     'kayla|good':    'Kayla has been smiling at her phone all morning. Nobody asks. Everybody knows.',
     'marcus|good':   'Marcus reacted with the eyes emoji to the all-hands invite.',
-    'brad|good':     'Brad posted “thrilled to share” at 9:04 AM.'
+    'brad|good':     'Brad posted “thrilled to share” at 9:04 AM.',
+    'adam|good':     'Adam cc’d himself.',
+    'adam|meh':      'Adam replied-all to ask who approved this.',
+    'adam|bad':      'Kayla told Adam to stay in his lane. Adam scheduled a follow-up about lanes.'
   };
   function moodFeed(g, moods){
     if(g.feedMoodDay === g.day) return false;   // once per morning, resume-safe
@@ -1097,6 +1100,20 @@ const NineToSurvive = (() => {
     return true;
   }
 
+  // Adam stopped you in the aisle. Again. (Rarely, usefully.)
+  function adamIntercepted(g, min, useful){
+    const ad = g.npcState.adam;
+    if(!ad) return;
+    ad.counters.intercepts = (ad.counters.intercepts || 0) + 1;
+    ad.counters.interceptDay = g.day;
+    if(useful){
+      ad.counters.usefulDay = g.day;
+      pushFeed(g, min, 'Adam “made a call” to Dennis. An approval cleared. Nobody understands the mechanism.');
+    } else {
+      pushFeed(g, min, 'Adam offered unsolicited context on your way past. The context was from 2009.');
+    }
+  }
+
   // Never found time for the quick call: the office reads that as an answer.
   function bossSummonsDodged(g, min){
     const boss = g.npcState.boss;
@@ -1308,6 +1325,8 @@ const NineToSurvive = (() => {
       return d + 'HR discovered anonymity has a font.';
     if(g.npcState.dennis.counters.clearDay === rep.day)
       return d + 'Dennis defended a filename like it was family land.';
+    if(g.npcState.adam && g.npcState.adam.counters.usefulDay === rep.day)
+      return d + 'Adam knew a guy. The guy was Dennis. It went through.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.toldHR)
       return d + 'HR solved a person instead of a workload.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.satWith)
@@ -1580,6 +1599,7 @@ const NineToSurvive = (() => {
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     dennisApprovalCleared, burnReceiptForDennis, useShieldForDennis, DENNIS_BURN_ORDER,
+    adamIntercepted,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,

@@ -350,7 +350,7 @@ const NineToSurvive = (() => {
   // The office lore layer: everyone you work with carries persistent state now.
   // stress/trust move with incidents; flags hold arc secrets; counters feed
   // headlines and share copy. All plain data — it rides the existing save.
-  const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya'];
+  const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya', 'adam'];
   function freshNpcState(){
     const st = {};
     NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {} }; });
@@ -514,7 +514,10 @@ const NineToSurvive = (() => {
     'priya|meh':     'Priya booked a focus block. Three people booked over it.',
     'kayla|good':    'Kayla has been smiling at her phone all morning. Nobody asks. Everybody knows.',
     'marcus|good':   'Marcus reacted with the eyes emoji to the all-hands invite.',
-    'brad|good':     'Brad posted “thrilled to share” at 9:04 AM.'
+    'brad|good':     'Brad posted “thrilled to share” at 9:04 AM.',
+    'adam|good':     'Adam cc’d himself.',
+    'adam|meh':      'Adam replied-all to ask who approved this.',
+    'adam|bad':      'Kayla told Adam to stay in his lane. Adam scheduled a follow-up about lanes.'
   };
   function moodFeed(g, moods){
     if(g.feedMoodDay === g.day) return false;   // once per morning, resume-safe
@@ -1115,6 +1118,20 @@ const NineToSurvive = (() => {
     return true;
   }
 
+  // Adam stopped you in the aisle. Again. (Rarely, usefully.)
+  function adamIntercepted(g, min, useful){
+    const ad = g.npcState.adam;
+    if(!ad) return;
+    ad.counters.intercepts = (ad.counters.intercepts || 0) + 1;
+    ad.counters.interceptDay = g.day;
+    if(useful){
+      ad.counters.usefulDay = g.day;
+      pushFeed(g, min, 'Adam “made a call” to Dennis. An approval cleared. Nobody understands the mechanism.');
+    } else {
+      pushFeed(g, min, 'Adam offered unsolicited context on your way past. The context was from 2009.');
+    }
+  }
+
   // Never found time for the quick call: the office reads that as an answer.
   function bossSummonsDodged(g, min){
     const boss = g.npcState.boss;
@@ -1326,6 +1343,8 @@ const NineToSurvive = (() => {
       return d + 'HR discovered anonymity has a font.';
     if(g.npcState.dennis.counters.clearDay === rep.day)
       return d + 'Dennis defended a filename like it was family land.';
+    if(g.npcState.adam && g.npcState.adam.counters.usefulDay === rep.day)
+      return d + 'Adam knew a guy. The guy was Dennis. It went through.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.toldHR)
       return d + 'HR solved a person instead of a workload.';
     if(g.npcState.kayla.counters.panicDay === rep.day && g.npcState.kayla.flags.satWith)
@@ -1598,6 +1617,7 @@ const NineToSurvive = (() => {
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,
     dennisApprovalCleared, burnReceiptForDennis, useShieldForDennis, DENNIS_BURN_ORDER,
+    adamIntercepted,
     marcusTip, consumeCatchShield, dayHeadline, dayAward,
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,
@@ -1649,6 +1669,7 @@ const FURNITURE = [
   { id:'desk-kayla',  label:null,        x:8,  y:19, w:2, d:1, h:0.55, color:'#7d858f' },
   { id:'desk-marcus', label:null,        x:13, y:19, w:2, d:1, h:0.55, color:'#7d858f' },
   { id:'desk-priya',  label:null,        x:18, y:19, w:2, d:1, h:0.55, color:'#7d858f' },
+  { id:'desk-adam',   label:null,        x:18, y:15, w:2, d:1, h:0.55, color:'#7d858f' },
   { id:'desk-boss',   label:null,        x:33, y:4,  w:3, d:1, h:0.7,  color:'#4a4238' },
   { id:'desk-hr',     label:null,        x:4,  y:4,  w:2, d:1, h:0.55, color:'#8f7d88' },
   { id:'desk-dennis', label:null,        x:34, y:20, w:2, d:1, h:0.55, color:'#6f7a6f' },
@@ -1721,7 +1742,13 @@ const CAST = [
     spot:{x:19, y:20},
     lines:{ good:'Shipped early. Nobody noticed. She noticed.',
             meh:'In four meetings that could be emails.',
-            bad:'Brad presented her numbers this morning.' } }
+            bad:'Brad presented her numbers this morning.' } },
+  // appended LAST so his seeding can ride a side stream (see newDay)
+  { id:'adam',   name:'Adam',   role:'Institutional knowledge, self-appointed', color:'#A88C5F',
+    spot:{x:19, y:16},
+    lines:{ good:'Has concerns about the process. Would love to share them. Will regardless.',
+            meh:'Was not consulted, and it shows, he says.',
+            bad:'Drafting a memo about lanes, and who should stay in whose.' } }
 ];
 
 // Which NPC owns each encounter in the pool (by ENCOUNTERS index, clock order):
@@ -1859,11 +1886,30 @@ function newDay(seed, day, plan, flags){
     walkoutArmed: false,     // the shell arms this when the number is banked
     dayOver: false
   };
-  // seed wander timers + daily moods deterministically
+  // seed wander timers + daily moods deterministically — Adam is EXCLUDED here
+  // and seeded from a side stream below, so every pre-Adam seeded expectation
+  // (moods, walks, raids, crunch, task loads) is byte-identical
   w.actors.forEach(a => {
+    if(a.id === 'adam') return;
     a.wanderT = 2 + rand(w) * 6;
     if(a.id !== 'you') a.mood = MOODS[Math.floor(rand(w) * 3)];
   });
+  (() => {
+    let s = ((seed | 0) ^ Math.imul(day, 40503) ^ 0x5EEDADA) | 0;
+    const ar = () => {
+      s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const adam = getActor(w, 'adam');
+    if(adam){ adam.wanderT = 2 + ar() * 6; adam.mood = MOODS[Math.floor(ar() * 3)]; }
+    w.adamRolls = Array.from({ length: 12 }, ar);   // interception + usefulness rolls
+    w.adamRollIdx = 0;
+  })();
+  w.adamIntercepts = 0;
+  w.adamNextOk = 0;
+  w.intercept = null;
   // Kayla's panic day: she's in the kitchen, and she's staying there
   if(flags.kaylaPanic){
     const kayla = getActor(w, 'kayla');
@@ -1970,8 +2016,35 @@ function step(w, dt){
     }
   }
 
+  // ---- the interception: unsolicited advice at walking distance ----
+  if(w.intercept){
+    w.intercept.t += dt;
+    if(w.intercept.t >= 2.5){
+      const usefulRoll = w.adamRollIdx < w.adamRolls.length ? w.adamRolls[w.adamRollIdx++] : 1;
+      const useful = usefulRoll < 0.15 && w.tasks.blocked > 0;
+      if(useful){ w.tasks.blocked--; w.tasks.pending++; }   // he and Dennis go way back
+      w.sig.push({ type:'adamintercept', useful });
+      w.intercept = null;
+      w.adamNextOk = w.clockMin + 60;
+    }
+  } else {
+    const adamI = getActor(w, 'adam');
+    if(adamI && !adamI.off && adamI.state === 'idle' && you.path.length
+       && w.adamIntercepts < 2 && w.clockMin >= w.adamNextOk
+       && Math.hypot(adamI.x - you.x, adamI.y - you.y) < 1.7){
+      const roll = w.adamRollIdx < w.adamRolls.length ? w.adamRolls[w.adamRollIdx++] : 1;
+      if(roll < 0.35){
+        w.adamIntercepts++;
+        w.intercept = { t: 0 };
+      } else {
+        w.adamNextOk = w.clockMin + 45;   // he let you pass. This time.
+      }
+    }
+  }
+
   // ---- movement + wander ----
   w.actors.forEach(a => {
+    if(a.id === 'you' && w.intercept) return;   // held mid-stride by the advice
     if(a.path.length){
       if(moveAlongPath(a, dt)) handleArrival(w, a, you);
       return;
@@ -2959,9 +3032,24 @@ function drawActor(ctx, cam, a, w){
   ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, 0, Math.PI * 2);
   ctx.fillStyle = a.color; ctx.fill();
   ctx.strokeStyle = 'rgba(21,18,13,0.35)'; ctx.lineWidth = 1.3 * z; ctx.stroke();
-  ctx.beginPath(); ctx.arc(px, py - 26 * z, 6.5 * z, 0, Math.PI * 2);
-  ctx.fillStyle = a.bear ? '#7d7871' : '#E8C39E'; ctx.fill();   // badger gray
+  const dome = a.id === 'adam' ? 7.2 * z : 6.5 * z;   // Adam's is... more
+  ctx.beginPath(); ctx.arc(px, py - 26 * z, dome, 0, Math.PI * 2);
+  ctx.fillStyle = a.bear ? '#7d7871' : a.id === 'adam' ? '#EFD3AE' : '#E8C39E'; ctx.fill();
   ctx.strokeStyle = 'rgba(21,18,13,0.3)'; ctx.lineWidth = 1.1 * z; ctx.stroke();
+  if(a.id === 'adam'){
+    // the shine: readable from across the floor
+    ctx.beginPath(); ctx.ellipse(px - 2.2 * z, py - 29.5 * z, 2.6 * z, 1.5 * z, -0.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
+  }
+  // the interception, visible: he is talking AT you
+  if(a.id === 'adam' && w && w.intercept){
+    ctx.font = (13 * z) + 'px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('💬', px + 12 * z, py - 34 * z);
+    ctx.fillStyle = 'rgba(21,18,13,0.55)';
+    ctx.font = '700 ' + Math.max(8, 9 * z) + 'px Poppins, sans-serif';
+    ctx.fillText('“quick thought—”', px, py - 44 * z);
+  }
   if(a.bear){
     ctx.beginPath(); ctx.arc(px - 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
     ctx.arc(px + 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
@@ -3742,6 +3830,12 @@ function handleSignal(s){
     case 'webinar':
       SFX.drill();
       toast('MANDATORY: “Resilience & You,” 90 min, cameras expected. Your inbox will wait. It will not shrink.');
+      break;
+    case 'adamintercept':
+      G.adamIntercepted(g, Math.floor(world.clockMin), s.useful);
+      toast(s.useful
+        ? 'Adam stopped you mid-aisle — then called Dennis. An approval just… cleared. Don’t ask.'
+        : 'Adam stopped you for a quick thought. It had three parts. You are eight minutes older.');
       break;
     case 'bosshuman': {
       const line = G.bossHumanBeat(g, Math.floor(world.clockMin));
