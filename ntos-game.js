@@ -380,6 +380,7 @@ const NineToSurvive = (() => {
       activeArcs: pickArcs((seed == null ? 1 : seed) | 0),   // this run's storylines
       todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
       receipts: { count: 0, flags: {} },
+      heat: { hr: 0, boss: 0, brad: 0 },   // office heat: who's watching you now
       feed: [],              // today's office feed: [{m: clockMin, text}]
       runSeed: (seed == null ? 1 : seed) | 0,
       rngState: (seed == null ? 1 : seed) | 0
@@ -456,6 +457,7 @@ const NineToSurvive = (() => {
     const e = WORLD_EFFECTS[kind];
     if(!e) return null;
     if(kind === 'bradSteal' && g.stats) g.stats.bradSteals++;
+    if(kind === 'bradFoiled') addHeat(g, 'brad', 1);   // CHAIN: you were RIGHT THERE — paranoia climbs
     const b = { s: g.standing, so: g.soul };
     const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad')
       ? bossCatchMod(g) + consumeCatchShield(g) : 0;
@@ -545,6 +547,8 @@ const NineToSurvive = (() => {
     g.receipts.flags[name] = true;
     g.receipts.count++;
     g.receipts.earned = (g.receipts.earned || 0) + 1;
+    // CHAIN: collecting evidence is itself evidence — HR heat +1 per receipt
+    addHeat(g, 'hr', 1);
     return true;
   }
   function hasReceipt(g, name){ return !!(g.receipts && g.receipts.flags[name]); }
@@ -553,6 +557,64 @@ const NineToSurvive = (() => {
     delete g.receipts.flags[name];
     g.receipts.count--;
     return true;
+  }
+
+  // ---- Office heat: three ways the building starts watching you -----------------
+  // Deterministic pressure meters raised by what YOU did, spent as consequences.
+  // CHAIN REACTIONS (each link logged where it fires):
+  //   HR heat      ← survey truth, collecting receipts, public receipt-burns,
+  //                  formal warnings  → raises the warning bar at review (High),
+  //                  Meredith starts reading writing styles (morning feed).
+  //   Boss attention ← promotions, dodged quick calls, crunch wins, perfect
+  //                  task days → an extra floor walk at High, plus off-arc
+  //                  "quick call" summons on seeded days.
+  //   Brad paranoia ← the screenshot, backing Priya, the bait, foiled raids
+  //                  → an extra raid at High, and (once) the self-own morning.
+  // All integers on g.heat, clamped 0..HEAT_MAX, serialized with the save.
+  const HEAT_MAX = 8;
+  const HEAT_MED = 3, HEAT_HIGH = 5;
+  const HR_HEAT_WARN = 5;   // at High, the review warns below WARN_AT + this
+  function addHeat(g, kind, n){
+    if(!g.heat) g.heat = { hr: 0, boss: 0, brad: 0 };
+    const before = g.heat[kind] || 0;
+    g.heat[kind] = Math.max(0, Math.min(HEAT_MAX, before + n));
+    return g.heat[kind] - before;
+  }
+  function heatOf(g, kind){ return (g.heat && g.heat[kind]) || 0; }
+  function heatLevel(g, kind){
+    const v = heatOf(g, kind);
+    return v >= HEAT_HIGH ? 'High' : v >= HEAT_MED ? 'Medium' : 'Low';
+  }
+  // one line per meter the first morning it runs High — the tell before the tax
+  const HEAT_FEED = {
+    hr:   'Meredith has been reading old survey responses with a highlighter.',
+    boss: 'There is a dashboard in the corner office now with a sparkline named after you.',
+    brad: 'Brad locks his screen to get water. Both screens.'
+  };
+  function heatMorningFeed(g){
+    if(!g.heatFeedDay) g.heatFeedDay = {};
+    ['hr', 'boss', 'brad'].forEach((k, i) => {
+      if(heatOf(g, k) >= HEAT_HIGH && !g.heatFeedDay[k]){
+        g.heatFeedDay[k] = g.day;
+        pushFeed(g, 551 + i, HEAT_FEED[k]);
+      }
+    });
+    // CHAIN: Brad paranoia High → (once per run, seeded) the self-own morning.
+    // His mistake, not yours — pure comedy plus headline material.
+    const brad = g.npcState && g.npcState.brad;
+    if(brad && heatOf(g, 'brad') >= HEAT_HIGH && !brad.flags.selfOwn && !brad.flags.fired
+       && arcRand(g, 'brad', 'selfown')() < 0.3){
+      brad.flags.selfOwn = true;
+      brad.counters.selfOwnDay = g.day;
+      brad.stress = 3;
+      pushFeed(g, 558, 'Brad reply-alled a spreadsheet named FINAL_v2_BRAD_PRIVATE. It was not private. It was not final.');
+      pushFeed(g, 566, 'Brad has recalled the message. Recalling a message notifies everyone twice.');
+    }
+    // CHAIN: exposing Brad → legal wakes up the next morning (once)
+    if(brad && (brad.flags.burned || brad.flags.fired) && !g.legalFeedDay){
+      g.legalFeedDay = g.day;
+      pushFeed(g, 553, 'Legal asked everyone to “preserve relevant documents.” Everyone suddenly has documents.');
+    }
   }
 
   // ---- The arc engine: serialized office lore -----------------------------------
@@ -652,6 +714,12 @@ const NineToSurvive = (() => {
             pushFeed(g, 540, 'Boss is typing…');
           } else if(!boss.flags.deflected){
             // no answer yet: the quick call keeps being requested
+            a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
+          } else if(heatOf(g, 'boss') >= HEAT_MED
+                    && arcRand(g, 'boss', 'spiralcall')() < 0.5){
+            // CHAIN: spiral + Boss attention — deflecting a spiraling boss who
+            // has you on his dashboard only works some days. He "just wants
+            // five minutes." It is never five minutes.
             a.summonsToday = 620 + Math.floor(arcRand(g, 'boss', 'summons')() * 200);
           }
         }
@@ -890,6 +958,7 @@ const NineToSurvive = (() => {
       brad.counters.discoveryDay = g.day;
       if(c.key === 'screenshot'){
         addReceipt(g, 'screenshot_brad_deck');
+        addHeat(g, 'brad', 2);   // CHAIN: he saw you see him — paranoia climbs
         brad.stress = 3; a.stage = 5;
         pushFeed(g, min, 'Brad deleted a message.');
         pushFeed(g, (min || 0) + 2, 'Brad deleted another message.');
@@ -907,6 +976,7 @@ const NineToSurvive = (() => {
       if(c.key === 'back'){
         priya.trust += 3; priya.flags.backed = true;
         g.npcState.brad.stress = Math.min(3, g.npcState.brad.stress + 1);
+        addHeat(g, 'brad', 1);   // CHAIN: backing Priya reads as choosing a side
         pushFeed(g, min, 'Someone said “this is Priya’s build” out loud, in the room, on the record.');
       } else if(c.key === 'dm'){
         priya.trust += 1; priya.flags.dmed = true;
@@ -919,6 +989,7 @@ const NineToSurvive = (() => {
         pushFeed(g, min, 'The demo was flawless. The credits were fiction. Productivity held.');
       } else if(c.key === 'bait'){
         priya.flags.baited = true;
+        addHeat(g, 'brad', 2);   // CHAIN: win or lose, he starts checking his files
         if(arcRand(g, 'priya', 'bait')() < 0.5){
           priya.flags.baitWon = true;
           priya.trust += 2; g.npcState.brad.stress = 3;
@@ -940,6 +1011,7 @@ const NineToSurvive = (() => {
       mer.counters.surveyDay = g.day;
       if(c.key === 'truth'){
         mer.flags.truthTold = true;
+        addHeat(g, 'hr', 2);   // CHAIN: seven paragraphs have a writing style
         pushFeed(g, min, 'Someone submitted seven paragraphs. Meredith has opened a thesaurus.');
       } else if(c.key === 'help'){
         const peers = ['kayla', 'priya', 'marcus'];
@@ -1071,6 +1143,12 @@ const NineToSurvive = (() => {
       const d = applyStoryDelta(g, 0, +2);
       return d.dso;
     }
+    // CHAIN: you watched her drown and kept shipping — her chats are "fine"
+    // now ("it's fine") and refill almost nothing, for the rest of the run
+    if(who === 'kayla' && g.npcState.kayla.flags.ignored){
+      const d = applyStoryDelta(g, 0, -2);
+      return d.dso;
+    }
     return 0;
   }
 
@@ -1117,6 +1195,7 @@ const NineToSurvive = (() => {
   // Never found time for the quick call: the office reads that as an answer.
   function bossSummonsDodged(g, min){
     const boss = g.npcState.boss;
+    addHeat(g, 'boss', 2);   // CHAIN: an unanswered "got a sec" is an answer he remembers
     if(boss.flags.deflected || boss.flags.sympathetic) return false;
     boss.flags.deflected = true; boss.flags.hardCatch = true;
     pushFeed(g, min, '“got a sec” expired unanswered. It has been noted somewhere with columns.');
@@ -1154,6 +1233,8 @@ const NineToSurvive = (() => {
       if(!burnReceipt(g, 'priya_commit_log')) return null;
       const d = applyStoryDelta(g, +8, +6);
       const brad = g.npcState.brad;
+      // CHAIN: public receipt-burns are a scene — HR notices, Brad spirals
+      addHeat(g, 'hr', 1); addHeat(g, 'brad', 2);
       brad.trust -= 2; brad.stress = Math.min(3, brad.stress + 1);
       g.npcState.priya.trust += 2;
       pushFeed(g, min, 'A commit log appeared on the big screen. Authorship stopped being a vibe.');
@@ -1165,6 +1246,9 @@ const NineToSurvive = (() => {
     if(!burnReceipt(g, 'screenshot_brad_deck')) return null;
     const d = applyStoryDelta(g, +10, +8);   // the theft, reversed, with interest
     const brad = g.npcState.brad;
+    // CHAIN: the projector moment — HR opens a folder; Brad stops raiding
+    // anyone who screen-shares evidence (see noBradRaids in worldFlagsFor)
+    addHeat(g, 'hr', 1); addHeat(g, 'brad', 2);
     brad.trust -= 3; brad.stress = 3; brad.flags.burned = true;
     const a = g.arcs.brad_second_job;
     if(a && a.stage === 8 && !brad.flags.covered){ a.stage = 5; a.waited = 0; }  // the moment un-passes
@@ -1216,11 +1300,20 @@ const NineToSurvive = (() => {
       bradDeckAt:     b.stage === 3 ? b.deckAt : null,
       bradFiredToday: b.stage === 6,
       bradGone:       b.stage === 7,     // stage 8 = closed quietly; he's still here
-      noBradRaids:    !!brad.flags.covered || b.stage === 6 || b.stage === 7,
+      // CHAIN: exposing Brad (the projector moment) also ends his raids — a
+      // burned man checks his own screen, not your inbox
+      noBradRaids:    !!brad.flags.covered || !!brad.flags.burned || b.stage === 6 || b.stage === 7,
       bossArcHot:     bo.stage === 1,
-      extraBossWalks: bo.stage === 1 ? 1 : 0,
+      // CHAIN: Boss attention High adds a floor walk on top of any spiral walk
+      extraBossWalks: (bo.stage === 1 ? 1 : 0) + (heatOf(g, 'boss') >= HEAT_HIGH ? 1 : 0),
+      // CHAIN: Brad paranoia High adds a raid — he is sure YOU are up to something
+      extraBradRaids: (heatOf(g, 'brad') >= HEAT_HIGH && b.stage !== 6 && b.stage !== 7) ? 1 : 0,
       crunchBoost:    bo.stage === 1 ? 0.25 : 0,
-      bossSummonsAt:  (bo.stage === 1 && bo.summonsToday) || null,
+      // CHAIN: Boss attention High summons "quick calls" even with no spiral
+      // running — high performers get calendars done TO them (seeded ~1-in-3)
+      bossSummonsAt:  (bo.stage === 1 && bo.summonsToday)
+        || (heatOf(g, 'boss') >= HEAT_HIGH && arcRand(g, 'boss', 'heatcall')() < 0.35
+            ? 640 + Math.floor(arcRand(g, 'boss', 'heatcallmin')() * 200) : null),
       incidents:      (g.todayIncidents || []).slice()
     };
   }
@@ -1274,12 +1367,16 @@ const NineToSurvive = (() => {
         pushFeed(g, 1019, 'Your survey answers attended your review. Anonymously.');
         if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
       }
+      // CHAIN: HR heat High raises the warning bar — the review reads your file first
+      const warnAt = WARN_AT + (heatOf(g, 'hr') >= HEAT_HIGH ? HR_HEAT_WARN : 0);
       if(g.failed){ /* the bill can end it */ }
       else if(g.standing >= PROMOTE_AT && g.jobIdx < LADDER.length - 1){
         g.jobIdx++; g.standing = PROMOTE_RESET; soulHit(g, PROMOTE_SOUL);
+        addHeat(g, 'boss', 2);   // CHAIN: every rung up is a rung closer to his calendar
         report.promoted = true; report.newTitle = jobTitle(g);
         pushFeed(g, 1020, 'A promotion was announced. The word “journey” was used twice.');
-      } else if(g.standing < WARN_AT){
+      } else if(g.standing < warnAt){
+        if(g.standing >= WARN_AT) report.hrHeatWarned = true;   // heat made the difference
         if(hasReceipt(g, 'hr_survey_metadata')){
           // the receipt defuses exactly one warning, then it's spent
           burnReceipt(g, 'hr_survey_metadata');
@@ -1288,11 +1385,16 @@ const NineToSurvive = (() => {
           pushFeed(g, 1020, 'The warning was withdrawn after you asked, politely, about survey response IDs.');
         } else {
           soulHit(g, WARN_SOUL); report.warned = true;
+          addHeat(g, 'hr', 1);   // CHAIN: warnings compound — the file grows itself now
           if(g.stats) g.stats.warnings++;
           pushFeed(g, 1020, 'Meredith created a document. The filename contains your name and the word “alignment.”');
         }
       }
     }
+    // CHAIN: a perfect ship-day is "high performance" — the corner office notices
+    if(!g.failed && stats.tasksTotal > 0 && stats.tasksDone >= stats.tasksTotal)
+      addHeat(g, 'boss', 1);
+    report.heat = { hr: heatLevel(g, 'hr'), boss: heatLevel(g, 'boss'), brad: heatLevel(g, 'brad') };
     report.money = g.money;
     g.dayReport = report;
     return g.failed ? 'gameover' : 'dayend';
@@ -1336,7 +1438,9 @@ const NineToSurvive = (() => {
     if(rep.warningDefused) return d + 'a warning met a metadata screenshot and blinked first.';
     if(rep.promoted) return d + 'promoted. The bar moved. It saw you coming.';
     if(rep.warned) return d + 'HR opened a document with your name in the filename.';
-    if(rep.deadEyed >= 2) return d + 'three tasks in a row without blinking. HR calls it “flow.”';
+    // CHAIN: an ignored Kayla lowers the bar for the dead-eyed headline
+    if(rep.deadEyed >= 2 || (rep.deadEyed >= 1 && g.npcState.kayla.flags.ignored))
+      return d + 'three tasks in a row without blinking. HR calls it “flow.”';
     if(rep.forgiven) return d + 'Marcus was right about Thursday.';
     if(rep.broke) return d + 'the ATM asked if you were sure.';
     return d + 'survived.';
@@ -1368,6 +1472,7 @@ const NineToSurvive = (() => {
     if(g.dennisBlockerToday)
       pushFeed(g, 549, 'Dennis changed the approval workflow. The change requires approval. His.');
     advanceArcs(g);
+    heatMorningFeed(g);   // heat tells + the Brad self-own + the legal morning
     g.plan = planDay(g);
   }
 
@@ -1377,6 +1482,7 @@ const NineToSurvive = (() => {
   const CRUNCH_WIN = 4, CRUNCH_LOSE = 10, CRUNCH_BONUS = 250;
   function applyCrunch(g, success){
     if(g.stats){ if(success) g.stats.crunchWins++; else g.stats.crunchFails++; }
+    if(success) addHeat(g, 'boss', 1);   // CHAIN: deliver under pressure once, get volunteered forever
     const before = g.standing;
     g.standing = clamp(g.standing + (success ? CRUNCH_WIN : -CRUNCH_LOSE));
     let bonus = 0;
@@ -1595,6 +1701,7 @@ const NineToSurvive = (() => {
     applyCrunch, applyCoffee, applyWorldEffect,
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
+    addHeat, heatOf, heatLevel, HEAT_MAX, HEAT_MED, HEAT_HIGH, HR_HEAT_WARN,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
     BRAD_ENCS, bradOutOfPlay, bradDeckSeen, bradAllHands, bradFiredReport, bradTasksAbsorbed,
     bossSummonsDodged, bossHumanBeat, bossCatchMod,

@@ -562,9 +562,11 @@ function toBossHot(seed){
   return g2;
 }
 const gHot = toBossHot(301);
+// (the march ships perfect days, so Boss attention may already add its own walk:
+// spiral guarantees ≥1 extra walk, heat can stack a second — both are correct)
 ok('spiral goes hot in week two+, summons staged', gHot.day >= 6
   && G.worldFlagsFor(gHot).bossArcHot && G.worldFlagsFor(gHot).bossSummonsAt >= 620
-  && G.worldFlagsFor(gHot).extraBossWalks === 1 && G.worldFlagsFor(gHot).crunchBoost > 0);
+  && G.worldFlagsFor(gHot).extraBossWalks >= 1 && G.worldFlagsFor(gHot).crunchBoost > 0);
 ok('baseline catch while hot but unanswered: −6', G.bossCatchMod(gHot) === 0
   && G.WORLD_EFFECTS.bossCatch.s === -6);
 // SYMPATHIZE: Standing climbs, Soul pays, catches soften, summons become daily
@@ -600,9 +602,10 @@ ok('deflect: catches harden (−6 → −8, bad −9 → −11)', (() => {
   const r2 = G.applyWorldEffect(t2, 'bossCatchBad');
   return r1.ds === -8 && r2.ds === -11;
 })());
-ok('deflect: no more summons', (() => {
+ok('deflect: no more summons (while the Boss isn\'t already watching you)', (() => {
   G.closeDay(gDef, { tasksDone: 8, tasksTotal: 8 });
   gDef.standing = 60; gDef.soul = 70; gDef.failed = null; gDef.over = false;
+  gDef.heat.boss = 0;   // cold: deflect sticks. Hot is the CHAIN test below.
   G.nextDay(gDef);
   return G.worldFlagsFor(gDef).bossSummonsAt === null;
 })());
@@ -1232,6 +1235,134 @@ ok('TASK 6 case: approvals — shield when 2+ stuck, Pipe when idle, else work o
 ok('policy is pure: same inputs, same action', (() => {
   const t = G.newGame(801);
   return JSON.stringify(G.policyAction(t, fakeWorld())) === JSON.stringify(G.policyAction(t, fakeWorld()));
+})());
+
+// ---- 20. OFFICE HEAT: who's watching you now ---------------------------------
+ok('heat: fresh run starts cold, clamps 0..MAX, levels map', (() => {
+  const t = G.newGame(2001);
+  if(G.heatOf(t, 'hr') !== 0 || G.heatOf(t, 'boss') !== 0 || G.heatOf(t, 'brad') !== 0) return false;
+  G.addHeat(t, 'hr', 2);
+  if(G.heatLevel(t, 'hr') !== 'Low') return false;
+  G.addHeat(t, 'hr', 1);
+  if(G.heatLevel(t, 'hr') !== 'Medium') return false;
+  G.addHeat(t, 'hr', 99);
+  if(G.heatOf(t, 'hr') !== G.HEAT_MAX || G.heatLevel(t, 'hr') !== 'High') return false;
+  G.addHeat(t, 'hr', -99);
+  return G.heatOf(t, 'hr') === 0;
+})());
+ok('heat: survey truth heats HR +2; collecting a receipt heats HR +1', (() => {
+  const t = G.newGame(2002);
+  G.applyIncidentChoice(t, 'hr_survey', 1, 700);           // truth
+  const afterTruth = G.heatOf(t, 'hr');
+  G.addReceipt(t, 'screenshot_brad_deck');
+  return afterTruth === 2 && G.heatOf(t, 'hr') === 3;
+})());
+ok('heat: the screenshot heats Brad +2 (+1 more via the receipt is HR, not Brad)', (() => {
+  const t = G.newGame(2003);
+  t.arcs.brad_second_job = { stage: 4 };
+  G.applyIncidentChoice(t, 'brad_discovery', 0, 700);      // screenshot
+  return G.heatOf(t, 'brad') === 2 && G.heatOf(t, 'hr') === 1;
+})());
+ok('heat: dodged summons +2 boss, crunch win +1 boss, promotion +2 boss', (() => {
+  const t = G.newGame(2004);
+  G.bossSummonsDodged(t, 700);
+  if(G.heatOf(t, 'boss') !== 2) return false;
+  G.applyCrunch(t, true);
+  if(G.heatOf(t, 'boss') !== 3) return false;
+  t.standing = 80; t.day = 5;
+  G.closeDay(t, { tasksDone: 0, tasksTotal: 0 });          // Friday: promoted
+  return t.dayReport.promoted && G.heatOf(t, 'boss') === 5;
+})());
+ok('heat: HR High moves the warning bar (warned at 38, flagged as heat)', (() => {
+  const t = G.newGame(2005);
+  t.heat.hr = G.HEAT_HIGH;
+  t.standing = 44; t.day = 5; t.soul = 60;   // decay −6 lands the review at 38
+  G.closeDay(t, { tasksDone: 0, tasksTotal: 0 });
+  if(!(t.dayReport.warned && t.dayReport.hrHeatWarned)) return false;
+  const u = G.newGame(2005);
+  u.standing = 44; u.day = 5; u.soul = 60;                 // same review, no heat
+  G.closeDay(u, { tasksDone: 0, tasksTotal: 0 });
+  return !u.dayReport.warned;
+})());
+ok('heat: a perfect ship-day heats the Boss +1', (() => {
+  const t = G.newGame(2006);
+  G.closeDay(t, { tasksDone: 7, tasksTotal: 7 });
+  return G.heatOf(t, 'boss') === 1;
+})());
+ok('heat: consequences reach the world — extra walk, extra raid, off-arc summons some days', (() => {
+  const t = G.newGame(2007);
+  t.heat.boss = G.HEAT_HIGH; t.heat.brad = G.HEAT_HIGH;
+  let sawSummons = false, sawQuiet = false;
+  for(let d = 0; d < 12; d++){
+    const f = G.worldFlagsFor(t);
+    if(f.extraBossWalks < 1 || f.extraBradRaids !== 1) return false;
+    if(f.bossSummonsAt) sawSummons = true; else sawQuiet = true;
+    t.day++;
+  }
+  return sawSummons && sawQuiet;   // seeded ~1-in-3: both outcomes must exist
+})());
+ok('heat: burned Brad stops raiding (worldFlagsFor.noBradRaids)', (() => {
+  const t = G.newGame(2008);
+  t.npcState.brad.flags.burned = true;
+  return G.worldFlagsFor(t).noBradRaids === true && G.worldFlagsFor(t).extraBradRaids === 0;
+})());
+ok('heat: serializes with the save', (() => {
+  const t = G.newGame(2009);
+  G.addHeat(t, 'brad', 4);
+  const u = JSON.parse(JSON.stringify(t));
+  return G.heatOf(u, 'brad') === 4 && G.heatLevel(u, 'brad') === 'Medium';
+})());
+ok('heat: the report carries the levels for the 5:01 screen', (() => {
+  const t = G.newGame(2010);
+  t.heat.hr = 6;
+  G.closeDay(t, { tasksDone: 0, tasksTotal: 0 });
+  return t.dayReport.heat && t.dayReport.heat.hr === 'High' && t.dayReport.heat.boss === 'Low';
+})());
+ok('CHAIN: Brad paranoia High → the self-own morning fires once, ever', (() => {
+  const t = G.newGame(2011);
+  t.heat.brad = G.HEAT_HIGH;
+  let days = 0;
+  while(!t.npcState.brad.flags.selfOwn && days < 30){ G.nextDay(t); t.heat.brad = G.HEAT_HIGH; days++; }
+  if(!t.npcState.brad.flags.selfOwn) return false;
+  const firstDay = t.npcState.brad.counters.selfOwnDay;
+  for(let i = 0; i < 5; i++) G.nextDay(t);
+  return t.npcState.brad.counters.selfOwnDay === firstDay;   // never re-fires
+})());
+ok('CHAIN: exposing Brad → the legal morning line (once)', (() => {
+  const t = G.newGame(2012);
+  t.npcState.brad.flags.burned = true;
+  G.nextDay(t);
+  const legal = t.feed.some(f => /Legal asked everyone/.test(f.text));
+  const day = t.legalFeedDay;
+  G.nextDay(t);
+  return legal && t.legalFeedDay === day && !t.feed.some(f => /Legal asked everyone/.test(f.text));
+})());
+ok('CHAIN: ignored Kayla gives back almost nothing in chats', (() => {
+  const t = G.newGame(2013);
+  t.npcState.kayla.flags.ignored = true;
+  t.soul = 50;
+  const d = G.chatBonus(t, 'kayla');
+  return d === -2;
+})());
+ok('CHAIN: deflected + Boss attention → the spiral keeps summoning some days', (() => {
+  const t = G.newGame(2014);
+  t.activeArcs = { marcus_survivor: true, boss_spiral: true };
+  t.arcs = { boss_spiral: { stage: 1, startDay: 2, hotDays: 40 } };
+  t.npcState.boss.flags.deflected = true;
+  t.heat.boss = G.HEAT_MED;
+  let summoned = 0, quiet = 0;
+  for(let d = 0; d < 14; d++){
+    t.day = 3 + d;
+    G.advanceArcs(t);
+    if(t.arcs.boss_spiral.summonsToday) summoned++; else quiet++;
+  }
+  const u = G.newGame(2014);   // same spiral, cold boss: deflect actually sticks
+  u.activeArcs = { marcus_survivor: true, boss_spiral: true };
+  u.arcs = { boss_spiral: { stage: 1, startDay: 2, hotDays: 40 } };
+  u.npcState.boss.flags.deflected = true;
+  let uSummoned = 0;
+  for(let d = 0; d < 14; d++){ u.day = 3 + d; G.advanceArcs(u); if(u.arcs.boss_spiral.summonsToday) uSummoned++; }
+  return summoned > 0 && quiet > 0 && uSummoned === 0;
 })());
 
 // ---- report -----------------------------------------------------------------

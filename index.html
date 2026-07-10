@@ -218,6 +218,7 @@ button{touch-action:manipulation;}
       <div class="jobline"><span id="jobline-l">Day 1 · Wk 1 · Intern</span><span class="pay" id="jobline-r">+$180/day</span></div>
       <div class="jobline taskline"><span id="tasks-l">INBOX · 0 waiting</span><span id="tasks-r">0/0 shipped</span></div>
       <div class="jobline taskline hidden" id="receiptline"><span>🧾 Receipts</span><span id="receipts-r"></span></div>
+      <div class="jobline taskline hidden" id="heatline"><span>🌡 Heat</span><span id="heat-r"></span></div>
       <div class="meters">
         <div class="meter standing">
           <div class="mrow"><div><span class="mname">Standing</span> <span class="msub">how they see you</span></div><div class="mval" id="v-standing">50<span class="delta" id="d-standing"></span></div></div>
@@ -652,6 +653,12 @@ function loop(t){
   const rc = g.receipts ? g.receipts.count : 0;
   $id('receiptline').classList.toggle('hidden', rc === 0);
   if(rc > 0) $id('receipts-r').textContent = rc + ' held · leverage, technically';
+  // office heat: hidden until somebody is actually watching you
+  const heatHot = G.heatOf(g, 'hr') >= G.HEAT_MED || G.heatOf(g, 'boss') >= G.HEAT_MED
+               || G.heatOf(g, 'brad') >= G.HEAT_MED;
+  $id('heatline').classList.toggle('hidden', !heatHot);
+  if(heatHot) $id('heat-r').textContent =
+    'HR ' + G.heatLevel(g, 'hr') + ' · Boss ' + G.heatLevel(g, 'boss') + ' · Brad ' + G.heatLevel(g, 'brad');
   W.render(world, ctx, cam, window.innerWidth, window.innerHeight);
   rafId = requestAnimationFrame(loop);
 }
@@ -1150,6 +1157,9 @@ function showDayEnd(){
   if(rep.truthBill) rows.push(['Your “anonymous” answers attended the review', 'Standing −5', 'minus']);
   if(rep.warningDefused) rows.push(['Warning withdrawn — you mentioned response IDs', '🧾 receipt spent', 'plus']);
   if(rep.warned) rows.push(['HR “quick chat” — the word PIP was used', 'Soul −' + G.WARN_SOUL, 'soulhit']);
+  if(rep.hrHeatWarned) rows.push(['HR heat is High — the warning bar moved up to meet you', 'your file attended the review', 'minus']);
+  if(rep.heat && (rep.heat.hr !== 'Low' || rep.heat.boss !== 'Low' || rep.heat.brad !== 'Low'))
+    rows.push(['Office heat — who’s watching', 'HR ' + rep.heat.hr + ' · Boss ' + rep.heat.boss + ' · Brad ' + rep.heat.brad, 'minus']);
   $id('report').innerHTML = rows.map(r =>
     '<div class="rrow"><span class="rk">' + r[0] + '</span><span class="rv ' + r[2] + '">' + r[1] + '</span></div>'
   ).join('');

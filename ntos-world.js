@@ -274,6 +274,12 @@ function newDay(seed, day, plan, flags){
     if(adam){ adam.wanderT = 2 + ar() * 6; adam.mood = MOODS[Math.floor(ar() * 3)]; }
     w.adamRolls = Array.from({ length: 12 }, ar);   // interception + usefulness rolls
     w.adamRollIdx = 0;
+    // the concern walk: ~1 day in 3, Adam heads for HR "with a concern." Both
+    // rolls always spent (same side stream, appended AFTER the original 12, so
+    // every pre-existing Adam expectation is byte-identical). Interceptable.
+    const concernRoll = ar(), concernMin = 620 + Math.floor(ar() * 260);
+    w.adamConcern = (adam && concernRoll < 0.35)
+      ? { atMin: concernMin, status: 'pending' } : null;
   })();
   w.adamIntercepts = 0;
   w.adamNextOk = 0;
@@ -291,6 +297,16 @@ function newDay(seed, day, plan, flags){
   w.kaylaTaskTaken = false;
   w.kaylaReported = false;
   w.webinarAnnounced = false;
+  // schemes + interceptions: all once-a-day, all serialized on the world
+  w.baitPlanted = false;        // the flawed file, left on top for Brad
+  w.walkedWithDennis = false;   // the mid-carry escort clear (free, once)
+  w.grenadeUsed = false;        // Adam, deployed at Dennis
+  // the demo happens IN THE MEETING ROOM: Priya heads over early — reach her
+  // there before it starts to collect the commit log or plant the flawed file
+  w.demo = null;
+  (flags.incidents || []).forEach(inc => {
+    if(inc.id === 'priya_demo') w.demo = { atMin: inc.atMin, prepped: false };
+  });
   // task drip: seeded daily load, 3 waiting at 9:00, the rest spread to ~3:30
   w.tasks.total = TASKS_MIN + Math.floor(rand(w) * (TASKS_MAX - TASKS_MIN + 1));
   w.tasks.spawnAt = [540, 540, 540];
@@ -315,6 +331,11 @@ function newDay(seed, day, plan, flags){
   // maybe a fire drill (likelier while the corner office is spiraling)
   if(rand(w) < CRUNCH_CHANCE + (flags.crunchBoost || 0))
     w.crunch = { atMin: 690 + Math.floor(rand(w) * 120), status: 'pending' };
+  // heat: Brad paranoia adds a raid (rolled LAST so pre-heat staging never shifts)
+  const extraRaids = (flags.noBradRaids || flags.bradGone) ? 0 : (flags.extraBradRaids || 0);
+  for(let i = 0; i < extraRaids; i++)
+    w.bradRaids.push({ atMin: 600 + Math.floor(rand(w) * 360), status: 'pending' });
+  w.bradRaids.sort((a, b) => a.atMin - b.atMin);
   return w;
 }
 
