@@ -486,7 +486,19 @@ function soakRun(seed, opts){
             const you = W.getActor(w, 'you');
             if(!you.path.length) W.playerGoHome(w);
           }
+        } else if(policy === 'rebel'){
+          // minimal work, maximal lounging: ship 3, then live a little
+          if(!w.playerErrand){
+            const you = W.getActor(w, 'you');
+            if(w.tasks.done < 3){
+              if(!W.playerAtDesk(w) && !you.path.length) W.playerGoHome(w);
+            } else if(!w.coffeeUsed) W.goForCoffee(w);
+            else if(!w.couchUsed) W.goForCouch(w);
+            else if(!w.chatted.marcus) W.requestChat(w, 'marcus');
+            else if(W.playerAtDesk(w) && !you.path.length) W.movePlayer(w, { x: 25, y: 22 });
+          }
         } else if(!w.playerErrand && !W.playerAtDesk(w)){
+          // desk + suckup: chained to the chair
           const you = W.getActor(w, 'you');
           if(!you.path.length) W.playerGoHome(w);
         }
@@ -496,19 +508,31 @@ function soakRun(seed, opts){
         case 'walkout':
           if(G.walkOut(g)) dayDone = true;
           break;
-        case 'encounter':
-          G.applyChoice(g, policy === 'competent'
-            ? G.policyCardChoice(g, g.plan[g.idxInDay]) : 2);
+        case 'encounter': {
+          const encIdx = g.plan[g.idxInDay];
+          let pick = 2;                                    // desk: the third way
+          if(policy === 'competent') pick = G.policyCardChoice(g, encIdx);
+          else if(policy === 'suckup') pick = argmaxChoice(G.ENCOUNTERS[encIdx].choices, c => c.s);
+          else if(policy === 'rebel') pick = argmaxChoice(G.ENCOUNTERS[encIdx].choices, c => c.so);
+          G.applyChoice(g, pick);
           if(G.advance(g) === 'gameover'){ dayDone = true; break; }
           W.resolveEncounter(w); break;
-        case 'arcincident':
-          // competent: the policy's named cases; desk: rotate to exercise branches
+        }
+        case 'arcincident': {
+          // competent: the policy's named cases; suckup complies; rebel maxes
+          // soul; desk rotates to exercise branches
           incidentsFired++;
-          G.applyIncidentChoice(g, s.id, policy === 'competent'
-            ? G.policyIncidentChoice(g, s.id)
-            : (g.day + seed) % G.ARC_INCIDENTS[s.id].choices.length, Math.floor(w.clockMin));
+          let ipick;
+          if(policy === 'competent') ipick = G.policyIncidentChoice(g, s.id);
+          else if(policy === 'suckup')
+            ipick = ({ brad_discovery: 1, hr_survey: 0, boss_quick_call: 0, priya_demo: 3 })[s.id] || 0;
+          else if(policy === 'rebel')
+            ipick = argmaxChoice(G.ARC_INCIDENTS[s.id].choices, c => c.so);
+          else ipick = (g.day + seed) % G.ARC_INCIDENTS[s.id].choices.length;
+          G.applyIncidentChoice(g, s.id, ipick, Math.floor(w.clockMin));
           if(g.over){ dayDone = true; break; }
           W.resolveEncounter(w); break;
+        }
         case 'braddeck':    G.bradDeckSeen(g, Math.floor(w.clockMin)); break;
         case 'bradallhands':G.bradAllHands(g, Math.floor(w.clockMin)); break;
         case 'bradfired':   firedSeen = true; G.bradFiredReport(g, Math.floor(w.clockMin)); break;
@@ -516,8 +540,11 @@ function soakRun(seed, opts){
         case 'summons':
           break;   // competent answers via policyAction; desk dodges by staying put
         case 'quickcall':
-          G.applyIncidentChoice(g, 'boss_quick_call', policy === 'competent'
-            ? G.policyIncidentChoice(g, 'boss_quick_call') : g.day % 2, Math.floor(w.clockMin));
+          G.applyIncidentChoice(g, 'boss_quick_call',
+            policy === 'competent' ? G.policyIncidentChoice(g, 'boss_quick_call')
+            : policy === 'suckup' ? 0
+            : policy === 'rebel' ? 1
+            : g.day % 2, Math.floor(w.clockMin));
           if(g.over){ dayDone = true; break; }
           W.resolveQuickCall(w); W.playerGoHome(w); break;
         case 'summonsmissed': G.bossSummonsDodged(g, Math.floor(w.clockMin)); break;
@@ -583,12 +610,18 @@ ok('same seed = same feed, end to end', feedA.g.day === feedB.g.day
   && JSON.stringify(feedA.g.feed) === JSON.stringify(feedB.g.feed)
   && feedA.g.feed.length > 0, feedA.g.feed.length + ' lines on day ' + feedA.g.day);
 
+function argmaxChoice(choices, f){
+  let best = 0, bestV = -Infinity;
+  choices.forEach((c, i) => { const v = f(c); if(v > bestV){ bestV = v; best = i; } });
+  return best;
+}
+
 const SOAK_SEEDS = 50;
 function soakSweep(policy){
   const out = { issues: [], outcomes: { escaped:0, soul:0, standing:0, timeout:0 },
                 escapeDays: [], soulAtEscape: [], stories: {} };
   for(let sd = 1; sd <= SOAK_SEEDS; sd++){
-    const r = soakRun(sd * 1000 + 7, { policy });
+    const r = soakRun(sd * 1000 + 7, { policy, maxDays: policy === 'rebel' ? 60 : 200 });
     out.issues = out.issues.concat(r.issues);
     if(r.g.escaped){
       out.outcomes.escaped++;
@@ -636,8 +669,29 @@ ok('TASK 3: strong escapes land worn (median Soul 45–78, 80+ the exception)', 
   const high = soakC.soulAtEscape.filter(s => s >= 80).length;
   return m >= 45 && m <= 78 && high <= soakC.soulAtEscape.length * 0.25;
 })(), JSON.stringify(soakC.soulAtEscape));
-lines.push('INFO  desk-only outcomes: ' + JSON.stringify(soakA.outcomes));
-lines.push('INFO  competent outcomes: ' + JSON.stringify(soakC.outcomes));
+// ---- TASK 7: THE SWEEP MATRIX (the session gate) ----
+// movie-default = the identical policy function + consumer wiring ?movie=1
+// runs; the identity is proven by re-sweeping and requiring exact equality.
+const soakMovie = soakSweep('competent');
+ok('MATRIX movie-default ≡ competent (same function, same outcomes)',
+  JSON.stringify(soakMovie.outcomes) === JSON.stringify(soakC.outcomes)
+  && JSON.stringify(soakMovie.escapeDays) === JSON.stringify(soakC.escapeDays),
+  JSON.stringify(soakMovie.outcomes));
+const soakS = soakSweep('suckup');
+ok('MATRIX suck-up: usually dies of Soul, zero hangs',
+  soakS.issues.length === 0 && soakS.outcomes.soul > SOAK_SEEDS / 2
+  && soakS.outcomes.escaped === 0, JSON.stringify(soakS.outcomes));
+const soakR = soakSweep('rebel');
+ok('MATRIX rebel: usually loses to Standing, never banks the number, zero hangs',
+  soakR.issues.length === 0 && soakR.outcomes.standing > SOAK_SEEDS / 2
+  && soakR.outcomes.escaped === 0, JSON.stringify(soakR.outcomes));
+ok('MATRIX desk-only: dies of Soul (struggles by design), zero hangs',
+  soakA.issues.length === 0 && soakA.outcomes.soul > SOAK_SEEDS / 2, JSON.stringify(soakA.outcomes));
+lines.push('INFO  MATRIX movie-default: ' + JSON.stringify(soakMovie.outcomes));
+lines.push('INFO  MATRIX competent: ' + JSON.stringify(soakC.outcomes));
+lines.push('INFO  MATRIX desk-only: ' + JSON.stringify(soakA.outcomes));
+lines.push('INFO  MATRIX suck-up: ' + JSON.stringify(soakS.outcomes));
+lines.push('INFO  MATRIX rebel (60-day horizon; timeout = survived): ' + JSON.stringify(soakR.outcomes));
 lines.push('INFO  competent escape days: ' + JSON.stringify(soakC.escapeDays));
 lines.push('INFO  competent soul at escape: ' + JSON.stringify(soakC.soulAtEscape));
 lines.push('INFO  competent lead stories: ' + JSON.stringify(soakC.stories));

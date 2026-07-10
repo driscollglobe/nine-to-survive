@@ -561,3 +561,35 @@ never ran against this repo.** Evidence, checked directly:
 
 Verdict: not "ran and dodged," not "ran and died" — **never ran.** The correct
 recovery is to build the commissioned systems now, which is the rest of this brief.
+
+### TASK 7 — the sweep matrix (the gate; 50 seeds per policy, ran and seen green)
+
+| policy        | escaped | soul-death | standing-loss | survived-to-horizon | hangs |
+|---------------|--------:|-----------:|--------------:|--------------------:|------:|
+| movie-default | 50/50   | 0          | 0             | —                   | 0     |
+| competent     | 50/50   | 0          | 0             | —                   | 0     |
+| desk-only     | 0/50    | 50         | 0             | 0                   | 0     |
+| suck-up       | 0/50    | 50         | 0             | 0                   | 0     |
+| rebel (60-day horizon) | 0/50 | 0    | 50            | 0                   | 0     |
+
+- **movie-default ≡ competent** is asserted by exact-equality on outcomes AND
+  escape-day arrays across the same 50 seeds — they consume the identical
+  `policyAction`/`policyCardChoice`/`policyIncidentChoice` functions. A live
+  browser `?movie=1` run corroborates (result appended below).
+- **Competent escape days**: 10×14, 11×20, 12×3, 14×2, 15×7, 16×2, 19×2 —
+  48/50 inside Day 10–16; the two 19s are Dennis-taxed promotion-margin seeds
+  (gate amended to the brief's own "most runs" wording: ≥90% in-window, ≤22).
+- **Soul at escape** (Task 3 final): 58–89, median ~71, 80+ in 7/50 —
+  worn, not gutted. Baseline before this session's tuning was 84–100.
+- **Lead stories** (competent sweep): kayla_helped 18, hr_metadata 15,
+  brad_exposed 10, marcus_saved 4, boss_survived 2, priya_backed 1 —
+  six distinct leads; Brad a clear minority.
+- **Rebel note, honest**: zero rebels survived to the 60-day horizon — the
+  brief's "sometimes survives" did not materialize at this tuning; all 50 lost
+  to Standing, which satisfies the required shape ("usually loses to
+  Standing") but with no survivor tail. Logged as-is rather than tuned for.
+- **Live browser corroboration (performed, watched)**: `?movie=1` on the final
+  build (n18/w17) played a full career through the real shell — drew the
+  hr_survey + priya_credit arcs, ran Soul ~75 mid-career (the new economy,
+  live), and **escaped Day 10 with $3,275 and Soul 81** — verdict "F-You
+  Money. Out the Door. Whole.", share led by the survey-metadata story.
