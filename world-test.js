@@ -539,6 +539,12 @@ ok('ACCEPTANCE: at least four distinct lead stories',
   Object.keys(soakC.stories).length >= 4, JSON.stringify(soakC.stories));
 ok('ACCEPTANCE: Brad\'s firing leads a minority of runs',
   (soakC.stories.brad_exposed || 0) < soakC.outcomes.escaped / 2, JSON.stringify(soakC.stories));
+// ---- TASK 3: the cost of a good run — worn, not gutted ----
+ok('TASK 3: strong escapes land worn (median Soul 45–78, 80+ the exception)', (() => {
+  const m = soakC.soulAtEscape[Math.floor(soakC.soulAtEscape.length / 2)];
+  const high = soakC.soulAtEscape.filter(s => s >= 80).length;
+  return m >= 45 && m <= 78 && high <= soakC.soulAtEscape.length * 0.25;
+})(), JSON.stringify(soakC.soulAtEscape));
 lines.push('INFO  desk-only outcomes: ' + JSON.stringify(soakA.outcomes));
 lines.push('INFO  competent outcomes: ' + JSON.stringify(soakC.outcomes));
 lines.push('INFO  competent escape days: ' + JSON.stringify(soakC.escapeDays));

@@ -221,7 +221,10 @@ const third = runCareer(7, 2, 6, 2, 'bossPass');
 ok('third-way policy escapes with F-U money', third.escaped, 'day='+third.day+' $'+third.money+' failed='+third.failed);
 // balance target (session 5): ~2.5-min days × escape around day 10-12 ≈ a 25-30 min win
 ok('third-way escape lands in the tuned run length (8–20 days)', third.day>=8 && third.day<=20, 'day='+third.day);
-ok('third-way escapes with soul intact', third.soul >= 50, 'soul='+third.soul);
+// Session 9 TASK 3: this crude fixed-loop bot (2 meh chats + coffee, no couch,
+// no card scoring) now lands the HOLLOW escape tier — it escapes, barely whole.
+// The competent-policy sweep in world-test owns the 45–75 worn-but-whole band.
+ok('third-way still escapes, now visibly worn (hollow tier)', third.escaped && third.soul > 0 && third.soul <= 75, 'soul='+third.soul);
 // The suck-up: all the work, all the compliance, no recovery → hollowed out fast.
 const suckup = runCareer(7, 0, 8, 0, 'bossPass');
 ok('suck-up policy dies by soul, fast', suckup.failed==='soul' && suckup.day<=6, 'day='+suckup.day+' failed='+suckup.failed);
@@ -455,7 +458,7 @@ const soulBefore = gScr.soul;
 const rScr = G.applyIncidentChoice(gScr, 'brad_discovery', 0, 700);
 ok('screenshot: receipt banked, stage 5, outcome text', G.hasReceipt(gScr, 'screenshot_brad_deck')
   && gScr.arcs.brad_second_job.stage === 5 && /camera roll/.test(rScr.outcome)
-  && gScr.soul === Math.min(100, soulBefore + 2));
+  && gScr.soul === Math.min(100, soulBefore + (soulBefore >= G.SOUL_COMFORT ? 1 : 2)));
 // branch: COVER — complicit: trust jumps, Soul pays, raids off for the run
 const gCov = toDiscovery(101);
 G.applyIncidentChoice(gCov, 'brad_discovery', 1, 700);
@@ -766,7 +769,8 @@ gMd.day = 10; gMd.standing = 25; gMd.soul = 60;
 G.closeDay(gMd, { tasksDone: 8, tasksTotal: 8 });
 ok('the receipt defuses one warning and is spent', gMd.dayReport.warningDefused === true
   && !gMd.dayReport.warned && !G.hasReceipt(gMd, 'hr_survey_metadata')
-  && gMd.stats.warnings === 0 && gMd.soul === 60 - G.soulDrainFor(2));
+  && gMd.stats.warnings === 0
+  && gMd.soul === 60 - G.soulDrainFor(2) - G.ARC_HEAT_SOUL);   // survey still hot that day
 gMd.day = 15; gMd.standing = 25; gMd.failed = null; gMd.over = false;
 G.closeDay(gMd, { tasksDone: 8, tasksTotal: 8 });
 ok('the next warning lands normally', gMd.dayReport.warned === true && gMd.stats.warnings === 1);
@@ -837,7 +841,8 @@ const gPw = toPanic(701); gPw.soul = 50;
 G.closeDay(gPw, { tasksDone: 8, tasksTotal: 8 });
 ok('watching costs Soul −' + G.WATCHED_SOUL + ' at day end, named',
   gPw.dayReport.watchedKayla === true
-  && gPw.soul === 50 - G.soulDrainFor(gPw.week) - G.WATCHED_SOUL, 'soul=' + gPw.soul);
+  && gPw.soul === 50 - G.soulDrainFor(gPw.week) - G.WATCHED_SOUL - G.ARC_HEAT_SOUL,   // panic day is hot
+  'soul=' + gPw.soul);
 ok('helped runs pay no watch price ever after', (() => {
   const g2 = toPanic(701);
   G.kaylaSitWith(g2, 700);
@@ -846,6 +851,41 @@ ok('helped runs pay no watch price ever after', (() => {
   G.nextDay(g2);
   G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
   return !g2.dayReport.watchedKayla;
+})());
+
+// ---- 16d. the cost of a story: arc-heat tax -----------------------------------------
+ok('a hot boss-spiral day bills Soul −' + G.ARC_HEAT_SOUL + ' at close', (() => {
+  const g2 = G.newGame(651); g2.soul = 60;
+  g2.arcs.boss_spiral = { stage: 1 };
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  return g2.dayReport.arcHeat === true
+    && g2.soul === 60 - G.soulDrainFor(1) - G.ARC_HEAT_SOUL;
+})());
+ok('quiet days pay no heat', (() => {
+  const g2 = G.newGame(651); g2.soul = 60;
+  G.closeDay(g2, { tasksDone: 8, tasksTotal: 8 });
+  return !g2.dayReport.arcHeat && g2.soul === 60 - G.soulDrainFor(1);
+})());
+ok('survey hunt days and Kayla\'s panic day are hot too', (() => {
+  const a = G.newGame(651); a.arcs.hr_survey = { stage: 2 };
+  const b = G.newGame(651); b.arcs.kayla_presentation = { stage: 1 };
+  return G.arcHeatToday(a) && G.arcHeatToday(b);
+})());
+ok('recovery trims landed (couch +3, chats +3/+2)', G.WORLD_EFFECTS.couch.so === 3
+  && G.WORLD_EFFECTS.chatGood.so === 3 && G.WORLD_EFFECTS.chatMeh.so === 2);
+ok('above Soul ' + G.SOUL_COMFORT + ', gains halve (contentment attracts meetings)', (() => {
+  const a = G.newGame(652); a.soul = 80;
+  const r1 = G.applyWorldEffect(a, 'chatGood');       // +3 → +2 (ceil)
+  const b = G.newGame(652); b.soul = 50;
+  const r2 = G.applyWorldEffect(b, 'chatGood');       // untouched below the line
+  return r1.dso === 2 && r2.dso === 3;
+})());
+ok('the temper never touches losses or the struggling', (() => {
+  const a = G.newGame(652); a.soul = 90;
+  const r1 = G.applyWorldEffect(a, 'taskDone');       // −1 stays −1
+  const b = G.newGame(652); b.soul = 69;
+  const r2 = G.applyWorldEffect(b, 'couch');          // +3 intact at 69
+  return r1.dso === -1 && r2.dso === 3;
 })());
 
 // ---- 17. share copy carries the story ------------------------------------------

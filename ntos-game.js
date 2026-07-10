@@ -224,6 +224,12 @@ const NineToSurvive = (() => {
   ];
 
   const clamp = (v) => Math.max(0, Math.min(100, v));
+  // Above SOUL_COMFORT, Soul gains halve (round up): contentment attracts
+  // meetings. Only shaves surplus — nobody struggling ever feels it.
+  const SOUL_COMFORT = 70;
+  function temperSoulGain(g, dso){
+    return (dso > 0 && g.soul >= SOUL_COMFORT) ? Math.ceil(dso / 2) : dso;
+  }
   const fmt = (n) => '$' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
   // ---- The career ------------------------------------------------------------
@@ -243,7 +249,7 @@ const NineToSurvive = (() => {
   const BURN_STEP      = 25;    // lifestyle creep: burn rises this much per week
   const PROMOTE_AT     = 68;    // standing needed at the Friday review
   const PROMOTE_RESET  = 55;    // "the bar moves": standing after a promotion
-  const PROMOTE_SOUL   = 5;     // what each rung costs you
+  const PROMOTE_SOUL   = 9;     // what each rung costs you (Session 9: the bar bites)
   const WARN_AT        = 35;    // below this at review = formal warning
   const WARN_SOUL      = 4;     // the dread
   const BROKE_SOUL     = 6;     // overdraft anxiety when pay can't cover the burn
@@ -393,7 +399,7 @@ const NineToSurvive = (() => {
     if(!c) return null;
     const before = { standing: g.standing, soul: g.soul };
     g.standing = clamp(g.standing + c.s);
-    g.soul     = clamp(g.soul + c.so);
+    g.soul     = clamp(g.soul + temperSoulGain(g, c.so));
     // fail states: either meter bottoming out ends the day early
     if(g.standing <= 0){ g.failed = 'standing'; g.over = true; }
     else if(g.soul <= 0){ g.failed = 'soul'; g.over = true; }
@@ -422,10 +428,10 @@ const NineToSurvive = (() => {
     bossCatchBad:{ s:-9, so:-2 },  // ...on one of his bad days
     bradSteal:  { s:-3, so:-2 },   // your work is his work now
     bradFoiled: { s:+1, so:+1 },   // he hovered; you were sitting right there
-    chatGood:   { s: 0, so:+5 },   // five minutes of being human
-    chatMeh:    { s: 0, so:+3 },
+    chatGood:   { s: 0, so:+3 },   // five minutes of being human
+    chatMeh:    { s: 0, so:+2 },
     chatBad:    { s: 0, so:+2 },   // you listened to them vent; still counts
-    couch:      { s:-1, so:+6 },   // seen lounging; worth it
+    couch:      { s:-1, so:+3 },   // seen lounging; worth it, barely
     coffee:     { s: 0, so:+2 },
     bossHuman:  { s: 0, so:+2 }    // he was, briefly, a person
   };
@@ -451,7 +457,7 @@ const NineToSurvive = (() => {
     const sMod = (kind === 'bossCatch' || kind === 'bossCatchBad')
       ? bossCatchMod(g) + consumeCatchShield(g) : 0;
     g.standing = clamp(g.standing + (e.s || 0) + sMod);
-    g.soul     = clamp(g.soul + (e.so || 0));
+    g.soul     = clamp(g.soul + temperSoulGain(g, e.so || 0));
     let deadEyed = false;
     if(kind === 'taskDone'){
       g.taskStreak = (g.taskStreak || 0) + 1;
@@ -795,7 +801,7 @@ const NineToSurvive = (() => {
   function applyStoryDelta(g, s, so){
     const b = { s: g.standing, so: g.soul };
     g.standing = clamp(g.standing + (s || 0));
-    g.soul     = clamp(g.soul + (so || 0));
+    g.soul     = clamp(g.soul + temperSoulGain(g, so || 0));
     if(g.standing <= 0 && !g.failed){ g.failed = 'standing'; g.over = true; }
     else if(g.soul <= 0 && !g.failed){ g.failed = 'soul'; g.over = true; }
     return { ds: g.standing - b.s, dso: g.soul - b.so };
@@ -927,6 +933,20 @@ const NineToSurvive = (() => {
     pushFeed(g, (min || 0) + 4, 'The presentation was moved, not cancelled. The problem was moved, not solved.');
     return { ds: d.ds, text: 'You mention it to Meredith, gently, meaning well. HR solves the person instead of the workload. Kayla is sent home. A calendar invite is already forming somewhere, like weather.' };
   }
+  // The cost of a story: on days an arc event runs hot (the Boss spiraling, the
+  // survey live or hunting, Kayla's panic day), the day itself bills Soul at
+  // close. Costly, not brutal — good runs should end worn, not gutted.
+  const ARC_HEAT_SOUL = 4;
+  function arcHeatToday(g){
+    const A = g.arcs || {};
+    const bo = A.boss_spiral || { stage: 0 };
+    const hs = A.hr_survey || { stage: 0 };
+    const ka = A.kayla_presentation || { stage: 0 };
+    const br = A.brad_second_job || { stage: 0 };
+    return bo.stage === 1 || hs.stage === 1 || hs.stage === 2 || ka.stage === 1
+      || (br.stage >= 3 && br.stage <= 6);   // carrying his secret is also work
+  }
+
   // The dead-eyed play: you watched and kept shipping. Priced at day end.
   const WATCHED_SOUL = 3;
   function kaylaWatchedPrice(g, report){
@@ -1076,6 +1096,7 @@ const NineToSurvive = (() => {
     g.money += pay - burn;
     if(g.money < 0){ g.money = 0; report.broke = true; if(!g.failed) soulHit(g, BROKE_SOUL); }
     if(!g.failed) soulHit(g, drain);
+    if(!g.failed && arcHeatToday(g)){ soulHit(g, ARC_HEAT_SOUL); report.arcHeat = true; }
     if(!g.failed) kaylaWatchedPrice(g, report);
     if(!g.failed && g.day % 5 === 0){ // Friday review
       // the "anonymous" survey attends your review without you — once
@@ -1189,7 +1210,7 @@ const NineToSurvive = (() => {
     g.coffeeDay = g.day;
     g.taskStreak = 0;   // a mercy counts as looking up
     const before = g.soul;
-    g.soul = clamp(g.soul + COFFEE_SOUL);
+    g.soul = clamp(g.soul + temperSoulGain(g, COFFEE_SOUL));
     return { dso: g.soul - before };
   }
 
@@ -1373,6 +1394,7 @@ const NineToSurvive = (() => {
     FU_TARGET, DAY_ENCOUNTERS, BURN_BASE, BURN_STEP,
     PROMOTE_AT, PROMOTE_RESET, PROMOTE_SOUL, WARN_AT, WARN_SOUL, BROKE_SOUL,
     CRUNCH_WIN, CRUNCH_LOSE, CRUNCH_BONUS, COFFEE_SOUL, DECAY_S, TASK_MISS_S, WORLD_EFFECTS,
+    ARC_HEAT_SOUL, arcHeatToday, SOUL_COMFORT,
     GRIND_STREAK, GRIND_SOUL,
     clamp, fmt, burnFor, soulDrainFor,
     newGame, planDay, currentEncounter, isFinalEncounter, jobTitle,
