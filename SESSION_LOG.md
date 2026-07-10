@@ -593,3 +593,72 @@ recovery is to build the commissioned systems now, which is the rest of this bri
   hr_survey + priya_credit arcs, ran Soul ~75 mid-career (the new economy,
   live), and **escaped Day 10 with $3,275 and Soul 81** — verdict "F-You
   Money. Out the Door. Whole.", share led by the survey-metadata story.
+
+
+### The systems this session added (TASKS 1–8, one commit each, all gated green)
+
+**TASK 1 — the one competent policy** (`policyAction` / `policyCardChoice` /
+`policyIncidentChoice`, pure dev-marked brain functions). Consumed by BOTH
+`?movie=1` and the headless soak — identity proven by exact-equality sweeps.
+Movement rules per brief (walk out immediately incl. mid-day door + mid-day
+arming in the shell, never interrupt errands, answer summons by walking,
+never ignore Kayla, recovery ladder coffee→couch→best chat at the grind
+threshold or when Soul collapses). Cards scored s + 1.3·so with <35 guards;
+incidents get named cases. `?movie=greed` still burns out on purpose.
+
+**TASK 2 — arc selection + the story ladder.** 2–3 story arcs drawn per run
+(weighted, Brad 0.5; Marcus always on; undrawn arcs fully dormant — tested over
+15 marched days). storyKey/storyLine ladder in the brief's exact order; new
+flags (kayla.ignored, marcus.counters.saves, meredith.counters.defused).
+Brad's firing softened to 0.4×2 mornings so the held-screenshot run exists.
+
+**TASK 3 — the cost of a good run.** Three measured rounds, logged: trims+heat
+(85–100 → 77–100), promotion cost 9 + Brad-hot days + deeper trims (→ 69–100),
+then the structural lever — Soul gains halve above 70 ("contentment attracts
+meetings", one temper helper at all four gain sites) → **50–93, median ~70**.
+Final post-Dennis distribution 58–89 median ~71, 80+ in 7/50, pinned by a
+sweep assertion. The crude third-way brain-sim now lands the hollow tier.
+
+**TASK 4 — Priya's arc** (priya_credit, in the pool). Build days (pinned at
+her desk, feed notices) → demo day card presented by Brad (or the Boss if Brad
+is out of play) → the Boss thanks "the team". Five tested branches: back
+publicly / DM / collect priya_commit_log (later burns on Credit Reassigned:
++8/+6, Brad rattled, Priya credited) / let it slide (Soul −4, "The team was
+one person") / bait the demo (seeded 50/50 triumph or trace-back). Plus a
+latent stranding bug fixed generically: events whose owner left the floor get
+a substitute deliverer.
+
+**TASK 5 — Dennis the blocker.** ~1-in-4 seeded days, ~30% of post-morning
+arrivals NEED APPROVAL (red-edged desk stack + HUD count, cannot ship). Four
+clearing paths, all tested: the Pipe wait (visible 6s amber bar), flattery
+(Soul −2, once/day), burn a receipt (least-precious-first), Marcus's phrase.
+Ignoring never deadlocks — unfinished at 5 PM. Blocker days are hot.
+
+**TASK 6 — policy wiring.** priya_demo: back publicly at Standing ≥55 else DM;
+approvals: shield when 2+ stuck, Pipe trips batched into idle time, receipts
+never burned on Dennis. Acceptance re-swept green with everything active.
+
+**TASK 7 — the sweep matrix.** See the table above. Passed as written.
+
+**TASK 8 (stretch) — Adam.** Ninth cast member, world-first: bullpen desk,
+bald with a shine highlight, mood/status lines in his voice, feed register per
+brief. His seeding rides a side stream keyed off (seed, day) — the entire
+pre-Adam seeded battery and the matrix pass unchanged with him on the floor.
+The interception: pass within 1.7 tiles and he sometimes (≤2/day, cooldown)
+holds you mid-stride for 2.5 real seconds with a 💬 "quick thought—";
+~15% of the time it clears a Dennis approval free. No card; deck stays 20.
+His tests caught a real falsy-zero bug in the roll guards (0.0 || 1).
+
+### Final state + what remains risky
+- **229 game + 128 world green** (matrix + soak + all arcs + Adam), zero bare
+  Math.random (one comment), zero console errors on the final preview build,
+  standalone 318 KB rebuilt.
+- **Risky / next**: the two Dennis-taxed day-19 seeds (promotion-margin runs;
+  acceptable under the amended "most runs" gate, but a promotion-variance
+  system would smooth the cliff). Zero rebel survivors at this tuning — if
+  "sometimes survives" matters, rebels need a survival valve. Adam's
+  interception frequency is untested against human patience (≤2/day cap may
+  still annoy; watch playtests). The policy never burns receipts on Dennis by
+  design — if receipts pile up unused in long runs, consider a valve. Priya's
+  bait-fail (−7) is harsh at low Standing.
+
