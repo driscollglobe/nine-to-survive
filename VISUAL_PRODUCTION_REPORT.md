@@ -97,6 +97,20 @@ desktop.
 | Console | ✅ no errors across menus, live play, and autopilot |
 | Tests | ✅ 269 game + 151 world, `0 failed` |
 
+## Lived-in polish increment (third commit)
+A render-only pass to seat everything inside the signature light and make the
+floor feel inhabited (Bible §18 "each desk reads its owner"):
+- **Diegetic monitor glow** — every screen casts a soft, faintly-flickering cool
+  pool on its desk: the cold half of the key-light, sourced in-world.
+- **Character rim-light** — a warm key rim catches the upper-left of every
+  silhouette; a cool fill rim answers on the lower-right, so the cast belongs to
+  the double key-light instead of sitting on top of it.
+- **Coffee steam** — one always-on wisp curling off the pot: the floor's pulse.
+- **Signature desk clutter** — Marcus's three coasting mugs, Priya's little
+  award-nobody-noticed, Dennis's 19-year paper stack, Kayla's quietly-kept plant.
+All are small by design (if you notice them, they're too big) and gated on zoom
+so they never muddy the far view. `ntos-world.js` → `w21`.
+
 ## Deliverable
 Playable single-file build at
 `builds/nine-to-survive-visual-v1/index.html`.

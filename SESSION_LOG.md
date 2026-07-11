@@ -849,3 +849,18 @@ Heat doesn't yet drain the daylight (time-of-day only — pass a heat hint throu
 `worldFlagsFor` into `WT.LIGHT`). Character art is silhouette-level, not the full
 5-mood construction kit. Ambient life is minimal. Layout isn't yet art-directed
 for a wide 1080p hero shot. All additive on this foundation — no rewrite needed.
+
+### Session 11b — lived-in polish increment (render-only, third commit)
+A small pass to seat everything inside the double key-light and make the floor
+feel inhabited — all in `render()`, zero logic touched (`ntos-world.js` → `w21`):
+- **Monitor glow**: each screen casts a soft, faintly-flickering cool pool on its
+  desk (the cold key-light, sourced in-world).
+- **Character rim-light**: a warm key rim on the upper-left of every silhouette, a
+  cool fill rim on the lower-right — the cast now belongs to the light.
+- **Coffee steam**: one always-on wisp off the pot.
+- **Signature desk clutter** (Bible §18): Marcus's coasting mugs, Priya's little
+  award, Dennis's 19-year paper stack, Kayla's kept plant — each desk reads its
+  owner. Gated on zoom so the far view stays clean.
+Re-verified in preview (a real "Credit, Reassigned" card fired and rendered
+perfectly; no console errors). 269 game + 151 world, 0 failed; standalone 387 KB
+rebuilt; build refreshed.

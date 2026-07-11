@@ -3295,9 +3295,14 @@ const WT = {
     warm:'#F4DCA6', warmAt:[0.10,-0.04],           // gold, top-left of frame
     cold:'#8FB7C9', coldAt:[1.02,1.06],            // cyan, bottom-right
     warmBase:0.10, warmDay:0.17,                   // gold alpha = base + day·t
-    coldBase:0.16, coldDay:0.07                    // cyan alpha = base − day·t
+    coldBase:0.16, coldDay:0.07,                   // cyan alpha = base − day·t
+    rimWarm:'#F4DCA6', rimCold:'#8FB7C9',           // per-object key/fill rim
+    monitorGlow:'#9FD0DE'                            // cool spill each screen casts
   }
 };
+// real-frame time (ms), stashed by render() so draw helpers can animate without
+// threading it through every signature. Display-only; tests never call render().
+let _tMs = 0;
 // which zone owns each tile (computed once)
 const ZONE_MAP = (() => {
   const m = new Int8Array(GRID_W * GRID_H).fill(-1);
@@ -3356,6 +3361,7 @@ function drawChair(ctx, cam, gx, gy){
 
 function render(w, ctx, cam, vw, vh, tMs){
   ctx.clearRect(0, 0, vw, vh);
+  _tMs = tMs || 0;
   const z = cam.z;
 
   const w2 = (TW / 2) * z, hh = (TH / 2) * z;
@@ -3610,6 +3616,19 @@ function drawPlant(ctx, cam, f, z){
 function drawMonitor(ctx, cam, f, hpx, z){
   const [mx, my] = proj(cam, f.x + f.w / 2 - 0.5, f.y + f.d / 2 - 0.5);
   const ty = my - hpx;
+  // the screen casts a cool pool on the desk — the cold key-light, in-world
+  const L = WT.LIGHT;
+  if(L){
+    const flick = 0.88 + 0.12 * Math.sin(_tMs / 680 + (f.x + f.y));
+    const g = ctx.createRadialGradient(mx, ty - 5 * z, 0, mx, ty - 5 * z, 24 * z);
+    g.addColorStop(0, hexA(L.monitorGlow, 0.26 * flick));
+    g.addColorStop(1, hexA(L.monitorGlow, 0));
+    const prev = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(mx, ty - 3 * z, 23 * z, 12 * z, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = prev;
+  }
   ctx.fillStyle = '#33302b';
   ctx.beginPath(); ctx.ellipse(mx, ty - 1 * z, 5 * z, 2.2 * z, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillRect(mx - 1.4 * z, ty - 9 * z, 2.8 * z, 8 * z);
@@ -3665,6 +3684,36 @@ function drawBox(ctx, cam, f, w){
     if(!(w && w.flags && w.flags.bradGone && f.id === 'desk-brad'))
       drawMonitor(ctx, cam, f, hpx, z);
   }
+  // signature desk clutter (Bible §18): each desk reads its owner before a word.
+  if(z > 0.62){
+    const fl = (fx, fy) => [dx + (cx - dx) * fx, dy + (cy - dy) * fx - hpx + fy * z]; // point on desktop
+    if(f.id === 'desk-marcus'){                 // coasting, beautifully: three mugs
+      [[0.30, 0], [0.52, 2], [0.72, -1]].forEach(([fx, oy], i) => {
+        const [mx, my] = fl(fx, oy);
+        ctx.fillStyle = i === 1 ? '#cdd3d8' : '#e8e2d4';
+        ctx.fillRect(mx - 2 * z, my - 4.5 * z, 4 * z, 4.5 * z);
+        ctx.fillStyle = 'rgba(21,18,13,0.25)';
+        ctx.fillRect(mx - 2 * z, my - 4.5 * z, 4 * z, 1 * z);
+      });
+    } else if(f.id === 'desk-priya'){           // the monument nobody else noticed
+      const [ax2, ay2] = fl(0.7, 0);
+      ctx.fillStyle = '#B98A4E';
+      ctx.beginPath(); ctx.moveTo(ax2, ay2 - 10 * z); ctx.lineTo(ax2 - 3.4 * z, ay2 - 2 * z);
+      ctx.lineTo(ax2 + 3.4 * z, ay2 - 2 * z); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#7d5c30'; ctx.fillRect(ax2 - 3.8 * z, ay2 - 2 * z, 7.6 * z, 2.4 * z);
+    } else if(f.id === 'desk-dennis'){          // 19 years of paper: a leaning stack
+      const [sx2, sy2] = fl(0.4, 0);
+      for(let i = 0; i < 7; i++){
+        ctx.fillStyle = i % 2 ? '#f3efe3' : '#e6e0d0';
+        ctx.fillRect(sx2 - 5 * z + (i % 2) * 0.9 * z, sy2 - 2 * z - i * 2.1 * z, 10 * z, 2.4 * z);
+      }
+    } else if(f.id === 'desk-kayla'){           // one small plant, quietly kept alive
+      const [kx, ky] = fl(0.72, 0);
+      ctx.fillStyle = '#A5623F'; ctx.fillRect(kx - 2.4 * z, ky - 4 * z, 4.8 * z, 4 * z);
+      ctx.fillStyle = '#5C8A54';
+      ctx.beginPath(); ctx.arc(kx, ky - 6 * z, 3.4 * z, 0, Math.PI * 2); ctx.fill();
+    }
+  }
   if(f.id === 'table-meet'){ drawChair(ctx, cam, 16, 6); drawChair(ctx, cam, 17, 6); }
   if(f.id === 'table-kitch'){ drawChair(ctx, cam, 22, 13); drawChair(ctx, cam, 23, 13); }
   if(f.id === 'couch'){
@@ -3687,6 +3736,22 @@ function drawBox(ctx, cam, f, w){
     ctx.fillStyle = '#D8443F'; ctx.fill();
     ctx.beginPath(); ctx.arc(cxm, cym, 3.8 * z, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1 * z; ctx.stroke();
+    // steam curling off the pot — the one always-on sign of life
+    if(z > 0.6){
+      const [spx, spy] = proj(cam, f.x - 0.5, f.y - 0.5);
+      const sTop = spy - hpx - 3 * z;
+      for(let i = 0; i < 2; i++){
+        const ph = _tMs / 1000 + i * 1.7;
+        const rise = (ph % 2) / 2;                       // 0..1 loop
+        const sy = sTop - rise * 20 * z;
+        const sx = spx + Math.sin(ph * 2.3 + i) * 3 * z;
+        const alpha = 0.26 * (1 - rise) * Math.min(1, rise * 5);
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, (1.5 + rise * 2) * z, (2 + rise * 2) * z, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(245,242,235,' + alpha.toFixed(3) + ')';
+        ctx.fill();
+      }
+    }
   }
   if(f.id === 'fridge'){
     ctx.strokeStyle = 'rgba(21,18,13,0.4)'; ctx.lineWidth = 2 * z;
@@ -3790,6 +3855,18 @@ function drawActor(ctx, cam, a, w){
   ctx.beginPath(); ctx.arc(px, py - 26 * z, dome, 0, Math.PI * 2);
   ctx.fillStyle = a.bear ? '#7d7871' : a.id === 'adam' ? '#EFD3AE' : '#E8C39E'; ctx.fill();
   ctx.strokeStyle = 'rgba(21,18,13,0.3)'; ctx.lineWidth = 1.1 * z; ctx.stroke();
+  // key/fill rim: the 5pm sun catches the upper-left of everyone; a cool screen-
+  // glow answers on the lower-right — the double key-light, on every silhouette
+  const RL = WT.LIGHT;
+  if(RL && z > 0.62){
+    ctx.save(); ctx.lineCap = 'round';
+    ctx.strokeStyle = hexA(RL.rimWarm, 0.5); ctx.lineWidth = 1.5 * z;
+    ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, Math.PI * 0.78, Math.PI * 1.5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(px, py - 26 * z, dome, Math.PI * 0.85, Math.PI * 1.55); ctx.stroke();
+    ctx.strokeStyle = hexA(RL.rimCold, 0.34); ctx.lineWidth = 1.3 * z;
+    ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, Math.PI * -0.22, Math.PI * 0.34); ctx.stroke();
+    ctx.restore();
+  }
   if(a.id === 'adam'){
     // the shine: readable from across the floor
     ctx.beginPath(); ctx.ellipse(px - 2.2 * z, py - 29.5 * z, 2.6 * z, 1.5 * z, -0.5, 0, Math.PI * 2);

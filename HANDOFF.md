@@ -137,7 +137,7 @@ off (seed, day) so no pre-Adam staging ever shifted.
 - `ntos-theme.css` — ALL shell styling, extracted from index.html: a `:root`
   design-token block + 9 documented sections. The DOM's visual dial. Inlined into
   the standalone by the build. (Canvas colours live in `WT` in ntos-world.js.)
-- `ntos-world.js` (`?v=w20`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
+- `ntos-world.js` (`?v=w21`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
   firing escort, summons, kitchen, webinar, approvals, interception, lurk/telegraphs,
   Dennis carry, Adam concern walk, meeting-room demos), event queue with substitution,
   interception verbs (confront/flash/bait/walk-with/redirect/grenade/pre-demo/cool-HR),
