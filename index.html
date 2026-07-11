@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Expanded:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="ntos-game.js?v=n20"></script>
-<script src="ntos-world.js?v=w24"></script>
+<script src="ntos-world.js?v=w25"></script>
 <link rel="stylesheet" href="ntos-theme.css">
 </head>
 <body>
@@ -89,6 +89,7 @@
     <div id="cardoverlay" class="overlay hidden">
       <div class="card">
         <div id="enc">
+          <canvas id="card-portrait" class="cardportrait hidden"></canvas>
           <div class="tag" id="tag"></div>
           <div class="etitle" id="etitle"></div>
           <div class="escene" id="escene"></div>
@@ -281,6 +282,34 @@ function handleWorldClick(sx, sy){
 }
 
 /* ---- status popup + toast ---- */
+/* ---- character portraits: a live cute close-up "on a screen" ---- */
+const _portraits = new Set();
+function _portraitFrame(el, t){
+  const dpr = window.devicePixelRatio || 1, size = el.clientWidth || el.__psize || 80;
+  if(el.width !== size * dpr){ el.width = size * dpr; el.height = size * dpr; }
+  const ctx = el.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W.drawPortrait(ctx, el.__pid, 0, 0, size, t, el.__pmood);
+}
+function _portraitTick(t){
+  for(const el of Array.from(_portraits)){
+    if(!el.isConnected || el.closest('.hidden')){ _portraits.delete(el); continue; }
+    _portraitFrame(el, t);
+  }
+  if(_portraits.size) requestAnimationFrame(_portraitTick);
+}
+function paintPortrait(id, el, size, mood){
+  if(!el || !W.drawPortrait || !(W.RIG && W.RIG[id])) return;
+  el.__pid = id; el.__pmood = mood; el.__psize = size;
+  el.style.width = size + 'px'; el.style.height = size + 'px';
+  _portraitFrame(el, performance.now());
+  if(!_portraits.has(el)){ _portraits.add(el); if(_portraits.size === 1) requestAnimationFrame(_portraitTick); }
+}
+function setCardPortrait(id, mood){
+  const el = $id('card-portrait');
+  if(id && W.RIG && W.RIG[id]){ el.classList.remove('hidden'); paintPortrait(id, el, 96, mood); }
+  else { el.classList.add('hidden'); _portraits.delete(el); }
+}
+
 function showStatus(actor, sx, sy){
   const s = W.statusOf(world, actor);
   const pop = $id('statuspop');
@@ -293,9 +322,10 @@ function showStatus(actor, sx, sy){
   const canCool = actor.id === 'hr' && G.hasReceipt(g, 'hr_survey_metadata')
     && G.heatOf(g, 'hr') >= G.HEAT_MED;
   pop.innerHTML = '<span class="sx" onclick="hideStatus()">✕</span>'
+    + '<div class="spop-head"><canvas id="pop-portrait" class="portrait"></canvas><div class="spop-meta">'
     + '<div class="sname">' + (s.face ? s.face + ' ' : '') + s.name + '</div>'
     + '<div class="srole">' + s.role + (s.mood ? ' · mood: ' + s.mood : '') + '</div>'
-    + '<div class="sline">' + s.line + '</div>'
+    + '<div class="sline">' + s.line + '</div></div></div>'
     + (s.chat ? '<span class="schat" onclick="startChat(\'' + actor.id + '\')">' + (s.sitWith ? 'Walk over & sit with her' : 'Walk over & chat') + '</span>' : '')
     + (s.quickcall ? '<span class="schat" onclick="startQuickCall()">Take the quick call</span>' : '')
     + (s.kaylatask ? '<span class="schat" onclick="takeKaylaTask()">Take one of her tasks</span>' : '')
@@ -318,7 +348,8 @@ function showStatus(actor, sx, sy){
         ? '<span class="schat" onclick="doPreDemo(\'preplant\')">Swap in the flawed backup file</span>' : '')
     + (canCool ? '<span class="schat" onclick="doCoolHR()">🧾 Ask about response IDs, hypothetically</span>' : '');
   pop.classList.remove('hidden');
-  pop.style.left = Math.min(window.innerWidth - 260, sx + 14) + 'px';
+  paintPortrait(actor.id, $id('pop-portrait'), 80);
+  pop.style.left = Math.min(window.innerWidth - 312, sx + 14) + 'px';
   pop.style.top = Math.min(window.innerHeight - 150, Math.max(10, sy - 40)) + 'px';
 }
 function hideStatus(){ $id('statuspop').classList.add('hidden'); }
@@ -996,6 +1027,7 @@ function openCard(){
   $id('tag').textContent = e.tag;
   $id('etitle').textContent = e.title;
   $id('escene').textContent = e.scene;
+  setCardPortrait(world.activeEvent && world.activeEvent.owner);
   const box = $id('choices'); box.innerHTML = '';
   // display order shuffles per card slot (presentation only — the rules see the
   // true index via choose(idx), and data-idx lets the autopilot find its pick).
@@ -1057,6 +1089,7 @@ function openIncident(id){
   $id('tag').textContent = def.tag;
   $id('etitle').textContent = def.title;
   $id('escene').textContent = def.scene;
+  setCardPortrait(((g.todayIncidents || []).find(t => t.id === id) || {}).owner);
   // pre-demo work pays off here: a planted file auto-detonates (no choices —
   // you chose earlier, in the empty room); a collected log drops that option
   if(id === 'priya_demo' && g.npcState.priya.flags.preBaited){

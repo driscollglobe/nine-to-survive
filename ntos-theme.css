@@ -232,7 +232,13 @@ button{touch-action:manipulation;}
 .hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-family:var(--font-data);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:rgba(21,18,13,.6);background:rgba(244,237,218,.85);border:1px solid var(--line);border-radius:var(--r-pill);padding:6px 14px;white-space:nowrap;z-index:5;}
 .overlay{position:fixed;inset:0;background:rgba(21,18,13,.45);display:flex;align-items:center;justify-content:center;padding:18px;z-index:20;}
 .overlay .card{width:min(460px,94vw);max-height:88vh;overflow-y:auto;}
-.statuspop{position:absolute;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-chip);padding:12px 34px 12px 14px;width:238px;box-shadow:0 16px 40px rgba(21,18,13,.3);}
+.statuspop{position:absolute;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-chip);padding:12px 30px 12px 14px;width:300px;box-shadow:0 16px 40px rgba(21,18,13,.3);}
+/* the live cute portrait ("on a screen") */
+.spop-head{display:flex;gap:11px;align-items:flex-start;margin-bottom:8px;}
+.spop-meta{min-width:0;flex:1;}
+.statuspop .portrait{flex:0 0 80px;width:80px;height:80px;border-radius:14px;box-shadow:0 5px 16px rgba(6,4,2,.34);image-rendering:auto;}
+.cardportrait{float:left;width:96px;height:96px;margin:2px 15px 8px 0;border-radius:16px;box-shadow:0 8px 22px rgba(6,4,2,.42);}
+.choices{clear:both;}
 .statuspop .sname{font-family:var(--font-display);font-weight:800;font-size:16px;}
 .statuspop .srole{font-family:var(--font-data);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);margin:2px 0 8px;}
 .statuspop .sline{font-size:12.5px;line-height:1.45;color:#3a352a;font-style:italic;}

@@ -938,3 +938,23 @@ silhouettes from 12.
   jowls softened to round full cheeks.
 Verified big-head lineup + in-game: friendly, easy on the eye, still distinct.
 269 + 151, 0 failed. Standalone + build refreshed.
+
+### Session 12c — cuter still + character portraits ("on a screen", w25)
+Kevin: still not cute enough; and add a blown-up face when you talk to someone,
+like on a screen. Renderer + shell presentation only; no gameplay touched.
+- **Cuter**: eyes bigger (r×0.35) with a warm brown iris + black pupil + a big
+  glossy sparkle & a small one; heads bigger still (×1.34 chibi). Reads friendly,
+  not staring.
+- **drawPortrait(ctx,id,x,y,sz,tMs,mood)** (exported): a framed cute BUST "on a
+  screen" — reuses the figure renderer, scaled/positioned so the big head +
+  shoulders fill a rounded tile with a warm honey glow, a diagonal screen sheen,
+  and a soft frame ring. Consistent head-framing across every build.
+- **Shell**: a live (rAF) portrait now shows in the click-a-coworker **status
+  popup** (beside name/role/line; popup widened to 300px) and in the **encounter
+  card** (floated left of the tag/title; owner from world.activeEvent.owner, and
+  from g.todayIncidents for arc incidents). Helpers paintPortrait/_portraitTick/
+  setCardPortrait in the shell; CSS .portrait/.spop-head/.cardportrait in the theme.
+- **Hood fix**: Kayla's hood was covering her whole face in the bust; re-cut the
+  hood so it frames the crown and the face stays fully visible.
+Verified: cute portrait grid (all 9), and live in-game popups for Marcus + Kayla,
+no console errors. 269 + 151, 0 failed. Standalone + build refreshed.

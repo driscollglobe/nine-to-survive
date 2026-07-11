@@ -1986,9 +1986,9 @@ function drawFigure(ctx, px, py, z, rig, o){
   const sway = (mv && !walkP.upperStill) ? Math.sin(wph) * 0.7 * S : 0;
   const glance = (rig.idle === 'glance' && !mv) ? Math.sin(iph * 0.55) * 1.5 * S : 0;
   const topX = P.lean * S + sway + (mv ? 0 : Math.sin(iph * 0.7) * 0.3 * S);
-  const headR = 4.6 * S * (rig.headScale || 1) * 1.22;   // chibi: oversized cute heads
+  const headR = 4.6 * S * (rig.headScale || 1) * 1.34;   // chibi: big cute heads
   const headCX = topX + P.headFwd * S + glance;
-  const headCY = shY - headR * 0.86 - 1.6 * S;
+  const headCY = shY - headR * 0.82 - 1.4 * S;
   const shLx = topX - shW / 2, shRx = topX + shW / 2;
 
   // ── legs (walk cycle: stride + lift per gait) ──
@@ -2237,9 +2237,9 @@ function figFace(ctx, rig, cx, cy, r, mood, o){
   const S = r / 4.7;
   const m = FIG_MOOD[mood] || FIG_MOOD.fine;
   const badger = rig.badger;
-  const eyeR = r * 0.31;                 // big eyes = friendly
-  const eyeDX = r * 0.44;
-  const eyeY = cy + r * 0.14;            // set low on the face (baby proportion)
+  const eyeR = r * 0.35;                 // big eyes = friendly
+  const eyeDX = r * 0.43;
+  const eyeY = cy + r * 0.15;            // set low on the face (baby proportion)
   if(badger){                            // bandit mask + pale muzzle behind the eyes
     ctx.fillStyle = '#3a352e';
     ctx.beginPath(); ctx.ellipse(cx, eyeY - r * 0.04, r * 0.94, r * 0.52, 0, 0, Math.PI * 2); ctx.fill();
@@ -2256,12 +2256,14 @@ function figFace(ctx, rig, cx, cy, r, mood, o){
     ctx.fillStyle = '#fcf8ef';
     ctx.beginPath(); ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.12, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(28,20,12,0.45)'; ctx.lineWidth = 0.8 * S; ctx.stroke();
-    const pr = (m.open ? 0.88 : 0.76) * eyeR, pyE = eyeY + eyeR * 0.14;
-    ctx.fillStyle = '#241d18';
+    const pr = (m.open ? 0.9 : 0.82) * eyeR, pyE = eyeY + eyeR * 0.12;
+    ctx.fillStyle = '#5b3f28';                                   // warm iris (softer than pure black)
     ctx.beginPath(); ctx.arc(ex, pyE, pr, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffffff';                                   // twin glossy catchlights
-    ctx.beginPath(); ctx.arc(ex - pr * 0.34, pyE - pr * 0.42, pr * 0.36, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex + pr * 0.3, pyE + pr * 0.26, pr * 0.17, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#211a14';                                   // pupil
+    ctx.beginPath(); ctx.arc(ex, pyE + pr * 0.05, pr * 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';                                   // a big glossy sparkle + a small one
+    ctx.beginPath(); ctx.arc(ex - pr * 0.3, pyE - pr * 0.4, pr * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + pr * 0.36, pyE + pr * 0.3, pr * 0.2, 0, Math.PI * 2); ctx.fill();
     if(m.lid > 0.34){                                            // sleepy lid — gentle, partial
       ctx.fillStyle = badger ? '#3a352e' : (FIG_SKIN[rig.skin] || '#E8C39E');
       const drop = Math.min(0.85, m.lid);
@@ -2338,13 +2340,17 @@ function figHair(ctx, rig, cx, cy, r, S, sil, o){
     case 'bald':
       if(rig.shine && !sil){ ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(cx - r * 0.35, cy - r * 0.55, r * 0.34, r * 0.18, -0.5, 0, Math.PI * 2); ctx.fill(); }
       break;
-    case 'hood':
+    case 'hood':       // hood framing the head — crown covered, FACE stays visible
       ctx.fillStyle = sil ? FIG_INK : (rig.topCol);
       ctx.beginPath();
-      ctx.moveTo(cx - r * 1.25, cy + r * 0.7); ctx.quadraticCurveTo(cx - r * 1.35, cy - r * 1.3, cx, cy - r * 1.35);
-      ctx.quadraticCurveTo(cx + r * 1.35, cy - r * 1.3, cx + r * 1.25, cy + r * 0.7);
-      ctx.quadraticCurveTo(cx, cy + r * 0.2, cx - r * 1.25, cy + r * 0.7); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = sil ? FIG_INK : shade(rig.topCol, 0.8); ctx.lineWidth = 1 * S; ctx.stroke();
+      ctx.moveTo(cx - r * 1.3, cy + r * 0.85);
+      ctx.quadraticCurveTo(cx - r * 1.42, cy - r * 1.4, cx, cy - r * 1.45);
+      ctx.quadraticCurveTo(cx + r * 1.42, cy - r * 1.4, cx + r * 1.3, cy + r * 0.85);
+      ctx.quadraticCurveTo(cx + r * 0.95, cy - r * 0.1, cx + r * 0.86, cy - r * 0.62);
+      ctx.quadraticCurveTo(cx, cy - r * 0.84, cx - r * 0.86, cy - r * 0.62);
+      ctx.quadraticCurveTo(cx - r * 0.95, cy - r * 0.1, cx - r * 1.3, cy + r * 0.85);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = sil ? FIG_INK : shade(rig.topCol, 0.78); ctx.lineWidth = 1 * S; ctx.stroke();
       break;
     case 'phones':
       ctx.fillStyle = c1;
@@ -2407,6 +2413,40 @@ function figProp(ctx, rig, sh, headCX, headCY, headR, S, sil, o){
       if(!sil){ ctx.fillStyle = '#20242a'; ctx.beginPath(); rrPath(ctx, -5.4 * S, -6.4 * S, 11 * S, 5.2 * S, 0.5 * S); ctx.fill(); ctx.fillStyle = 'rgba(143,183,201,0.5)'; ctx.fillRect(-4.8 * S, -5.9 * S, 9.6 * S, 4.2 * S); }
       ctx.restore(); break; }
   }
+}
+
+// A framed cute BUST portrait of a character — the "on a screen" close-up shown
+// when you talk to someone (status popup) or when their card fires. Reuses the
+// figure renderer, scaled + positioned so the big head + shoulders fill the tile.
+function drawPortrait(ctx, id, x, y, sz, tMs, mood){
+  const rig = RIG[id] || RIG.you;
+  ctx.save();
+  ctx.beginPath(); rrPath(ctx, x, y, sz, sz, sz * 0.16); ctx.clip();
+  // the "screen": warm paper with a soft honey glow behind the head
+  const bg = ctx.createLinearGradient(x, y, x, y + sz);
+  bg.addColorStop(0, '#f7f0e0'); bg.addColorStop(1, '#e3d7bf');
+  ctx.fillStyle = bg; ctx.fillRect(x, y, sz, sz);
+  const gl = ctx.createRadialGradient(x + sz * 0.5, y + sz * 0.4, 0, x + sz * 0.5, y + sz * 0.4, sz * 0.62);
+  gl.addColorStop(0, 'rgba(244,220,166,0.55)'); gl.addColorStop(1, 'rgba(244,220,166,0)');
+  ctx.fillStyle = gl; ctx.fillRect(x, y, sz, sz);
+  // frame the bust: head radius ~0.30·sz, head centre ~0.42·sz down, whatever the build
+  const P = figPosture(rig.posture), H = rig.h || 1;
+  const hR = 4.6 * (rig.headScale || 1) * 1.34;
+  const headAbove = 12.6 * (rig.legLen || 1) * H + 11.5 * (rig.torso || 1) * H + hR * 0.82 + 1.4;
+  const z = 0.30 * sz / hR;
+  const feetY = y + 0.42 * sz + headAbove * z;
+  const cxp = x + sz * 0.5 - (P.lean + P.headFwd) * z;
+  const iph = (tMs || 0) / 900 + (id.charCodeAt(0) % 9);
+  drawFigure(ctx, cxp, feetY, z, rig, { mood: mood || rig.restFace || 'fine', idlePhase: iph, face: true });
+  // a faint diagonal sheen so it reads as a lit screen
+  ctx.globalCompositeOperation = 'overlay';
+  const sh = ctx.createLinearGradient(x, y, x + sz, y + sz);
+  sh.addColorStop(0, 'rgba(255,255,255,0.12)'); sh.addColorStop(0.5, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sh; ctx.fillRect(x, y, sz, sz);
+  ctx.restore();
+  // frame ring
+  ctx.strokeStyle = 'rgba(30,22,14,0.42)'; ctx.lineWidth = Math.max(1.2, sz * 0.02);
+  ctx.beginPath(); rrPath(ctx, x, y, sz, sz, sz * 0.16); ctx.stroke();
 }
 
 function drawActor(ctx, cam, a, w){
@@ -2536,7 +2576,7 @@ return {
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
   render, proj, screenToTile,
-  RIG, drawFigure   // exposed for the cast test sheet (character-test.html)
+  RIG, drawFigure, drawPortrait   // exposed for the cast test sheet + in-game portraits
 };
 })();
 
