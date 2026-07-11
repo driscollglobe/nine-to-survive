@@ -892,3 +892,34 @@ hood+headphones+drift, Marcus=henley+giant mug+amble, Priya=ponytail+laptop+bris
 Adam=bald+shine+polo+hands-on-hips. Verified in-game + on the sheet: recognizable
 without labels, distinct in pure black, gait identifies in motion, no console
 errors. **269 game + 151 world, 0 failed.** Standalone + build refreshed.
+
+### Session 12 — VISUAL PASS 1: THE CAST (renderer-only, w23)
+Kevin's brief: the people still looked AI-generated/interchangeable; solve it with
+SHAPE, not colour, until every character is identifiable with labels hidden. No
+gameplay/systems touched (renderer only). All in RIG + drawFigure.
+- **Caricatured proportions**: pushed the build spread to ~1.7× in both height and
+  width, and added *independent* legLen / torso / headScale per character, so
+  everyone reads by build before a single detail. Boss towers (h1.45, shoulder
+  1.46) and dominates; Dennis is a short wide hunched block (h0.80 w1.36); Kayla
+  is tiny (h0.80); Brad a tall reed (h1.24, long legs); Marcus broad (w1.30);
+  Adam a stocky egg-head; the badger the strongest silhouette (big head, ears,
+  shrug, headphones).
+- **Stronger posture** (figPosture): deeper hunch, curled collapse, reclined
+  lounge, chest-out rigid, hover-hips, purposeful lean.
+- **Per-character walk cycles** (figWalk): stride / bob / lift / arm-swing per
+  gait — Boss marches, Brad bounces, Dennis shuffles, Kayla drifts, Marcus
+  ambles, Priya brisk, Adam struts, You trudges. Free arm swings; torso sways
+  (except the Boss's mast-like march).
+- **Signature idle gestures** (drawFigure): sip / phonecheck / watch / tap /
+  gesture / shuffle / type / glance / settle — nobody just stands.
+- **Signature resting faces**: stern (Boss), plastic (Meredith), eager (Adam),
+  overwhelmed (Kayla), dead (Marcus), scheming (Brad); added to FIG_MOOD, wired
+  via rig.restFace at neutral mood.
+- **Prop dominance / head shape**: giant mug enlarged; Priya's ponytail made a
+  clear high tail (separates her from Meredith's bob); Dennis jowls; Adam egg
+  head; head sizes scale.
+Fixed a character-test.html load-timing bug (canvas width could collapse to 0 →
+blank sheet); board is now a fixed 1040px art-board. Verified on the sheet (color
++ pure-black lineups, big) and in-game: every character ID'd without labels,
+distinct in pure black, gait identifies in motion, no console errors. 269 + 151,
+0 failed. Standalone + build refreshed.

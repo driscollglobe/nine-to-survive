@@ -1858,32 +1858,89 @@ function drawBox(ctx, cam, f, w){
 // ═════════════════════════════════════════════════════════════════════════════
 const FIG_SKIN = { warm:'#E8C39E', tan:'#D6A57C', light:'#F0D4AE', deep:'#B4794E', badger:'#c9c2b4' };
 const FIG_INK  = '#1b1712';
+// Proportions are pushed toward caricature on purpose: a ~1.7× height spread and
+// ~1.7× width spread, plus independent leg / torso length and head SIZE, so every
+// silhouette reads by build alone before a single detail. legLen/torso/headScale
+// are proportion multipliers; restFace is the signature resting expression; idle
+// is the signature idle-loop gesture.
 const RIG = {
-  //       h     w    shoulder hip  posture       head     hair        hairCol   skin     top          topCol    tie/2   bottom     botCol    shoes        shoeCol  arms        prop      walk       spd   extras
-  you:   { h:0.98,w:1.06,shoulder:1.06,hip:1.02, posture:'shrug',    head:'round', hair:'phones',  hairCol:'#2b2824', skin:'badger', top:'tee',       topCol:'#4B4743',            bottom:'pants', botCol:'#3b3833', shoes:'sneak',     shoeCol:'#2b2824', arms:'shrug',     prop:null,      walk:'amble',   spd:1.0, badger:true },
-  brad:  { h:1.17,w:0.86,shoulder:1.03,hip:0.82, posture:'leanfwd',  head:'oval',  hair:'swoop',   hairCol:'#2a2019', skin:'tan',    top:'quarterzip',topCol:'#3f6ca8',            bottom:'slacks',botCol:'#39414d', shoes:'sneakwhite',shoeCol:'#efeae0', arms:'phone',     prop:'phone',   walk:'bounce',  spd:1.13, airpod:true },
-  dennis:{ h:0.90,w:1.22,shoulder:1.10,hip:1.18, posture:'hunch',    head:'round', hair:'combover',hairCol:'#9a958b', skin:'warm',   top:'cardigan',  topCol:'#7d6a4a',            bottom:'slacks',botCol:'#4a463c', shoes:'loafer',    shoeCol:'#39301f', arms:'holdchest', prop:'binder',  walk:'shuffle', spd:0.72, glasses:true },
-  boss:  { h:1.27,w:1.15,shoulder:1.22,hip:0.98, posture:'rigid',    head:'square',hair:'buzz',    hairCol:'#2a2622', skin:'tan',    top:'suit',      topCol:'#23262c', tie:'#b23b34',bottom:'slacks',botCol:'#1d2025', shoes:'oxblood',   shoeCol:'#5a2a24', arms:'earphone',  prop:'earpiece',walk:'march',   spd:1.0 },
-  hr:    { h:1.05,w:0.90,shoulder:1.00,hip:1.04, posture:'upright',  head:'oval',  hair:'bob',     hairCol:'#4a3a2c', skin:'light',  top:'blazer',    topCol:'#6a5f86',            bottom:'skirt', botCol:'#3a3448', shoes:'dress',     shoeCol:'#2b2420', arms:'clipboard', prop:'clipboard',walk:'precise',spd:1.05, lanyard:true },
-  kayla: { h:0.86,w:0.92,shoulder:0.84,hip:0.94, posture:'collapse', head:'round', hair:'hood',    hairCol:'#31534f', skin:'warm',   top:'hoodie',    topCol:'#3E7E7A',            bottom:'jeans', botCol:'#3a4048', shoes:'slipon',    shoeCol:'#4a443c', arms:'pocket',    prop:null,      walk:'drift',   spd:0.9, phones:true, bighead:true },
-  marcus:{ h:1.06,w:1.17,shoulder:1.16,hip:1.10, posture:'lounge',   head:'round', hair:'short',   hairCol:'#241d17', skin:'deep',   top:'henley',    topCol:'#b0693f',            bottom:'jeans', botCol:'#3f4652', shoes:'boot',      shoeCol:'#39291f', arms:'mug',       prop:'mug',     walk:'amble',   spd:0.82 },
-  priya: { h:1.02,w:0.82,shoulder:0.88,hip:0.90, posture:'upright',  head:'oval',  hair:'ponytail',hairCol:'#201812', skin:'tan',    top:'blouse',    topCol:'#7C6FD6',            bottom:'slacks',botCol:'#3a3648', shoes:'flat',      shoeCol:'#2b2420', arms:'laptop',    prop:'laptop',  walk:'brisk',   spd:1.19 },
-  adam:  { h:1.00,w:1.09,shoulder:1.10,hip:1.02, posture:'hoverhips',head:'round', hair:'bald',    hairCol:null,      skin:'light',  top:'polo',      topCol:'#A88C5F',            bottom:'khakis',botCol:'#8a7a58', shoes:'sneak',     shoeCol:'#4a443c', arms:'hips',      prop:null,      walk:'strut',   spd:0.95, shine:true, lanyard:true }
+  you:   { h:1.00,w:1.14,shoulder:1.12,hip:1.04, legLen:0.88,torso:1.02,headScale:1.20, posture:'shrug',
+           head:'round', hair:'phones', hairCol:'#2b2824', skin:'badger', top:'tee', topCol:'#4B4743',
+           bottom:'pants', botCol:'#3b3833', shoes:'sneak', shoeCol:'#2b2824', arms:'shrug', prop:null,
+           walk:'trudge', spd:1.0, idle:'settle', restFace:'tired', badger:true },
+  brad:  { h:1.24,w:0.80,shoulder:1.06,hip:0.76, legLen:1.22,torso:0.92,headScale:0.90, posture:'leanfwd',
+           head:'oval', hair:'swoop', hairCol:'#2a2019', skin:'tan', top:'quarterzip', topCol:'#3f6ca8',
+           bottom:'slacks', botCol:'#39414d', shoes:'sneakwhite', shoeCol:'#efeae0', arms:'phone', prop:'phone',
+           walk:'bounce', spd:1.15, idle:'phonecheck', restFace:'scheming', airpod:true },
+  dennis:{ h:0.80,w:1.36,shoulder:1.16,hip:1.26, legLen:0.74,torso:1.20,headScale:0.90, posture:'hunch',
+           head:'round', hair:'combover', hairCol:'#9a958b', skin:'warm', top:'cardigan', topCol:'#7d6a4a',
+           bottom:'slacks', botCol:'#4a463c', shoes:'loafer', shoeCol:'#39301f', arms:'holdchest', prop:'binder',
+           walk:'shuffle', spd:0.68, idle:'shuffle', restFace:'tired', glasses:true, jowls:true },
+  boss:  { h:1.45,w:1.26,shoulder:1.46,hip:1.02, legLen:1.16,torso:1.14,headScale:1.06, posture:'rigid',
+           head:'square', hair:'buzz', hairCol:'#2a2622', skin:'tan', top:'suit', topCol:'#23262c', tie:'#b23b34',
+           bottom:'slacks', botCol:'#1d2025', shoes:'oxblood', shoeCol:'#5a2a24', arms:'earphone', prop:'earpiece',
+           walk:'march', spd:1.0, idle:'watch', restFace:'stern' },
+  hr:    { h:1.07,w:0.84,shoulder:1.06,hip:0.98, legLen:1.06,torso:0.96,headScale:0.98, posture:'upright',
+           head:'oval', hair:'bob', hairCol:'#4a3a2c', skin:'light', top:'blazer', topCol:'#6a5f86',
+           bottom:'skirt', botCol:'#3a3448', shoes:'dress', shoeCol:'#2b2420', arms:'clipboard', prop:'clipboard',
+           walk:'precise', spd:1.06, idle:'tap', restFace:'plastic', lanyard:true },
+  kayla: { h:0.80,w:0.84,shoulder:0.78,hip:0.90, legLen:0.84,torso:0.96,headScale:1.12, posture:'collapse',
+           head:'round', hair:'hood', hairCol:'#31534f', skin:'warm', top:'hoodie', topCol:'#3E7E7A',
+           bottom:'jeans', botCol:'#3a4048', shoes:'slipon', shoeCol:'#4a443c', arms:'pocket', prop:null,
+           walk:'drift', spd:0.88, idle:'glance', restFace:'overwhelmed', phones:true, bighead:true },
+  marcus:{ h:1.08,w:1.30,shoulder:1.22,hip:1.18, legLen:0.98,torso:1.08,headScale:1.02, posture:'lounge',
+           head:'round', hair:'short', hairCol:'#241d17', skin:'deep', top:'henley', topCol:'#b0693f',
+           bottom:'jeans', botCol:'#3f4652', shoes:'boot', shoeCol:'#39291f', arms:'mug', prop:'mug',
+           walk:'amble', spd:0.80, idle:'sip', restFace:'dead' },
+  priya: { h:1.05,w:0.76,shoulder:0.84,hip:0.84, legLen:1.10,torso:0.92,headScale:0.94, posture:'purposeful',
+           head:'oval', hair:'ponytail', hairCol:'#201812', skin:'tan', top:'blouse', topCol:'#7C6FD6',
+           bottom:'slacks', botCol:'#3a3648', shoes:'flat', shoeCol:'#2b2420', arms:'laptop', prop:'laptop',
+           walk:'brisk', spd:1.22, idle:'type', restFace:'fine' },
+  adam:  { h:1.02,w:1.14,shoulder:1.14,hip:1.06, legLen:0.94,torso:1.02,headScale:1.14, posture:'hoverhips',
+           head:'egg', hair:'bald', hairCol:null, skin:'light', top:'polo', topCol:'#A88C5F',
+           bottom:'khakis', botCol:'#8a7a58', shoes:'sneak', shoeCol:'#4a443c', arms:'hips', prop:null,
+           walk:'strut', spd:0.95, idle:'gesture', restFace:'eager', shine:true, lanyard:true }
 };
 
 // posture → how weight sits. Contrapposto by default; a vertical spine is reserved
 // for the Boss and for fear (Bible §15). Values are in figure units (×S later).
 function figPosture(name){
   switch(name){
-    case 'rigid':     return { lean:0,    headFwd:0,   shDrop:-0.5, shMul:1.06, hipCock:0,   bobMul:0.4 };
-    case 'leanfwd':   return { lean:2.6,  headFwd:1.8, shDrop:-0.4, shMul:1.0,  hipCock:-1.2,bobMul:1.1 };
-    case 'hunch':     return { lean:1.4,  headFwd:2.8, shDrop:2.6,  shMul:0.98, hipCock:0.4, bobMul:0.7 };
-    case 'collapse':  return { lean:0.6,  headFwd:1.6, shDrop:2.2,  shMul:0.82, hipCock:1.0, bobMul:0.6 };
-    case 'shrug':     return { lean:0,    headFwd:0.3, shDrop:-2.4, shMul:1.02, hipCock:0.6, bobMul:0.7 };
-    case 'lounge':    return { lean:-1.8, headFwd:-0.4,shDrop:1.0,  shMul:1.08, hipCock:2.0, bobMul:0.8 };
-    case 'hoverhips': return { lean:1.2,  headFwd:1.2, shDrop:-0.2, shMul:1.16, hipCock:0.4, bobMul:0.8 };
-    case 'upright':   return { lean:0,    headFwd:0,   shDrop:0,    shMul:1.0,  hipCock:1.6, bobMul:0.9 };
-    default:          return { lean:0,    headFwd:0,   shDrop:0.3,  shMul:1.0,  hipCock:1.3, bobMul:0.9 };
+    // chest out, chin up, shoulders squared high-and-back — dominance
+    case 'rigid':     return { lean:-0.6, headFwd:-0.3, shDrop:-1.2, shMul:1.12, hipCock:0,   bobMul:0.32 };
+    // hungry forward lean over the toes
+    case 'leanfwd':   return { lean:3.4,  headFwd:2.4,  shDrop:-0.7, shMul:1.0,  hipCock:-1.6,bobMul:1.2 };
+    // deep 19-year hunch, head jutting forward off rounded shoulders
+    case 'hunch':     return { lean:1.9,  headFwd:3.8,  shDrop:3.4,  shMul:1.0,  hipCock:0.4, bobMul:0.55 };
+    // curled inward, shoulders dropped and narrowed, trying to take up less room
+    case 'collapse':  return { lean:1.0,  headFwd:2.1,  shDrop:3.0,  shMul:0.76, hipCock:1.2, bobMul:0.5 };
+    // the badger's permanent shrug — shoulders jacked up around the ears
+    case 'shrug':     return { lean:0,    headFwd:0.3,  shDrop:-3.4, shMul:1.05, hipCock:0.5, bobMul:0.6 };
+    // reclined, weight way back on the heels, hips slung forward
+    case 'lounge':    return { lean:-2.6, headFwd:-0.6, shDrop:1.5,  shMul:1.1,  hipCock:2.6, bobMul:0.85 };
+    // planted, elbows out, hovering forward to make his point
+    case 'hoverhips': return { lean:1.4,  headFwd:1.5,  shDrop:-0.4, shMul:1.2,  hipCock:0.4, bobMul:0.8 };
+    // crisp vertical, chin level, blazer shoulders held
+    case 'upright':   return { lean:0,    headFwd:-0.2, shDrop:-0.4, shMul:1.05, hipCock:1.4, bobMul:0.82 };
+    // upright but leaning INTO the work — momentum
+    case 'purposeful':return { lean:1.3,  headFwd:0.6,  shDrop:-0.3, shMul:1.0,  hipCock:1.0, bobMul:0.95 };
+    default:          return { lean:0,    headFwd:0,    shDrop:0.3,  shMul:1.0,  hipCock:1.3, bobMul:0.9 };
+  }
+}
+
+// walk cycle per gait — casting through motion (Bible §15 "walk cycles are casting")
+function figWalk(name){
+  switch(name){
+    case 'march':   return { stride:4.0, bob:0.7, lift:2.2, swing:3.0, upperStill:true  }; // Boss: long even strides, torso like a mast
+    case 'bounce':  return { stride:2.8, bob:3.4, lift:3.6, swing:1.6, upperStill:false }; // Brad: springs off the toes
+    case 'shuffle': return { stride:1.5, bob:0.4, lift:0.9, swing:0.3, upperStill:true  }; // Dennis: barely leaves the carpet
+    case 'drift':   return { stride:2.0, bob:0.9, lift:1.5, swing:0.5, upperStill:false }; // Kayla: slow, close, low
+    case 'amble':   return { stride:3.0, bob:1.5, lift:2.1, swing:1.4, upperStill:false }; // Marcus: loose roll, big sway
+    case 'precise': return { stride:2.1, bob:0.7, lift:1.8, swing:0.9, upperStill:false }; // Meredith: quick, short, even
+    case 'brisk':   return { stride:2.7, bob:0.8, lift:2.0, swing:1.2, upperStill:false }; // Priya: fast small steps
+    case 'strut':   return { stride:3.2, bob:1.5, lift:2.3, swing:1.5, upperStill:false }; // Adam: chest-led swagger
+    case 'trudge':  return { stride:2.3, bob:1.7, lift:1.7, swing:0.6, upperStill:false }; // You: heavy, resigned plod
+    default:        return { stride:2.6, bob:1.2, lift:2.0, swing:1.0, upperStill:false };
   }
 }
 
@@ -1916,34 +1973,55 @@ function drawFigure(ctx, px, py, z, rig, o){
   ctx.save();
   ctx.translate(px, py);
   ctx.scale(o.faceLeft ? -1 : 1, 1);
-  const bob = (mv ? Math.abs(Math.sin(wph)) * -1.3 : Math.sin(iph) * -0.5) * P.bobMul * S;
+  const walkP = figWalk(rig.walk);
+  const bob = (mv ? -Math.abs(Math.sin(wph)) * walkP.bob : Math.sin(iph) * -0.5 * P.bobMul) * S;
   ctx.translate(0, bob);
 
-  // ── key levels (feet at 0, up = negative) ──
-  const hipY = -12.5 * S * H;
-  const shY  = -23.5 * S * H + P.shDrop * S;
+  // ── key levels (feet at 0, up = negative) — legs, torso, head vary per rig ──
+  const legLen = 12.6 * (rig.legLen || 1), torsoLen = 11.5 * (rig.torso || 1);
+  const hipY = -legLen * S * H;
+  const shY  = hipY - torsoLen * S * H + P.shDrop * S;
   const hipW = 5.0 * S * W * (rig.hip || 1);
   const shW  = 5.8 * S * W * (rig.shoulder || 1) * P.shMul;
-  const topX = P.lean * S + (mv ? 0 : Math.sin(iph * 0.7) * 0.3 * S);
-  const headR = (rig.bighead ? 5.3 : 4.7) * S * (rig.head === 'square' ? 1.02 : 1);
-  const headCX = topX + P.headFwd * S;
-  const headCY = shY - 6.6 * S;
+  const sway = (mv && !walkP.upperStill) ? Math.sin(wph) * 0.7 * S : 0;
+  const glance = (rig.idle === 'glance' && !mv) ? Math.sin(iph * 0.55) * 1.5 * S : 0;
+  const topX = P.lean * S + sway + (mv ? 0 : Math.sin(iph * 0.7) * 0.3 * S);
+  const headR = 4.6 * S * (rig.headScale || 1);
+  const headCX = topX + P.headFwd * S + glance;
+  const headCY = shY - headR * 0.95 - 2.2 * S;
   const shLx = topX - shW / 2, shRx = topX + shW / 2;
 
-  // ── legs (walk cycle) ──
-  const legGap = hipW * 0.40, legW = 3.0 * S * W, footY0 = -1.5 * S;
+  // ── legs (walk cycle: stride + lift per gait) ──
+  const legGap = hipW * 0.40, legW = 3.1 * S * W, footY0 = -1.5 * S;
   [[-1, Math.PI], [1, 0]].forEach(([sx, ph0]) => {
     const sw = mv ? Math.sin(wph + ph0) : 0;
     const cock = (!mv) ? sx * P.hipCock * 0.5 * S : 0;
-    const footX = topX * 0.15 + sx * legGap + sw * 3.3 * S;
-    const lift = mv ? Math.max(0, Math.sin(wph + ph0)) * 2.8 * S : 0;
+    const footX = topX * 0.15 + sx * legGap + sw * walkP.stride * S;
+    const lift = mv ? Math.max(0, Math.sin(wph + ph0)) * walkP.lift * S : 0;
     figLimb(ctx, sx * legGap + cock, hipY, footX, footY0 - lift, legW, F(rig.botCol), OL, S);
     figShoe(ctx, footX, footY0 - lift, rig.shoes, F(rig.shoeCol), OL, S, sil);
   });
 
-  // ── far arm (behind torso) ──
+  // ── far arm (behind torso) — the free hand swings when walking ──
   const armW = 2.7 * S * W;
   const shoObj = figArmPlan(rig, P, { shLx, shRx, shY, hipY, hipW, topX, iph, mv, wph });
+  if(mv){
+    shoObj.far.hx += Math.sin(wph) * walkP.swing * S; shoObj.far.hy -= Math.abs(Math.sin(wph)) * 0.8 * S;
+  } else {
+    // ── signature idle gesture: nobody in this office just stands (Bible §15) ──
+    const g = iph;
+    switch(rig.idle){
+      case 'sip':       { const s = Math.max(0, Math.sin(g * 0.5)); shoObj.near.hy -= s * 4.5 * S; shoObj.near.hx -= s * 1.3 * S; break; } // mug to mouth
+      case 'phonecheck':{ const s = Math.max(0, Math.sin(g * 0.5)); shoObj.near.hy -= s * 3.2 * S; break; }                              // phone up to face
+      case 'watch':     { const s = Math.max(0, Math.sin(g * 0.45) - 0.4); shoObj.far.hy -= s * 9 * S; shoObj.far.hx += s * 4 * S; break; } // check the wrist
+      case 'tap':       { shoObj.near.hy += Math.sin(g * 5) * 0.7 * S; break; }                                                          // pen taps the board
+      case 'gesture':   { const s = Math.max(0, Math.sin(g * 0.5) - 0.25); shoObj.near.hx += s * 5 * S; shoObj.near.hy -= s * 6 * S; break; } // makes a point
+      case 'shuffle':   { shoObj.near.hy += Math.sin(g * 2) * 0.6 * S; shoObj.far.hy += Math.sin(g * 2 + 1) * 0.6 * S; break; }           // fidgets the binder
+      case 'type':      { shoObj.far.hy -= Math.abs(Math.sin(g * 4)) * 1.0 * S; break; }                                                 // typing
+      case 'glance':    { shoObj.near.hy += Math.sin(g * 0.9) * 0.5 * S; break; }                                                        // (head turn handled above)
+      case 'settle':    { const s = Math.sin(g * 0.7) * 0.7 * S; shoObj.near.hy += s; shoObj.far.hy += s; break; }                       // the shrug settling
+    }
+  }
   figLimb(ctx, shoObj.far.sx, shY + 0.5 * S, shoObj.far.hx, shoObj.far.hy, armW, F(rig.topCol), OL, S);
   figHand(ctx, shoObj.far.hx, shoObj.far.hy, 2.2 * S, F(skin), OL, S);
 
@@ -1959,15 +2037,21 @@ function drawFigure(ctx, px, py, z, rig, o){
   ctx.strokeStyle = OL; ctx.lineWidth = 1.3 * S; ctx.stroke();
   if(!sil) figClothing(ctx, rig, { hipW, shW, shLx, shRx, shY, hipY, topX, S, OL });
 
-  // ── neck + head ──
+  // ── neck + head (shape varies: square jaw, egg, oval, round) ──
+  const neckW = (rig.posture === 'hunch' ? 3.8 : 3.0) * S;   // Dennis's head sits low on a thick neck
   const neckY = shY - 1.0 * S;
-  figLimb(ctx, headCX, neckY, headCX, headCY + headR * 0.5, 3.0 * S, F(skin), OL, S);
+  figLimb(ctx, headCX, neckY, headCX, headCY + headR * 0.5, neckW, F(skin), OL, S);
   ctx.beginPath();
-  if(rig.head === 'square') rrPath(ctx, headCX - headR, headCY - headR * 0.96, headR * 2, headR * 1.92, headR * 0.5);
-  else if(rig.head === 'oval') ctx.ellipse(headCX, headCY, headR * 0.92, headR * 1.06, 0, 0, Math.PI * 2);
+  if(rig.head === 'square') rrPath(ctx, headCX - headR * 1.02, headCY - headR * 0.92, headR * 2.04, headR * 1.9, headR * 0.42); // broad jaw
+  else if(rig.head === 'egg') ctx.ellipse(headCX, headCY, headR * 0.82, headR * 1.2, 0, 0, Math.PI * 2);                        // tall dome
+  else if(rig.head === 'oval') ctx.ellipse(headCX, headCY, headR * 0.9, headR * 1.08, 0, 0, Math.PI * 2);
   else ctx.arc(headCX, headCY, headR, 0, Math.PI * 2);
   ctx.fillStyle = F(skin); ctx.fill();
   ctx.strokeStyle = OL; ctx.lineWidth = 1.2 * S; ctx.stroke();
+  if(rig.jowls){   // soft jaw / double chin — the look of a long tenure
+    ctx.beginPath(); ctx.ellipse(headCX, headCY + headR * 0.72, headR * 0.78, headR * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = F(skin); ctx.fill(); ctx.strokeStyle = OL; ctx.lineWidth = 1.0 * S; ctx.stroke();
+  }
 
   // ── near arm + hand (over torso) ──
   figLimb(ctx, shoObj.near.sx, shY + 0.5 * S, shoObj.near.ex, shoObj.near.ey, armW, F(rig.topCol), OL, S);
@@ -2139,7 +2223,12 @@ const FIG_MOOD = {
   tired:   { lid:0.54, brow:-0.22, browY:0.12, mouth: 0.0, bags:true },
   alarmed: { lid:0.02, brow:0.30,  browY:-0.22,mouth: 0.34, open:true },
   scheming:{ lid:0.44, brow:0.26,  browY:-0.04,mouth:-0.20, smirk:true },
-  dead:    { lid:0.60, brow:0.0,   browY:0.06, mouth: 0.0, bags:true }
+  dead:    { lid:0.60, brow:0.0,   browY:0.06, mouth: 0.0, bags:true },
+  // signature resting faces (still deadpan family — lid/brow/mouth only)
+  stern:   { lid:0.30, brow:0.34,  browY:0.34, mouth:-0.14 },              // Boss: heavy low brows, set jaw
+  plastic: { lid:0.26, brow:0.0,   browY:0.02, mouth: 0.30 },              // Meredith: fixed pleasant smile
+  eager:   { lid:0.10, brow:0.20,  browY:-0.16,mouth: 0.26, open:true },   // Adam: raised brows, ready to speak
+  overwhelmed:{ lid:0.50, brow:-0.30, browY:0.02, mouth:-0.14, bags:true } // Kayla: worried inner-brow, drained
 };
 function figFace(ctx, rig, cx, cy, r, mood, o){
   const S = r / 4.7;
@@ -2211,8 +2300,14 @@ function figHair(ctx, rig, cx, cy, r, S, sil, o){
     case 'ponytail':
       ctx.fillStyle = c1;
       ctx.beginPath(); ctx.arc(cx, cy - r * 0.2, r * 1.02, Math.PI * 1.05, Math.PI * 1.95); ctx.lineTo(cx + r * 0.6, cy - r * 0.3); ctx.lineTo(cx - r * 0.6, cy - r * 0.3); ctx.closePath(); ctx.fill();
-      const sway = o && o.moving ? Math.sin((o.walkPhase || 0)) * 2 * S : Math.sin((o && o.idlePhase || 0)) * 0.8 * S;
-      ctx.beginPath(); ctx.moveTo(cx - r * 0.8, cy - r * 0.5); ctx.quadraticCurveTo(cx - r * 1.5 + sway, cy - r * 0.1, cx - r * 1.2 + sway, cy + r * 0.9); ctx.quadraticCurveTo(cx - r * 0.7, cy + r * 0.2, cx - r * 0.5, cy - r * 0.3); ctx.closePath(); ctx.fill();
+      // a high, obvious tail (Priya's clearest silhouette read vs. Meredith's bob)
+      const sway = o && o.moving ? Math.sin((o.walkPhase || 0)) * 2.4 * S : Math.sin((o && o.idlePhase || 0)) * 0.9 * S;
+      ctx.beginPath(); ctx.arc(cx - r * 0.72, cy - r * 0.85, r * 0.34, 0, Math.PI * 2); ctx.fill();   // hair tie / bump
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.85, cy - r * 0.95);
+      ctx.quadraticCurveTo(cx - r * 1.9 + sway, cy - r * 0.5, cx - r * 1.55 + sway, cy + r * 0.85);
+      ctx.quadraticCurveTo(cx - r * 1.15 + sway, cy + r * 1.15, cx - r * 1.05 + sway, cy + r * 0.7);
+      ctx.quadraticCurveTo(cx - r * 1.2, cy - r * 0.1, cx - r * 0.55, cy - r * 0.5); ctx.closePath(); ctx.fill();
       break;
     case 'buzz':
       ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(cx, cy, r * 0.99, Math.PI * 1.08, Math.PI * 1.92); ctx.closePath(); ctx.fill();
@@ -2279,11 +2374,12 @@ function figProp(ctx, rig, sh, headCX, headCY, headR, S, sil, o){
       ctx.fillStyle = col('#c9a25a'); ctx.beginPath(); rrPath(ctx, -4.5 * S, -6 * S, 9 * S, 12 * S, 0.8 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1 * S; ctx.stroke();
       if(!sil){ ctx.fillStyle = '#f6f1e6'; ctx.fillRect(-3.4 * S, -4.6 * S, 6.8 * S, 9 * S); ctx.fillStyle = '#8a8f96'; ctx.fillRect(-1.6 * S, -6.4 * S, 3.2 * S, 1.4 * S); ctx.strokeStyle = '#b9b2a0'; ctx.lineWidth = 0.6 * S; for(let i = 0; i < 4; i++){ ctx.beginPath(); ctx.moveTo(-2.6 * S, (-2.5 + i * 2) * S); ctx.lineTo(2.6 * S, (-2.5 + i * 2) * S); ctx.stroke(); } }
       ctx.restore(); break; }
-    case 'mug': {
-      ctx.save(); ctx.translate(nh.hx + 1.4 * S, nh.hy);
-      ctx.fillStyle = col('#2f6d63'); ctx.beginPath(); rrPath(ctx, -3.4 * S, -4.6 * S, 6.8 * S, 8.6 * S, 1.4 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1.1 * S; ctx.stroke();
-      ctx.beginPath(); ctx.arc(4.2 * S, -0.3 * S, 2.4 * S, -1.2, 1.2); ctx.lineWidth = 1.6 * S; ctx.stroke();
-      if(!sil){ ctx.fillStyle = '#e9e2d2'; ctx.beginPath(); ctx.ellipse(0, -4.4 * S, 3 * S, 1 * S, 0, 0, Math.PI * 2); ctx.fill(); }
+    case 'mug': {   // the GIANT mug — a dominant chunk of the silhouette
+      ctx.save(); ctx.translate(nh.hx + 1.8 * S, nh.hy + 0.5 * S);
+      ctx.fillStyle = col('#2f6d63'); ctx.beginPath(); rrPath(ctx, -4.6 * S, -6.2 * S, 9.2 * S, 11.4 * S, 1.8 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1.2 * S; ctx.stroke();
+      ctx.beginPath(); ctx.arc(5.8 * S, -0.4 * S, 3.2 * S, -1.15, 1.15); ctx.lineWidth = 2.0 * S; ctx.stroke();   // big handle
+      if(!sil){ ctx.fillStyle = '#e9e2d2'; ctx.beginPath(); ctx.ellipse(0, -6.0 * S, 4.1 * S, 1.3 * S, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); rrPath(ctx, -3.2 * S, -4.6 * S, 2.2 * S, 8 * S, 1 * S); ctx.fill(); }
       ctx.restore(); break; }
     case 'laptop': {
       ctx.save(); ctx.translate(nh.hx - 1 * S, nh.hy - 1 * S); ctx.rotate(-0.15);
@@ -2308,12 +2404,13 @@ function drawActor(ctx, cam, a, w){
   // ── the actor, assembled from the RIG (Bible §13/§15) ──
   const moodMap = { good:'fine', meh:'tired', bad:'alarmed' };
   let fmood = moodMap[a.mood] || 'fine';
+  if(fmood === 'fine' && rig.restFace) fmood = rig.restFace;   // signature resting expression
   if(a.id === 'brad' && (a.state === 'lurk' || a.state === 'lurkwalk' || a.state === 'raid')) fmood = 'scheming';
   else if(a.state === 'patrol') fmood = 'alarmed';
   else if(a.id === 'kayla' && a.mood === 'bad') fmood = 'dead';
   const moving = !!(a.path && a.path.length);
   if(moving){ const n = a.path[0]; const sdx = (n.x - a.x) - (n.y - a.y); if(Math.abs(sdx) > 0.001) a._fl = sdx < 0; }
-  const cadence = { bounce:12, march:6.5, shuffle:4.5, drift:5.5, amble:7, brisk:13, precise:11, strut:7.5 }[rig.walk] || 8;
+  const cadence = { bounce:12, march:6.5, shuffle:4.2, drift:5.2, amble:6.6, brisk:13, precise:11, strut:7.5, trudge:6 }[rig.walk] || 8;
   drawFigure(ctx, px, py, z, rig, {
     mood: fmood, moving,
     walkPhase: (_tMs / 1000) * cadence * (rig.spd || 1),

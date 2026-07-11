@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nine to Survive — Cast Test Sheet</title>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Expanded:wght@700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="ntos-world.js?v=w22"></script>
+<script src="ntos-world.js?v=w23"></script>
 <style>
   :root{ --paper:#F3EBDA; --ink:#15120C; --mut:#8a8070; }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -44,10 +44,12 @@ const MOODS = ['fine','tired','alarmed','scheming','dead'];
 const PROP = {you:'headphones',brad:'phone / AirPod',dennis:'binder',boss:'earpiece',hr:'clipboard',kayla:'headphones',marcus:'giant mug',priya:'laptop',adam:'hands on hips'};
 const cv = document.getElementById('sheet'), ctx = cv.getContext('2d');
 let LABELS = true, LIGHT = true, t0 = null;
-const CSSW = Math.min(1120, document.body.clientWidth - 44);
+const CSSW = 1040;               // fixed art-board width (robust to load timing)
 const H = 1540;
-function fit(){ const dpr = window.devicePixelRatio||1; cv.width = CSSW*dpr; cv.height = H*dpr; cv.style.width = CSSW+'px'; cv.style.height = H+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
+function fit(){ const dpr = window.devicePixelRatio||1; cv.width = CSSW*dpr; cv.height = H*dpr; cv.style.width = CSSW+'px'; cv.style.maxWidth = '100%'; cv.style.height = 'auto'; ctx.setTransform(dpr,0,0,dpr,0,0); }
 fit();
+window.addEventListener('load', fit);
+window.addEventListener('resize', fit);
 
 function label(x,y,txt,c){ if(!LABELS) return; ctx.fillStyle=c||'#a89b82'; ctx.font='10px "Space Mono", monospace'; ctx.textAlign='center'; ctx.fillText(txt,x,y); }
 function heading(y,txt){ ctx.fillStyle='#B98A4E'; ctx.font='700 13px "Space Mono", monospace'; ctx.textAlign='left'; ctx.fillText(txt, 8, y); ctx.strokeStyle='rgba(185,138,78,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(8,y+6); ctx.lineTo(CSSW-8,y+6); ctx.stroke(); }
