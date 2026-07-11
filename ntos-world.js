@@ -1281,6 +1281,25 @@ const FLOOR_STYLES = [
   { kind:'carpet',  a:'#E7C6A2', b:'#DFBB94', fleck:'rgba(21,18,13,0.07)' }    // BREAK CORNER
 ];
 const FLOOR_BASE = { kind:'carpet', a:'#E9E0C6', b:'#E2D8BB', fleck:'rgba(21,18,13,0.05)' };
+
+// ── WORLD TOKENS: the canvas "design tokens" ──────────────────────────────────
+// Every environmental surface colour (walls, glass, shadows, the atmospheric
+// overlay) is named here so the office can be re-lit from ONE place — the canvas
+// twin of :root in ntos-theme.css. Per-character / per-prop accents live in the
+// CAST and FURNITURE data tables above (a.color / f.color). LIGHT drives the
+// signature double key-light (warm 5pm gold vs. cold monitor-cyan) applied as an
+// overlay in render(); see DESIGN_SYSTEM.md.
+const WT = {
+  wallBackFace:'#DAD2BD', wallBackCap:'#C7BFA8',   // north wall
+  wallSideFace:'#CEC6AF', wallSideCap:'#BBB39C',   // west wall
+  window:'#8FE4DA', windowGlint:'rgba(255,255,255,0.35)',
+  floorSkirtA:'rgba(21,18,13,0.22)', floorSkirtB:'rgba(21,18,13,0.30)',
+  contactShadow:'rgba(21,18,13,0.18)',
+  vignette:'rgba(21,18,13,0.10)',
+  // LIGHT: null = neutral fluorescent (foundation default). Stage 2 fills this in
+  // with the warm/cold key-light so nothing but this object changes the mood.
+  LIGHT:null
+};
 // which zone owns each tile (computed once)
 const ZONE_MAP = (() => {
   const m = new Int8Array(GRID_W * GRID_H).fill(-1);
@@ -1312,12 +1331,12 @@ function wallSeg(ctx, ax, ay, bx, by, H, face, cap, hasWindow, z){
     ctx.moveTo(ix1, iy1 - H * 0.82); ctx.lineTo(ix2, iy2 - H * 0.82);
     ctx.lineTo(ix2, iy2 - H * 0.28); ctx.lineTo(ix1, iy1 - H * 0.28);
     ctx.closePath();
-    ctx.fillStyle = '#8FE4DA'; ctx.fill();
+    ctx.fillStyle = WT.window; ctx.fill();
     ctx.strokeStyle = 'rgba(21,18,13,0.28)'; ctx.lineWidth = 1.2 * z; ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(ix1, iy1 - H * 0.82); ctx.lineTo(ix2, iy2 - H * 0.82);
     ctx.lineTo(ix2, iy2 - H * 0.60); ctx.lineTo(ix1, iy1 - H * 0.60);
-    ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
+    ctx.closePath(); ctx.fillStyle = WT.windowGlint; ctx.fill();
   }
 }
 
@@ -1397,11 +1416,11 @@ function render(w, ctx, cam, vw, vh){
     const [e2x, e2y] = proj(cam, GRID_W - 0.5, GRID_H - 0.5);
     const [e3x, e3y] = proj(cam, -0.5, GRID_H - 0.5);
     const D = 12 * z;
-    ctx.fillStyle = 'rgba(21,18,13,0.22)';
+    ctx.fillStyle = WT.floorSkirtA;
     ctx.beginPath();
     ctx.moveTo(e1x, e1y); ctx.lineTo(e2x, e2y); ctx.lineTo(e2x, e2y + D); ctx.lineTo(e1x, e1y + D);
     ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(21,18,13,0.30)';
+    ctx.fillStyle = WT.floorSkirtB;
     ctx.beginPath();
     ctx.moveTo(e2x, e2y); ctx.lineTo(e3x, e3y); ctx.lineTo(e3x, e3y + D); ctx.lineTo(e2x, e2y + D);
     ctx.closePath(); ctx.fill();
@@ -1436,14 +1455,14 @@ function render(w, ctx, cam, vw, vh){
     const [ax, ay] = proj(cam, x - 0.5, -0.5);
     const [bx, by] = proj(cam, x + 0.5, -0.5);
     if(bx < -TW * z || ax > vw + TW * z) continue;
-    wallSeg(ctx, ax, ay, bx, by, 48 * z, '#DAD2BD', '#C7BFA8', (x % 3) === 1, z);
+    wallSeg(ctx, ax, ay, bx, by, 48 * z, WT.wallBackFace, WT.wallBackCap, (x % 3) === 1, z);
   }
   for(let y = 0; y < GRID_H; y++){
     if(y === 16 || y === 17) continue;               // the EXIT breaks the wall
     const [ax, ay] = proj(cam, -0.5, y - 0.5);
     const [bx, by] = proj(cam, -0.5, y + 0.5);
     if(ax < -TW * z && bx < -TW * z) continue;
-    wallSeg(ctx, ax, ay, bx, by, 48 * z, '#CEC6AF', '#BBB39C', (y % 3) === 1, z);
+    wallSeg(ctx, ax, ay, bx, by, 48 * z, WT.wallSideFace, WT.wallSideCap, (y % 3) === 1, z);
   }
 
 
@@ -1486,7 +1505,7 @@ function render(w, ctx, cam, vw, vh){
   const vg = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.38,
                                       vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
   vg.addColorStop(0, 'rgba(21,18,13,0)');
-  vg.addColorStop(1, 'rgba(21,18,13,0.10)');
+  vg.addColorStop(1, WT.vignette);
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, vw, vh);
 
@@ -1726,7 +1745,7 @@ function drawActor(ctx, cam, a, w){
   const z = cam.z;
   const [px, py] = proj(cam, a.x, a.y);
   ctx.beginPath(); ctx.ellipse(px, py, 10 * z, 5 * z, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(21,18,13,0.18)'; ctx.fill();
+  ctx.fillStyle = WT.contactShadow; ctx.fill();
   if(a.id === 'boss' && (a.mood === 'bad' || a.state === 'patrol')){
     ctx.beginPath(); ctx.ellipse(px, py, 14 * z, 7 * z, 0, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(216,68,63,0.85)'; ctx.lineWidth = 2.5 * z; ctx.stroke();
