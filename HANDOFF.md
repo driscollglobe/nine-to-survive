@@ -9,6 +9,31 @@ heat, chain reactions, spatial tells, interceptions, schemes, the story collecti
 named failures. The game is no longer walk→work→popup: trouble crosses the floor
 visibly, and the player can intercept, exploit, redirect, or weaponize it.
 
+## Visual Production v1 (overnight pass, 2026-07-10) — READ FIRST if touching visuals
+The prototype look is gone; the game now implements the **Design Bible**
+(`design/`). Gameplay untouched — this was presentation only, and the tests never
+call the renderer, so all 420 checks + the sweep matrix are unmoved.
+- **Two token blocks own the look.** `:root` in **`ntos-theme.css`** (all shell
+  CSS, now an external file, extracted from index.html) and **`WT`** in the
+  render section of `ntos-world.js` (walls/glass/shadows + `WT.LIGHT`). Re-skin =
+  edit these two, rebuild. Per-character/prop colours already live in
+  `CAST`/`FURNITURE`.
+- **The signature double key-light** (warm 5pm gold vs. cold monitor-cyan) is in
+  every frame — on menus via body gradients, in the office via a soft-light
+  overlay in `render()` that **ramps with the clock** (`dayT = clockMin/480`).
+- **Palette**: paper+graphite neutrals; Brass/Verdigris/Slate/Ember/Manila
+  meters, rationed. **Type**: Archivo Expanded / Space Mono / Hanken Grotesk via
+  `--font-display/-data/-body`. **HUD**: dark ink panel (Bible §10). Buttons drop
+  onto the desk (hard bottom shadow + press). Grain + vignette over every scene.
+- **Build**: `build_standalone.py` now inlines `ntos-theme.css` too, so source is
+  multi-file but the standalone stays one file. `ntos-world.js` bumped to `w20`.
+- **Docs**: `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`, `CHARACTER_SYSTEM.md`,
+  `IMPLEMENTATION_PLAN.md`, `VISUAL_PRODUCTION_REPORT.md`, `KNOWN_ISSUES.md`.
+  Frozen playable build: `builds/nine-to-survive-visual-v1/index.html`.
+- **Next visual steps** (`KNOWN_ISSUES.md`): let Heat drain the daylight; full
+  5-mood character construction kit; ambient-life system; a wide-format hero
+  layout. Branch: `visual-production-v1` (do not merge to main).
+
 ## Session 10's layer (know these five systems)
 - **Office heat** (`g.heat` — hr/boss/brad, `addHeat`/`heatOf`/`heatLevel`): raised
   only by real player actions; consequences: HR High moves the warning bar +5,
@@ -109,7 +134,10 @@ off (seed, day) so no pre-Adam staging ever shifted.
   heat + chains, schemes, story ladder + STORY_META collection, specific-failure verdicts,
   dayHeadline/dayAward, **the policy** (dev-marked section at the bottom).
   Zero bare Math.random; local generators for anything that must not shift streams.
-- `ntos-world.js` (`?v=w19`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
+- `ntos-theme.css` — ALL shell styling, extracted from index.html: a `:root`
+  design-token block + 9 documented sections. The DOM's visual dial. Inlined into
+  the standalone by the build. (Canvas colours live in `WT` in ntos-world.js.)
+- `ntos-world.js` (`?v=w20`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
   firing escort, summons, kitchen, webinar, approvals, interception, lurk/telegraphs,
   Dennis carry, Adam concern walk, meeting-room demos), event queue with substitution,
   interception verbs (confront/flash/bait/walk-with/redirect/grenade/pre-demo/cool-HR),

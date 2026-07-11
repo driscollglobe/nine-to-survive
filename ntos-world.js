@@ -1290,15 +1290,23 @@ const FLOOR_BASE = { kind:'carpet', a:'#E9E0C6', b:'#E2D8BB', fleck:'rgba(21,18,
 // signature double key-light (warm 5pm gold vs. cold monitor-cyan) applied as an
 // overlay in render(); see DESIGN_SYSTEM.md.
 const WT = {
-  wallBackFace:'#DAD2BD', wallBackCap:'#C7BFA8',   // north wall
-  wallSideFace:'#CEC6AF', wallSideCap:'#BBB39C',   // west wall
-  window:'#8FE4DA', windowGlint:'rgba(255,255,255,0.35)',
-  floorSkirtA:'rgba(21,18,13,0.22)', floorSkirtB:'rgba(21,18,13,0.30)',
-  contactShadow:'rgba(21,18,13,0.18)',
-  vignette:'rgba(21,18,13,0.10)',
-  // LIGHT: null = neutral fluorescent (foundation default). Stage 2 fills this in
-  // with the warm/cold key-light so nothing but this object changes the mood.
-  LIGHT:null
+  wallBackFace:'#E0D7C1', wallBackCap:'#CFC5A9',   // north wall — warm paper
+  wallSideFace:'#D5CBB2', wallSideCap:'#C2B89C',   // west wall
+  // the glass carries the signature collision: warm evening sky, cool glint
+  window:'#EAC98C', windowGlint:'rgba(143,183,201,0.5)',
+  floorSkirtA:'rgba(28,20,10,0.26)', floorSkirtB:'rgba(20,14,7,0.34)',
+  contactShadow:'rgba(34,22,10,0.22)',             // warm-tinted, never hard black
+  vignette:'rgba(20,14,7,0.16)',
+  // the double key-light (Bible §06/Phase 3): warm 5pm honey-gold flooding one
+  // side, cold monitor-cyan pushing back from the other. Painted as a soft-light
+  // overlay in render(); alphas ramp with time-of-day so the floor warms toward
+  // 5 o'clock. Re-light the whole office from HERE and nowhere else.
+  LIGHT:{
+    warm:'#F4DCA6', warmAt:[0.10,-0.04],           // gold, top-left of frame
+    cold:'#8FB7C9', coldAt:[1.02,1.06],            // cyan, bottom-right
+    warmBase:0.10, warmDay:0.17,                   // gold alpha = base + day·t
+    coldBase:0.16, coldDay:0.07                    // cyan alpha = base − day·t
+  }
 };
 // which zone owns each tile (computed once)
 const ZONE_MAP = (() => {
@@ -1356,7 +1364,7 @@ function drawChair(ctx, cam, gx, gy){
   ctx.fillStyle = '#5c5850'; ctx.fill();                       // seat
 }
 
-function render(w, ctx, cam, vw, vh){
+function render(w, ctx, cam, vw, vh, tMs){
   ctx.clearRect(0, 0, vw, vh);
   const z = cam.z;
 
@@ -1501,7 +1509,36 @@ function render(w, ctx, cam, vw, vh){
     else drawActor(ctx, cam, item.a, w);
   });
 
-  // a soft vignette: fluorescent lighting, but make it cinematic
+  // ── the signature double key-light: warm 5pm gold vs. cold monitor-cyan ─────
+  // The single thing that must appear in every frame (Bible Phase 3). Painted as
+  // a soft-light overlay so it tints, not paints over. Alphas ramp with the day.
+  const L = WT.LIGHT;
+  if(L){
+    const dayT = Math.max(0, Math.min(1, w.clockMin / 480));   // 9:00 → 5:00
+    const breath = 1 + 0.06 * Math.sin((tMs || 0) / 2300);     // slow; never freezes
+    const diag = Math.hypot(vw, vh);
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    const wg = ctx.createRadialGradient(vw * L.warmAt[0], vh * L.warmAt[1], 0,
+                                        vw * L.warmAt[0], vh * L.warmAt[1], diag * 0.95);
+    wg.addColorStop(0, hexA(L.warm, (L.warmBase + L.warmDay * dayT) * breath));
+    wg.addColorStop(1, hexA(L.warm, 0));
+    ctx.fillStyle = wg; ctx.fillRect(0, 0, vw, vh);
+    const cg = ctx.createRadialGradient(vw * L.coldAt[0], vh * L.coldAt[1], 0,
+                                        vw * L.coldAt[0], vh * L.coldAt[1], diag * 0.9);
+    cg.addColorStop(0, hexA(L.cold, L.coldBase - L.coldDay * dayT));
+    cg.addColorStop(1, hexA(L.cold, 0));
+    ctx.fillStyle = cg; ctx.fillRect(0, 0, vw, vh);
+    ctx.restore();
+    // a warm bloom hugging the top of frame: the sun coming through the glass,
+    // stronger as the day tips toward 5 o'clock
+    const sun = ctx.createLinearGradient(0, 0, 0, vh * 0.5);
+    sun.addColorStop(0, hexA(L.warm, 0.13 * dayT));
+    sun.addColorStop(1, hexA(L.warm, 0));
+    ctx.fillStyle = sun; ctx.fillRect(0, 0, vw, vh * 0.5);
+  }
+
+  // a soft vignette on top: fluorescent lighting, but make it cinematic
   const vg = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.38,
                                       vw / 2, vh / 2, Math.max(vw, vh) * 0.78);
   vg.addColorStop(0, 'rgba(21,18,13,0)');
@@ -1544,6 +1581,12 @@ function drawSpotRing(ctx, cam, tile, color, phase){
   ctx.lineTo(px - (TW / 2) * z * p, py);
   ctx.closePath();
   ctx.strokeStyle = color; ctx.lineWidth = 2.6 * z; ctx.stroke();
+}
+
+// '#RRGGBB' + alpha → 'rgba(r,g,b,a)' — for the key-light gradients
+function hexA(hex, a){
+  const n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
 }
 
 function shade(hex, f){

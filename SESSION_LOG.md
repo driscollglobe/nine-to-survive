@@ -797,3 +797,55 @@ His tests caught a real falsy-zero bug in the roll guards (0.0 || 1).
   design — if receipts pile up unused in long runs, consider a valve. Priya's
   bait-fail (−7) is harsh at low Standing.
 
+
+---
+
+## Session 11 — Production foundation + Visual Production v1 (2026-07-10, overnight, autonomous)
+
+An overnight production pass in two stages. **No gameplay, balance or mechanics
+changed** — the renderer is the only world code touched, and the tests never call
+it, so the sweep matrix and all 420 checks are unmoved. Branch:
+`visual-production-v1` (never merged to main).
+
+### Stage 1 — production foundation (commit: "Create production-ready foundation")
+- Extracted every line of shell CSS out of `index.html` into **`ntos-theme.css`**:
+  a `:root` design-token block (colours, three `--font-*` roles, radii, shadows)
+  followed by 9 documented sections. `index.html` now `<link>`s it.
+- Taught **`build_standalone.py`** to inline the stylesheet as well as the two JS
+  modules, with leak guards — organised multi-file source, single-file standalone.
+- Added the canvas token seam **`WT`** in `ntos-world.js` (walls, glass, shadows,
+  vignette, `LIGHT`) — identical values, pure foundation. Routed the wall / window
+  / skirt / shadow / vignette literals through it.
+- Confirmed `CAST` / `FURNITURE` / `ZONES` as the reusable character / prop / room
+  templates and documented the add-a-row workflow.
+- Wrote `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`, `CHARACTER_SYSTEM.md`,
+  `IMPLEMENTATION_PLAN.md`, `KNOWN_ISSUES.md`; brought `design/` into the repo.
+
+### Stage 2 — visual production v1 (commit: "Implement visual production v1")
+Implemented the Design Bible in Bible-priority order:
+- **Type**: Archivo Expanded (display) / Space Mono (data) / Hanken Grotesk (body).
+- **Colour**: paper+graphite neutrals; Brass/Verdigris/Slate/Ember/Manila meters,
+  rationed. The old cyan brand is gone.
+- **Lighting (signature)**: the double key-light — warm 5pm gold vs. cold
+  monitor-cyan — in every frame. Menus get it from body gradients; the office gets
+  a soft-light overlay in `render()` that **ramps with the clock** (`clockMin/480`)
+  so late afternoon reads warmer, with a growing top-edge sun-bloom. All from
+  `WT.LIGHT`.
+- **HUD**: dark ink panel, warm text, live recording dot, scoped brighter accent
+  tokens so meters read on ink (Bible §10).
+- **Atmosphere**: warm walls, warm/cool glass, warm contact shadows, vignette, a
+  film-grain overlay; buttons drop onto the desk (hard bottom shadow + press);
+  menus rebuilt with the floating, glowing, bobbing logo. `ntos-world.js` → `w20`.
+
+### Verified (browser preview)
+Launch, click-to-move + movie autopilot movement, desk work shipping tasks, the
+live feed, the encounter-card modal, the 5:01 report card, save/resume, and full
+multi-day movie runs — all with **zero console errors**. **269 game + 151 world,
+0 failed.** Standalone 383 KB rebuilt; playable build at
+`builds/nine-to-survive-visual-v1/index.html`.
+
+### Risky / next (see KNOWN_ISSUES.md)
+Heat doesn't yet drain the daylight (time-of-day only — pass a heat hint through
+`worldFlagsFor` into `WT.LIGHT`). Character art is silhouette-level, not the full
+5-mood construction kit. Ambient life is minimal. Layout isn't yet art-directed
+for a wide 1080p hero shot. All additive on this foundation — no rewrite needed.

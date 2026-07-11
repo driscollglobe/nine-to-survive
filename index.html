@@ -14,9 +14,9 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2341E3D6'/%3E%3Ccircle cx='22' cy='20' r='7' fill='%236e4620'/%3E%3Ccircle cx='42' cy='20' r='7' fill='%236e4620'/%3E%3Ccircle cx='32' cy='36' r='18' fill='%238a5a2b'/%3E%3Ccircle cx='26' cy='33' r='2.5' fill='%2315120D'/%3E%3Ccircle cx='38' cy='33' r='2.5' fill='%2315120D'/%3E%3Cellipse cx='32' cy='42' rx='6' ry='4.5' fill='%23E8C39E'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Expanded:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="ntos-game.js?v=n20"></script>
-<script src="ntos-world.js?v=w19"></script>
+<script src="ntos-world.js?v=w20"></script>
 <link rel="stylesheet" href="ntos-theme.css">
 </head>
 <body>
@@ -594,7 +594,7 @@ function loop(t){
   $id('heatline').classList.toggle('hidden', !heatHot);
   if(heatHot) $id('heat-r').textContent =
     'HR ' + G.heatLevel(g, 'hr') + ' · Boss ' + G.heatLevel(g, 'boss') + ' · Brad ' + G.heatLevel(g, 'brad');
-  W.render(world, ctx, cam, window.innerWidth, window.innerHeight);
+  W.render(world, ctx, cam, window.innerWidth, window.innerHeight, t);
   rafId = requestAnimationFrame(loop);
 }
 

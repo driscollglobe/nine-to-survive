@@ -28,26 +28,45 @@
    The whole UI is built from these. Restyle the game by editing this block.
    =========================================================================== */
 :root{
-  /* Nine to Survive brand: bright cyan page, cream "sticker" panels, heavy black ink. */
-  --bg:#41E3D6; --bg2:#37cdc1;
-  --panel:#F4EDDA; --panel2:#ECE4CD; --panel3:#E0D7BC;
-  --ink:#15120D; --muted:#5C5647; --muted2:#8A8371;
-  --standing:#2F6BE0; --standing-d:#2454b6;
-  --soul:#E8814C; --soul-d:#c1652f;
-  --money:#2E9E63; --money-d:#237c4c;
-  --danger:#D8443F; --ok:#3E9E5E;
-  --line:rgba(21,18,13,.14);
+  /* ── Nine to Survive · Visual Bible palette ──────────────────────────────
+     Paper + graphite. Warm 5pm sun colliding with cold monitor glow. ~90%
+     neutral; accents are rationed to where a meter or receipt actually lives.
+     Ember is the ONLY alarm colour — never decorative. */
 
-  /* Type roles (families are swapped in one place; every rule reads these) */
-  --font-display:'Poppins',system-ui,sans-serif;   /* titles, wordmarks, values */
-  --font-data:'Poppins',system-ui,sans-serif;       /* clocks, money, labels     */
-  --font-body:'Poppins',system-ui,sans-serif;       /* prose, dialogue, choices  */
+  /* the cinematic ground the menus float on (double key-light + grain go on top) */
+  --bg:#1c1710; --bg2:#0f0c08;
+
+  /* core neutrals — warm papers, never pure white */
+  --paper-hi:#FBF6EA;                          /* Paper Hi — brightest surfaces */
+  --panel:#F3EBDA; --panel2:#ECE3CE; --panel3:#E4D8C0;  /* Paper / Sand */
+  --ink:#15120C;                               /* Ink — darkest anchor */
+  --muted:#6E6960;                             /* Graphite — secondary text */
+  --muted2:#928D84;                            /* Ash — mid neutral */
+
+  /* meter accents (muted, rationed) */
+  --standing:#6E7398; --standing-d:#565b7d;    /* Slate — how they see you */
+  --soul:#5E9188;     --soul-d:#4a746c;        /* Verdigris — what's left of you */
+  --money:#B98A4E;    --money-d:#986f38;       /* Brass — the escape fund */
+  --danger:#B0553A;                            /* Ember — the alarm colour */
+  --folder:#D9BC82;                            /* Manila — receipts / leverage */
+  --ok:#5E9188;
+  --line:rgba(21,18,12,.14);
+
+  /* the signature double key-light, reused by menus + panels */
+  --key-warm:rgba(242,217,164,.85);            /* 5pm honey-gold */
+  --key-cold:rgba(143,183,201,.55);            /* cold monitor-cyan */
+
+  /* Type roles — the three Bible families, swapped in one place */
+  --font-display:'Archivo Expanded','Archivo',system-ui,sans-serif; /* titles, values */
+  --font-data:'Space Mono',ui-monospace,monospace;                  /* clocks, labels */
+  --font-body:'Hanken Grotesk',system-ui,sans-serif;                /* prose, dialogue */
 
   /* Shape + shadow scale */
-  --r-card:18px; --r-panel:14px; --r-chip:12px; --r-pill:100px;
-  --shadow-card:0 20px 50px rgba(0,0,0,.4);
-  --shadow-panel:0 12px 34px rgba(21,18,13,.20);
-  --shadow-float:0 14px 40px rgba(21,18,13,.25);
+  --r-card:16px; --r-panel:14px; --r-chip:12px; --r-pill:100px;
+  --shadow-card:0 24px 60px rgba(6,4,2,.55);
+  --shadow-panel:0 16px 40px rgba(6,4,2,.45);
+  --shadow-float:0 18px 46px rgba(6,4,2,.5);
+  --btn-drop:#000;                              /* hard bottom-shadow under buttons */
 }
 
 /* ===========================================================================
@@ -56,10 +75,25 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 html{height:100%;}
 body{
-  background:var(--bg);color:var(--ink);
+  /* the signature collision: warm 5pm gold flooding top-left, cold monitor-cyan
+     pushing back from bottom-right, over a deep warm ground. This is the game's
+     identity at thumbnail size — present on every menu, behind every card. */
+  background:
+    radial-gradient(130% 100% at 6% -8%, var(--key-warm) 0%, rgba(242,217,164,0) 46%),
+    radial-gradient(120% 100% at 104% 108%, var(--key-cold) 0%, rgba(143,183,201,0) 50%),
+    linear-gradient(158deg, var(--bg) 0%, var(--bg2) 100%);
+  background-attachment:fixed;
+  color:var(--ink);
   font-family:var(--font-body);-webkit-font-smoothing:antialiased;
   min-height:100%;display:flex;padding:20px;
 }
+/* film-grain / paper tooth over the whole frame so nothing looks too clean */
+body::after{
+  content:"";position:fixed;inset:0;z-index:9998;pointer-events:none;
+  opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;}}
 /* margin:auto (not align-items:center) so a start screen taller than the
    viewport stays scrollable to its top instead of cropping the mascot */
 .stage{width:100%;max-width:460px;margin:auto;}
@@ -70,11 +104,22 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 /* ===========================================================================
    §2  HUD / METERS
    =========================================================================== */
-.hud{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-panel);padding:14px 16px 16px;margin-bottom:16px;}
+/* the in-game HUD is a dark ink panel (Bible §10): warm text, rationed accents,
+   scoped brighter tokens so meters read against the ink. */
+.hud{
+  background:rgba(20,16,11,.90);color:var(--panel);
+  border:1px solid rgba(233,222,198,.14);border-radius:var(--r-panel);
+  padding:14px 16px 16px;margin-bottom:16px;
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  /* on-ink accent tints (override the light-surface tokens for this subtree) */
+  --standing:#9096bd; --soul:#79b3a8; --money:#d6a568;
+  --muted:#b8af9d; --muted2:#9a917f; --line:rgba(233,222,198,.14);
+}
 .hudtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
 .sys{font-family:var(--font-data);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted2);}
+.sys::before{content:"● ";color:var(--danger);font-size:8px;vertical-align:1px;}
 .clock{font-family:var(--font-data);font-size:12px;letter-spacing:.05em;color:var(--muted);}
-.clock b{color:var(--ink);}
+.clock b{color:var(--paper-hi);}
 .meters{display:flex;flex-direction:column;gap:12px;}
 .meter .mrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
 .meter .mname{font-family:var(--font-data);font-size:10px;letter-spacing:.12em;text-transform:uppercase;}
@@ -88,7 +133,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .meter.soul .mfill{background:linear-gradient(90deg,var(--soul-d),var(--soul));}
 .meter.money .mname,.meter.money .mval{color:var(--money);}
 .meter.money .mfill{background:linear-gradient(90deg,var(--money-d),var(--money));}
-.jobline{display:flex;justify-content:space-between;font-family:var(--font-data);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+.jobline{display:flex;justify-content:space-between;font-family:var(--font-data);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--panel2);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line);}
 .jobline .pay{color:var(--money);font-weight:700;}
 .taskline{margin-top:-4px;}
 .taskline #tasks-l{color:var(--danger);font-weight:700;}
@@ -101,7 +146,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 /* ===========================================================================
    §3  ENCOUNTER CARD
    =========================================================================== */
-.card{background:linear-gradient(165deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--r-card);padding:22px 22px 20px;box-shadow:var(--shadow-card);}
+.card{background:linear-gradient(165deg,var(--paper-hi),var(--panel));border:1px solid var(--line);border-radius:var(--r-card);padding:22px 22px 20px;box-shadow:var(--shadow-card);}
 .tag{display:inline-block;font-family:var(--font-data);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:var(--r-pill);padding:4px 10px;margin-bottom:14px;}
 .etitle{font-family:var(--font-display);font-weight:800;font-size:24px;line-height:1.08;letter-spacing:-.015em;margin-bottom:10px;}
 .escene{font-size:15px;line-height:1.55;color:#3a352a;margin-bottom:20px;}
@@ -113,8 +158,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 /* outcome */
 .outcome{margin-top:2px;}
 .oline{font-size:15px;line-height:1.6;color:#3a352a;font-style:italic;border-left:2px solid var(--soul);padding-left:14px;margin-bottom:20px;}
-.next{width:100%;padding:15px;border-radius:var(--r-chip);background:var(--ink);color:var(--panel);font-weight:600;font-size:15px;transition:transform .1s,opacity .2s;}
-.next:hover{opacity:.9;} .next:active{transform:translateY(1px);}
+.next{width:100%;padding:15px;border-radius:var(--r-chip);background:var(--ink);color:var(--paper-hi);font-family:var(--font-display);font-weight:800;text-transform:uppercase;letter-spacing:.03em;font-size:14px;box-shadow:0 4px 0 var(--btn-drop);transition:transform .12s cubic-bezier(.3,.9,.3,1),box-shadow .12s;}
+.next:hover{transform:translateY(-1px);box-shadow:0 5px 0 var(--btn-drop);} .next:active{transform:translateY(3px);box-shadow:0 1px 0 var(--btn-drop);}
 
 /* ===========================================================================
    §4  5:01 PM DAY REPORT
@@ -126,32 +171,40 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .rv.plus{color:var(--money);} .rv.minus{color:var(--danger);} .rv.soulhit{color:var(--soul);} .rv.big{color:var(--standing);}
 .bankline{font-family:var(--font-data);font-size:12px;letter-spacing:.06em;color:var(--muted);margin-bottom:18px;}
 .bankline b{color:var(--money);font-size:14px;}
-.walkout{width:100%;padding:16px;border-radius:var(--r-pill);background:var(--money);color:#fff;font-weight:700;font-size:16px;margin-bottom:10px;box-shadow:0 10px 26px rgba(35,124,76,.35);transition:transform .1s,opacity .2s;}
-.walkout:hover{opacity:.92;} .walkout:active{transform:translateY(1px);}
+.walkout{width:100%;padding:16px;border-radius:var(--r-pill);background:linear-gradient(180deg,#c99a5c,var(--money));color:#231605;font-family:var(--font-display);font-weight:800;text-transform:uppercase;letter-spacing:.02em;font-size:15px;margin-bottom:10px;box-shadow:0 4px 0 var(--money-d),0 14px 30px rgba(185,138,78,.3);transition:transform .12s cubic-bezier(.3,.9,.3,1),box-shadow .12s;}
+.walkout:hover{transform:translateY(-1px);box-shadow:0 5px 0 var(--money-d),0 16px 34px rgba(185,138,78,.34);} .walkout:active{transform:translateY(3px);box-shadow:0 1px 0 var(--money-d);}
 
 /* ===========================================================================
    §5  START / END / MENUS
    =========================================================================== */
-.screen{text-align:center;padding:6px 4px;}
-.mascot{width:156px;height:156px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:var(--shadow-panel);overflow:hidden;}
+/* menus sit on the dark cinematic ground: loose text goes light, but any light
+   panel nested inside restores ink text + graphite muted tokens. */
+.screen{text-align:center;padding:6px 4px;color:var(--paper-hi);--muted:#c7beac;--muted2:#a49a86;}
+.screen .legend,.screen .card,.screen .fm,.screen .storyunlock{color:var(--ink);--muted:#6E6960;--muted2:#928D84;}
+.mascot{width:156px;height:156px;border-radius:50%;background:radial-gradient(120% 120% at 30% 20%,var(--paper-hi),var(--panel3));display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 0 0 1px rgba(233,222,198,.12),0 18px 46px rgba(6,4,2,.55),0 0 60px -12px var(--key-warm);overflow:hidden;animation:ntsFloatY 7s ease-in-out infinite;}
+@keyframes ntsFloatY{0%,100%{transform:translateY(0);}50%{transform:translateY(-7px);}}
 .mascot img{width:88%;height:88%;object-fit:contain;}
 .mascot .fallback{font-size:72px;line-height:1;}
 .badge{font-family:var(--font-data);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;}
-.big{font-family:var(--font-display);font-weight:800;font-size:46px;line-height:.95;letter-spacing:-.03em;margin-bottom:6px;}
-.big .blue{color:var(--standing);} .big .amber{color:var(--soul);}
+.big{font-family:var(--font-display);font-weight:900;font-size:44px;line-height:.92;letter-spacing:-.01em;text-transform:uppercase;margin-bottom:8px;color:var(--paper-hi);text-shadow:0 2px 22px rgba(0,0,0,.35);}
+.big .blue{color:#9aa0c6;} .big .amber{color:#d9a869;}
 .tagline{font-family:var(--font-data);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:22px;}
 .lede{font-size:15px;line-height:1.6;color:var(--muted);max-width:370px;margin:0 auto 22px;}
 .legend{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-panel);padding:16px 18px;margin:0 auto 24px;max-width:380px;text-align:left;}
 .leg{display:flex;gap:12px;align-items:flex-start;padding:9px 0;font-size:13.5px;line-height:1.45;}
 .leg:not(:last-child){border-bottom:1px solid var(--line);}
 .leg .k{flex-shrink:0;width:92px;text-align:center;font-family:var(--font-data);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:3px 0;border-radius:6px;margin-top:2px;font-weight:700;}
-.leg .k.s{background:rgba(94,154,214,.16);color:var(--standing);}
-.leg .k.so{background:rgba(232,129,76,.16);color:var(--soul);}
-.leg .k.m{background:rgba(46,158,99,.16);color:var(--money);}
+.leg .k.s{background:rgba(110,115,152,.18);color:var(--standing);}
+.leg .k.so{background:rgba(94,145,136,.18);color:var(--soul);}
+.leg .k.m{background:rgba(185,138,78,.18);color:var(--money-d);}
 .leg span{color:var(--muted);}
-.cta{display:inline-block;padding:16px 42px;border-radius:var(--r-pill);background:var(--ink);color:var(--panel);font-weight:600;font-size:16px;transition:transform .1s,opacity .2s;}
-.cta:hover{opacity:.9;} .cta:active{transform:translateY(2px);}
-.resumebtn{background:var(--money);color:#fff;display:block;margin:10px auto 0;}
+/* buttons drop onto the desk: hard bottom shadow, physical press (Bible §09) */
+.cta{display:inline-block;padding:16px 42px;border-radius:var(--r-pill);background:var(--ink);color:var(--paper-hi);font-family:var(--font-display);font-weight:800;text-transform:uppercase;letter-spacing:.02em;font-size:15px;box-shadow:0 4px 0 var(--btn-drop),var(--shadow-panel);transition:transform .12s cubic-bezier(.3,.9,.3,1),box-shadow .12s;}
+.cta:hover{transform:translateY(-1px);box-shadow:0 5px 0 var(--btn-drop),var(--shadow-panel);}
+.cta:active{transform:translateY(3px);box-shadow:0 1px 0 var(--btn-drop);}
+.resumebtn{background:var(--money);color:#231605;box-shadow:0 4px 0 var(--money-d),var(--shadow-panel);display:block;margin:12px auto 0;}
+.resumebtn:hover{box-shadow:0 5px 0 var(--money-d),var(--shadow-panel);}
+.resumebtn:active{box-shadow:0 1px 0 var(--money-d);}
 .sharebtn{display:block;width:100%;margin-top:10px;padding:12px;border-radius:var(--r-chip);border:1px solid var(--line);background:transparent;font-family:var(--font-data);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);transition:color .2s,border-color .2s;}
 .sharebtn:hover{color:var(--ink);border-color:var(--ink);}
 #sharebtn-end{max-width:300px;margin:14px auto 0;}
