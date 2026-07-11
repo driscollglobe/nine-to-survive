@@ -3976,9 +3976,9 @@ function drawFigure(ctx, px, py, z, rig, o){
   const sway = (mv && !walkP.upperStill) ? Math.sin(wph) * 0.7 * S : 0;
   const glance = (rig.idle === 'glance' && !mv) ? Math.sin(iph * 0.55) * 1.5 * S : 0;
   const topX = P.lean * S + sway + (mv ? 0 : Math.sin(iph * 0.7) * 0.3 * S);
-  const headR = 4.6 * S * (rig.headScale || 1);
+  const headR = 4.6 * S * (rig.headScale || 1) * 1.22;   // chibi: oversized cute heads
   const headCX = topX + P.headFwd * S + glance;
-  const headCY = shY - headR * 0.95 - 2.2 * S;
+  const headCY = shY - headR * 0.86 - 1.6 * S;
   const shLx = topX - shW / 2, shRx = topX + shW / 2;
 
   // ── legs (walk cycle: stride + lift per gait) ──
@@ -4038,8 +4038,8 @@ function drawFigure(ctx, px, py, z, rig, o){
   else ctx.arc(headCX, headCY, headR, 0, Math.PI * 2);
   ctx.fillStyle = F(skin); ctx.fill();
   ctx.strokeStyle = OL; ctx.lineWidth = 1.2 * S; ctx.stroke();
-  if(rig.jowls){   // soft jaw / double chin — the look of a long tenure
-    ctx.beginPath(); ctx.ellipse(headCX, headCY + headR * 0.72, headR * 0.78, headR * 0.5, 0, 0, Math.PI * 2);
+  if(rig.jowls){   // soft round cheeks — a gently full face, not a droop
+    ctx.beginPath(); ctx.ellipse(headCX, headCY + headR * 0.6, headR * 0.6, headR * 0.34, 0, 0, Math.PI * 2);
     ctx.fillStyle = F(skin); ctx.fill(); ctx.strokeStyle = OL; ctx.lineWidth = 1.0 * S; ctx.stroke();
   }
 
@@ -4211,53 +4211,73 @@ function figClothing(ctx, rig, g){
 const FIG_MOOD = {
   fine:    { lid:0.28, brow:0.0,  browY:0.0,  mouth: 0.12 },
   tired:   { lid:0.54, brow:-0.22, browY:0.12, mouth: 0.0, bags:true },
-  alarmed: { lid:0.02, brow:0.30,  browY:-0.22,mouth: 0.34, open:true },
-  scheming:{ lid:0.44, brow:0.26,  browY:-0.04,mouth:-0.20, smirk:true },
-  dead:    { lid:0.60, brow:0.0,   browY:0.06, mouth: 0.0, bags:true },
-  // signature resting faces (still deadpan family — lid/brow/mouth only)
-  stern:   { lid:0.30, brow:0.34,  browY:0.34, mouth:-0.14 },              // Boss: heavy low brows, set jaw
-  plastic: { lid:0.26, brow:0.0,   browY:0.02, mouth: 0.30 },              // Meredith: fixed pleasant smile
-  eager:   { lid:0.10, brow:0.20,  browY:-0.16,mouth: 0.26, open:true },   // Adam: raised brows, ready to speak
-  overwhelmed:{ lid:0.50, brow:-0.30, browY:0.02, mouth:-0.14, bags:true } // Kayla: worried inner-brow, drained
+  alarmed: { lid:0.02, brow:0.22,  browY:-0.20,mouth: 0.30, open:true },
+  scheming:{ lid:0.36, brow:0.20,  browY:-0.04,mouth:-0.10, smirk:true },
+  dead:    { lid:0.52, brow:0.0,   browY:0.06, mouth:-0.04 },
+  // signature resting faces — gentle: grumpy at worst, never scary
+  stern:   { lid:0.26, brow:0.22,  browY:0.20, mouth:-0.06 },              // Boss: mildly no-nonsense
+  plastic: { lid:0.24, brow:0.0,   browY:0.02, mouth: 0.34 },              // Meredith: fixed pleasant smile
+  eager:   { lid:0.08, brow:0.16,  browY:-0.14,mouth: 0.30, open:true },   // Adam: bright, ready to speak
+  overwhelmed:{ lid:0.42, brow:-0.22, browY:0.02, mouth:-0.06 }            // Kayla: a little worried, soft
 };
+// CUTE face rig (Labubu-adjacent): big glossy round eyes, soft brows, rosy
+// cheeks, a small friendly mouth. Mood shifts stay gentle — grumpy at worst,
+// never scary. Built from eye/brow/mouth like before, just softened & enlarged.
 function figFace(ctx, rig, cx, cy, r, mood, o){
   const S = r / 4.7;
   const m = FIG_MOOD[mood] || FIG_MOOD.fine;
   const badger = rig.badger;
-  const eyeY = cy + (badger ? -0.2 : 0.2) * S, eyeDX = r * 0.44;
-  if(badger){
+  const eyeR = r * 0.31;                 // big eyes = friendly
+  const eyeDX = r * 0.44;
+  const eyeY = cy + r * 0.14;            // set low on the face (baby proportion)
+  if(badger){                            // bandit mask + pale muzzle behind the eyes
     ctx.fillStyle = '#3a352e';
-    ctx.beginPath(); ctx.ellipse(cx, eyeY - 0.3 * S, r * 0.86, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#d9d2c4';
-    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.5, r * 0.5, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2a2520'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.36, 1 * S, 0.8 * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, eyeY - r * 0.04, r * 0.94, r * 0.52, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e6dfd0';
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.6, r * 0.54, r * 0.46, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a2520'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.44, 1.2 * S, 0.9 * S, 0, 0, Math.PI * 2); ctx.fill();
   }
+  // rosy cheeks — warmth
+  ctx.fillStyle = 'rgba(224,120,104,0.30)';
+  [-1, 1].forEach(sgn => { ctx.beginPath(); ctx.ellipse(cx + sgn * r * 0.66, cy + r * 0.44, r * 0.21, r * 0.13, 0, 0, Math.PI * 2); ctx.fill(); });
+  // eyes: big, glossy, forward-looking
   [-1, 1].forEach(sgn => {
     const ex = cx + sgn * eyeDX;
-    const forceLid = badger ? Math.max(0.5, m.lid) : m.lid;
-    if(!badger){ ctx.fillStyle = '#f4efe4'; ctx.beginPath(); ctx.ellipse(ex, eyeY, 1.5 * S, 1.7 * S, 0, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = badger ? '#efe9dc' : '#1c1712';
-    const pr = m.open ? 1.15 : 0.95;
-    ctx.beginPath(); ctx.ellipse(ex, eyeY + 0.3 * S, (badger ? 0.9 : 0.95) * S, pr * S, 0, 0, Math.PI * 2); ctx.fill();
-    if(!badger){ ctx.fillStyle = FIG_SKIN[rig.skin] || '#E8C39E'; ctx.fillRect(ex - 1.8 * S, eyeY - 2 * S, 3.6 * S, forceLid * 3.4 * S); }
-    ctx.strokeStyle = rig.hairCol || '#3a2f26'; ctx.lineWidth = 1.1 * S; ctx.lineCap = 'round';
-    const by = eyeY - 2.3 * S + m.browY * S, bt = m.brow * sgn * (m.smirk && sgn > 0 ? 1.8 : 1);
-    ctx.beginPath(); ctx.moveTo(ex - 1.4 * S, by + bt * S); ctx.lineTo(ex + 1.4 * S, by - bt * S); ctx.stroke();
-    if(m.bags && !badger){ ctx.strokeStyle = 'rgba(60,45,30,0.4)'; ctx.lineWidth = 0.8 * S; ctx.beginPath(); ctx.arc(ex, eyeY + 2 * S, 1.4 * S, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+    ctx.fillStyle = '#fcf8ef';
+    ctx.beginPath(); ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(28,20,12,0.45)'; ctx.lineWidth = 0.8 * S; ctx.stroke();
+    const pr = (m.open ? 0.88 : 0.76) * eyeR, pyE = eyeY + eyeR * 0.14;
+    ctx.fillStyle = '#241d18';
+    ctx.beginPath(); ctx.arc(ex, pyE, pr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';                                   // twin glossy catchlights
+    ctx.beginPath(); ctx.arc(ex - pr * 0.34, pyE - pr * 0.42, pr * 0.36, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + pr * 0.3, pyE + pr * 0.26, pr * 0.17, 0, Math.PI * 2); ctx.fill();
+    if(m.lid > 0.34){                                            // sleepy lid — gentle, partial
+      ctx.fillStyle = badger ? '#3a352e' : (FIG_SKIN[rig.skin] || '#E8C39E');
+      const drop = Math.min(0.85, m.lid);
+      ctx.beginPath(); ctx.ellipse(ex, eyeY - eyeR * (1 - drop), eyeR * 1.06, eyeR * drop * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // soft, short, gently-curved brow sitting high
+    ctx.strokeStyle = rig.hairCol || '#4a3a2c'; ctx.lineWidth = 1.3 * S; ctx.lineCap = 'round';
+    const bt = m.brow * 0.55 * sgn * (m.smirk && sgn > 0 ? 1.5 : 1);
+    const by = eyeY - eyeR - 1.1 * S + m.browY * 0.6 * S;
+    ctx.beginPath(); ctx.moveTo(ex - eyeR * 0.72, by + bt * S); ctx.quadraticCurveTo(ex, by - 0.6 * S + bt * 0.3 * S, ex + eyeR * 0.72, by - bt * S); ctx.stroke();
   });
-  if(!badger){
-    const my = cy + r * 0.52, mw = r * 0.42;
-    ctx.strokeStyle = '#5a4636'; ctx.lineWidth = 1.1 * S; ctx.lineCap = 'round';
-    ctx.beginPath();
-    if(m.smirk){ ctx.moveTo(cx - mw, my + 0.6 * S); ctx.quadraticCurveTo(cx, my + m.mouth * 4 * S, cx + mw, my - 1 * S); }
-    else if(m.open){ ctx.ellipse(cx, my, mw * 0.5, 1.4 * S, 0, 0, Math.PI * 2); }
-    else { ctx.moveTo(cx - mw, my); ctx.quadraticCurveTo(cx, my + m.mouth * 4 * S, cx + mw, my); }
-    ctx.stroke();
+  if(rig.glasses){                                              // round specs over the big eyes
+    ctx.strokeStyle = '#2a2520'; ctx.lineWidth = 1.0 * S;
+    [-1, 1].forEach(sgn => { ctx.beginPath(); ctx.arc(cx + sgn * eyeDX, eyeY, eyeR * 1.16, 0, Math.PI * 2); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(cx - eyeDX + eyeR * 1.1, eyeY); ctx.lineTo(cx + eyeDX - eyeR * 1.1, eyeY); ctx.stroke();
   }
-  if(rig.glasses){
-    ctx.strokeStyle = '#2a2520'; ctx.lineWidth = 0.9 * S;
-    [-1, 1].forEach(sgn => { ctx.beginPath(); ctx.arc(cx + sgn * eyeDX, eyeY + 0.3 * S, 1.9 * S, 0, Math.PI * 2); ctx.stroke(); });
-    ctx.beginPath(); ctx.moveTo(cx - eyeDX + 1.9 * S, eyeY + 0.3 * S); ctx.lineTo(cx + eyeDX - 1.9 * S, eyeY + 0.3 * S); ctx.stroke();
+  // small friendly mouth (smiles more than it frowns)
+  const my = cy + r * (badger ? 0.7 : 0.66), mw = r * 0.24;
+  if(m.open){ ctx.fillStyle = '#9c5049'; ctx.beginPath(); ctx.ellipse(cx, my, mw * 0.62, 1.5 * S, 0, 0, Math.PI * 2); ctx.fill(); }
+  else {
+    ctx.strokeStyle = '#7a463a'; ctx.lineWidth = 1.2 * S; ctx.lineCap = 'round';
+    const curve = (m.smirk ? Math.max(0.4, m.mouth + 0.5) : m.mouth + 0.18) * 3.2 * S;
+    ctx.beginPath();
+    if(m.smirk){ ctx.moveTo(cx - mw, my + 0.5 * S); ctx.quadraticCurveTo(cx, my + curve, cx + mw, my - 0.6 * S); }
+    else { ctx.moveTo(cx - mw, my); ctx.quadraticCurveTo(cx, my + curve, cx + mw, my); }
+    ctx.stroke();
   }
 }
 

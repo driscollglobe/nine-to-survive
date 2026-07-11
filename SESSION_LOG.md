@@ -923,3 +923,18 @@ blank sheet); board is now a fixed 1040px art-board. Verified on the sheet (colo
 + pure-black lineups, big) and in-game: every character ID'd without labels,
 distinct in pure black, gait identifies in motion, no console errors. 269 + 151,
 0 failed. Standalone + build refreshed.
+
+### Session 12b — cast cuteness pass (Labubu-friendly, w24)
+Kevin: the cast read a little scary; make it cuter/friendlier/easier on the eye,
+"like Labubu." Renderer-only, cast faces + head proportion; kept the distinct
+silhouettes from 12.
+- figFace rewritten: big glossy round eyes with twin white catchlights (the kawaii
+  signature) replacing small beady eyes; soft short gently-curved brows (mag ×0.55)
+  sitting high, not harsh diagonals; rosy blush cheeks; a small friendly mouth that
+  smiles more than it frowns; gentle partial sleepy-lids. Badger gets big cute eyes.
+- Chibi heads: head radius ×1.22 across the cast, re-seated — oversized cute heads.
+- FIG_MOOD softened: stern/alarmed/scheming/overwhelmed extremes pulled in so the
+  worst read is "mildly grumpy," never scary; dropped harsh under-eye bags; Dennis's
+  jowls softened to round full cheeks.
+Verified big-head lineup + in-game: friendly, easy on the eye, still distinct.
+269 + 151, 0 failed. Standalone + build refreshed.
