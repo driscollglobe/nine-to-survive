@@ -30,9 +30,18 @@ call the renderer, so all 420 checks + the sweep matrix are unmoved.
 - **Docs**: `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`, `CHARACTER_SYSTEM.md`,
   `IMPLEMENTATION_PLAN.md`, `VISUAL_PRODUCTION_REPORT.md`, `KNOWN_ISSUES.md`.
   Frozen playable build: `builds/nine-to-survive-visual-v1/index.html`.
-- **Next visual steps** (`KNOWN_ISSUES.md`): let Heat drain the daylight; full
-  5-mood character construction kit; ambient-life system; a wide-format hero
-  layout. Branch: `visual-production-v1` (do not merge to main).
+- **Characters were REBUILT from a construction-kit rig** (Bible §13/§15) after the
+  first pass shipped prototype ellipses. `RIG` (art data, keyed by id) + a
+  procedural `drawFigure(ctx,px,py,z,rig,o)` give each of the 9 a distinct build,
+  posture, clothing silhouette, hair, class-marker shoes, working hands + ONE
+  dominant prop, a 5-mood face, and a per-person gait. `drawActor` maps game mood→
+  face and keeps all gameplay overlays. Audit `CHARACTER_GAP_AUDIT.md`; rig docs
+  `CHARACTER_SYSTEM.md`; acceptance sheet **`character-test.html`** (six lineups).
+  Adding a coworker = one `CAST` row + one `RIG` row; both are exported for the sheet.
+- **Next visual steps** (`KNOWN_ISSUES.md`): let Heat drain the daylight; 4-direction
+  heading sprites + the §15 imperfection budget on figures; RIG rows for the ~20-
+  person extended cast; ambient-life system; a wide-format hero layout. Branch:
+  `visual-production-v1` (do not merge to main).
 
 ## Session 10's layer (know these five systems)
 - **Office heat** (`g.heat` — hr/boss/brad, `addHeat`/`heatOf`/`heatLevel`): raised
@@ -137,7 +146,7 @@ off (seed, day) so no pre-Adam staging ever shifted.
 - `ntos-theme.css` — ALL shell styling, extracted from index.html: a `:root`
   design-token block + 9 documented sections. The DOM's visual dial. Inlined into
   the standalone by the build. (Canvas colours live in `WT` in ntos-world.js.)
-- `ntos-world.js` (`?v=w21`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
+- `ntos-world.js` (`?v=w22`) — the OFFICE: 9 actors, flags-driven staging (clues, detours,
   firing escort, summons, kitchen, webinar, approvals, interception, lurk/telegraphs,
   Dennis carry, Adam concern walk, meeting-room demos), event queue with substitution,
   interception verbs (confront/flash/bait/walk-with/redirect/grenade/pre-demo/cool-HR),

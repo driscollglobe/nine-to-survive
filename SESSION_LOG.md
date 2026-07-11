@@ -864,3 +864,31 @@ feel inhabited — all in `render()`, zero logic touched (`ntos-world.js` → `w
 Re-verified in preview (a real "Credit, Reassigned" card fired and rendered
 perfectly; no console errors). 269 game + 151 world, 0 failed; standalone 387 KB
 rebuilt; build refreshed.
+
+### Session 11c — character system REBUILD (renderer correction, fourth commit)
+The first visual pass was rejected: the cast was still one body-ellipse + head-dome
++ emoji per actor (Bible §15 Weakness 03 — "portraits, not actors"). Rebuilt the
+character rendering from a construction-kit rig. Renderer-only; no gameplay,
+balance, NPC logic, pathfinding, save, encounters or movie mode changed. `w22`.
+- **`RIG`** (art data, keyed by id) — build (h/w/shoulder/hip), posture, head,
+  hair, clothing silhouette, shoes, arm/hand pose, ONE dominant prop, gait+speed.
+- **`drawFigure(ctx,px,py,z,rig,o)`** — procedural figure with contrapposto weight
+  (vertical spine reserved for the Boss), working hands, clothing folds, two-tone
+  hair, class-marker shoes, a five-mood face (lid/brow/mouth only), per-person walk
+  cadence + idle micro-motion. `silhouette:true` for the black test. Helpers:
+  figPosture / figArmPlan / figShoe / figClothing / figFace / figHair / figProp.
+- **`drawActor`** now looks up `RIG[a.id]`, maps game mood(good/meh/bad)+state →
+  five-mood face, derives moving/faceLeft from the path, and calls `drawFigure` —
+  then draws every existing gameplay overlay (telegraphs, carry folder, Adam 💬,
+  bars, status chip, name) unchanged. `RIG`+`drawFigure` exported for the test sheet.
+- **`character-test.html`** — acceptance harness: A color · B pure-black silhouette
+  (on a light panel) · C gameplay-zoom · D walking (animated gait) · E five-mood
+  matrix · F prop lineup, with labels + key-light toggles.
+- **`CHARACTER_GAP_AUDIT.md`** — bible target → old result → gaps → fix, per character.
+Per character: You=badger(ears/mask/headphones/shrug), Brad=lean+quarterzip+phone+
+bounce, Dennis=short/wide/hunch+cardigan+glasses+binder+shuffle, Boss=tall/broad+
+suit+red tie+earpiece+march, Meredith=blazer+bob+clipboard+lanyard, Kayla=small+
+hood+headphones+drift, Marcus=henley+giant mug+amble, Priya=ponytail+laptop+brisk,
+Adam=bald+shine+polo+hands-on-hips. Verified in-game + on the sheet: recognizable
+without labels, distinct in pure black, gait identifies in motion, no console
+errors. **269 game + 151 world, 0 failed.** Standalone + build refreshed.

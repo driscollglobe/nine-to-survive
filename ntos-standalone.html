@@ -3839,59 +3839,485 @@ function drawBox(ctx, cam, f, w){
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  CHARACTER RIG  — the construction kit (Bible §13/§15). ART DATA, keyed by id;
+//  behaviour lives in CAST. Pick a value per row and the figure renderer below
+//  assembles a person: build (h/w/shoulder/hip), posture, head+hair, clothing
+//  silhouette, shoes, arm/hand pose, ONE dominant prop, gait + speed. Adding a
+//  coworker = one RIG entry. Nobody is hand-drawn. See CHARACTER_SYSTEM.md.
+// ═════════════════════════════════════════════════════════════════════════════
+const FIG_SKIN = { warm:'#E8C39E', tan:'#D6A57C', light:'#F0D4AE', deep:'#B4794E', badger:'#c9c2b4' };
+const FIG_INK  = '#1b1712';
+const RIG = {
+  //       h     w    shoulder hip  posture       head     hair        hairCol   skin     top          topCol    tie/2   bottom     botCol    shoes        shoeCol  arms        prop      walk       spd   extras
+  you:   { h:0.98,w:1.06,shoulder:1.06,hip:1.02, posture:'shrug',    head:'round', hair:'phones',  hairCol:'#2b2824', skin:'badger', top:'tee',       topCol:'#4B4743',            bottom:'pants', botCol:'#3b3833', shoes:'sneak',     shoeCol:'#2b2824', arms:'shrug',     prop:null,      walk:'amble',   spd:1.0, badger:true },
+  brad:  { h:1.17,w:0.86,shoulder:1.03,hip:0.82, posture:'leanfwd',  head:'oval',  hair:'swoop',   hairCol:'#2a2019', skin:'tan',    top:'quarterzip',topCol:'#3f6ca8',            bottom:'slacks',botCol:'#39414d', shoes:'sneakwhite',shoeCol:'#efeae0', arms:'phone',     prop:'phone',   walk:'bounce',  spd:1.13, airpod:true },
+  dennis:{ h:0.90,w:1.22,shoulder:1.10,hip:1.18, posture:'hunch',    head:'round', hair:'combover',hairCol:'#9a958b', skin:'warm',   top:'cardigan',  topCol:'#7d6a4a',            bottom:'slacks',botCol:'#4a463c', shoes:'loafer',    shoeCol:'#39301f', arms:'holdchest', prop:'binder',  walk:'shuffle', spd:0.72, glasses:true },
+  boss:  { h:1.27,w:1.15,shoulder:1.22,hip:0.98, posture:'rigid',    head:'square',hair:'buzz',    hairCol:'#2a2622', skin:'tan',    top:'suit',      topCol:'#23262c', tie:'#b23b34',bottom:'slacks',botCol:'#1d2025', shoes:'oxblood',   shoeCol:'#5a2a24', arms:'earphone',  prop:'earpiece',walk:'march',   spd:1.0 },
+  hr:    { h:1.05,w:0.90,shoulder:1.00,hip:1.04, posture:'upright',  head:'oval',  hair:'bob',     hairCol:'#4a3a2c', skin:'light',  top:'blazer',    topCol:'#6a5f86',            bottom:'skirt', botCol:'#3a3448', shoes:'dress',     shoeCol:'#2b2420', arms:'clipboard', prop:'clipboard',walk:'precise',spd:1.05, lanyard:true },
+  kayla: { h:0.86,w:0.92,shoulder:0.84,hip:0.94, posture:'collapse', head:'round', hair:'hood',    hairCol:'#31534f', skin:'warm',   top:'hoodie',    topCol:'#3E7E7A',            bottom:'jeans', botCol:'#3a4048', shoes:'slipon',    shoeCol:'#4a443c', arms:'pocket',    prop:null,      walk:'drift',   spd:0.9, phones:true, bighead:true },
+  marcus:{ h:1.06,w:1.17,shoulder:1.16,hip:1.10, posture:'lounge',   head:'round', hair:'short',   hairCol:'#241d17', skin:'deep',   top:'henley',    topCol:'#b0693f',            bottom:'jeans', botCol:'#3f4652', shoes:'boot',      shoeCol:'#39291f', arms:'mug',       prop:'mug',     walk:'amble',   spd:0.82 },
+  priya: { h:1.02,w:0.82,shoulder:0.88,hip:0.90, posture:'upright',  head:'oval',  hair:'ponytail',hairCol:'#201812', skin:'tan',    top:'blouse',    topCol:'#7C6FD6',            bottom:'slacks',botCol:'#3a3648', shoes:'flat',      shoeCol:'#2b2420', arms:'laptop',    prop:'laptop',  walk:'brisk',   spd:1.19 },
+  adam:  { h:1.00,w:1.09,shoulder:1.10,hip:1.02, posture:'hoverhips',head:'round', hair:'bald',    hairCol:null,      skin:'light',  top:'polo',      topCol:'#A88C5F',            bottom:'khakis',botCol:'#8a7a58', shoes:'sneak',     shoeCol:'#4a443c', arms:'hips',      prop:null,      walk:'strut',   spd:0.95, shine:true, lanyard:true }
+};
+
+// posture → how weight sits. Contrapposto by default; a vertical spine is reserved
+// for the Boss and for fear (Bible §15). Values are in figure units (×S later).
+function figPosture(name){
+  switch(name){
+    case 'rigid':     return { lean:0,    headFwd:0,   shDrop:-0.5, shMul:1.06, hipCock:0,   bobMul:0.4 };
+    case 'leanfwd':   return { lean:2.6,  headFwd:1.8, shDrop:-0.4, shMul:1.0,  hipCock:-1.2,bobMul:1.1 };
+    case 'hunch':     return { lean:1.4,  headFwd:2.8, shDrop:2.6,  shMul:0.98, hipCock:0.4, bobMul:0.7 };
+    case 'collapse':  return { lean:0.6,  headFwd:1.6, shDrop:2.2,  shMul:0.82, hipCock:1.0, bobMul:0.6 };
+    case 'shrug':     return { lean:0,    headFwd:0.3, shDrop:-2.4, shMul:1.02, hipCock:0.6, bobMul:0.7 };
+    case 'lounge':    return { lean:-1.8, headFwd:-0.4,shDrop:1.0,  shMul:1.08, hipCock:2.0, bobMul:0.8 };
+    case 'hoverhips': return { lean:1.2,  headFwd:1.2, shDrop:-0.2, shMul:1.16, hipCock:0.4, bobMul:0.8 };
+    case 'upright':   return { lean:0,    headFwd:0,   shDrop:0,    shMul:1.0,  hipCock:1.6, bobMul:0.9 };
+    default:          return { lean:0,    headFwd:0,   shDrop:0.3,  shMul:1.0,  hipCock:1.3, bobMul:0.9 };
+  }
+}
+
+// a capsule limb between two points, dark outline under a coloured core
+function figLimb(ctx, x1, y1, x2, y2, wd, col, ol, S){
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = ol; ctx.lineWidth = wd + 1.7 * S;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.strokeStyle = col; ctx.lineWidth = wd;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+function figHand(ctx, x, y, r, col, ol, S){
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = col; ctx.fill();
+  ctx.strokeStyle = ol; ctx.lineWidth = 1.1 * S; ctx.stroke();
+}
+
+// THE FIGURE. Draw a person from a rig at screen point (px,py=feet), scale z.
+// o = { mood, moving, walkPhase, idlePhase, faceLeft, silhouette, face }
+function drawFigure(ctx, px, py, z, rig, o){
+  o = o || {};
+  const S = z, H = rig.h || 1, W = rig.w || 1;
+  const sil = !!o.silhouette;
+  const P = figPosture(rig.posture);
+  const mv = !!o.moving, wph = o.walkPhase || 0, iph = o.idlePhase || 0;
+  const skin = sil ? FIG_INK : (FIG_SKIN[rig.skin] || FIG_SKIN.warm);
+  const OL = sil ? FIG_INK : 'rgba(18,14,10,0.9)';
+  const F = c => sil ? FIG_INK : c;
+
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(o.faceLeft ? -1 : 1, 1);
+  const bob = (mv ? Math.abs(Math.sin(wph)) * -1.3 : Math.sin(iph) * -0.5) * P.bobMul * S;
+  ctx.translate(0, bob);
+
+  // ── key levels (feet at 0, up = negative) ──
+  const hipY = -12.5 * S * H;
+  const shY  = -23.5 * S * H + P.shDrop * S;
+  const hipW = 5.0 * S * W * (rig.hip || 1);
+  const shW  = 5.8 * S * W * (rig.shoulder || 1) * P.shMul;
+  const topX = P.lean * S + (mv ? 0 : Math.sin(iph * 0.7) * 0.3 * S);
+  const headR = (rig.bighead ? 5.3 : 4.7) * S * (rig.head === 'square' ? 1.02 : 1);
+  const headCX = topX + P.headFwd * S;
+  const headCY = shY - 6.6 * S;
+  const shLx = topX - shW / 2, shRx = topX + shW / 2;
+
+  // ── legs (walk cycle) ──
+  const legGap = hipW * 0.40, legW = 3.0 * S * W, footY0 = -1.5 * S;
+  [[-1, Math.PI], [1, 0]].forEach(([sx, ph0]) => {
+    const sw = mv ? Math.sin(wph + ph0) : 0;
+    const cock = (!mv) ? sx * P.hipCock * 0.5 * S : 0;
+    const footX = topX * 0.15 + sx * legGap + sw * 3.3 * S;
+    const lift = mv ? Math.max(0, Math.sin(wph + ph0)) * 2.8 * S : 0;
+    figLimb(ctx, sx * legGap + cock, hipY, footX, footY0 - lift, legW, F(rig.botCol), OL, S);
+    figShoe(ctx, footX, footY0 - lift, rig.shoes, F(rig.shoeCol), OL, S, sil);
+  });
+
+  // ── far arm (behind torso) ──
+  const armW = 2.7 * S * W;
+  const shoObj = figArmPlan(rig, P, { shLx, shRx, shY, hipY, hipW, topX, iph, mv, wph });
+  figLimb(ctx, shoObj.far.sx, shY + 0.5 * S, shoObj.far.hx, shoObj.far.hy, armW, F(rig.topCol), OL, S);
+  figHand(ctx, shoObj.far.hx, shoObj.far.hy, 2.2 * S, F(skin), OL, S);
+
+  // ── torso (clothing silhouette) ──
+  ctx.beginPath();
+  ctx.moveTo(-hipW / 2, hipY);
+  ctx.lineTo(shLx, shY);
+  ctx.quadraticCurveTo(topX, shY - 2.4 * S, shRx, shY);
+  ctx.lineTo(hipW / 2, hipY);
+  ctx.quadraticCurveTo(0, hipY + 2.2 * S, -hipW / 2, hipY);
+  ctx.closePath();
+  ctx.fillStyle = F(rig.topCol); ctx.fill();
+  ctx.strokeStyle = OL; ctx.lineWidth = 1.3 * S; ctx.stroke();
+  if(!sil) figClothing(ctx, rig, { hipW, shW, shLx, shRx, shY, hipY, topX, S, OL });
+
+  // ── neck + head ──
+  const neckY = shY - 1.0 * S;
+  figLimb(ctx, headCX, neckY, headCX, headCY + headR * 0.5, 3.0 * S, F(skin), OL, S);
+  ctx.beginPath();
+  if(rig.head === 'square') rrPath(ctx, headCX - headR, headCY - headR * 0.96, headR * 2, headR * 1.92, headR * 0.5);
+  else if(rig.head === 'oval') ctx.ellipse(headCX, headCY, headR * 0.92, headR * 1.06, 0, 0, Math.PI * 2);
+  else ctx.arc(headCX, headCY, headR, 0, Math.PI * 2);
+  ctx.fillStyle = F(skin); ctx.fill();
+  ctx.strokeStyle = OL; ctx.lineWidth = 1.2 * S; ctx.stroke();
+
+  // ── near arm + hand (over torso) ──
+  figLimb(ctx, shoObj.near.sx, shY + 0.5 * S, shoObj.near.ex, shoObj.near.ey, armW, F(rig.topCol), OL, S);
+  figLimb(ctx, shoObj.near.ex, shoObj.near.ey, shoObj.near.hx, shoObj.near.hy, armW * 0.92, F(rig.topCol), OL, S);
+  figHand(ctx, shoObj.near.hx, shoObj.near.hy, 2.3 * S, F(skin), OL, S);
+  if(shoObj.far.showHand2) figHand(ctx, shoObj.far.hx, shoObj.far.hy, 2.2 * S, F(skin), OL, S);
+
+  // ── face (five-mood), hair, accessories ──
+  if(!sil) figFace(ctx, rig, headCX, headCY, headR, o.mood || 'fine', o);
+  figHair(ctx, rig, headCX, headCY, headR, S, sil, o);
+
+  // ── the ONE dominant prop, in the near hand ──
+  figProp(ctx, rig, shoObj, headCX, headCY, headR, S, sil, o);
+
+  ctx.restore();
+}
+
+function rrPath(ctx, x, y, w, h, r){
+  const rad = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  if(ctx.roundRect){ ctx.roundRect(x, y, w, h, rad); return; }
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
+}
+
+// arm plan → shoulder/elbow/hand points for near & far arms, per pose
+function figArmPlan(rig, P, g){
+  const S = 1; // g coords already in px; keep multipliers explicit
+  const px = k => k; // identity, kept for readability
+  const shY = g.shY, sc = 1;
+  const restNear = { sx: g.shRx - 0.6, ex: g.shRx + 0.3, ey: shY + 7, hx: g.shRx - 0.5, hy: g.hipY - 1, showHand2:true };
+  const restFar  = { sx: g.shLx + 0.6, hx: g.shLx - 0.2, hy: g.hipY - 1, showHand2:false };
+  const u = (g.shRx - g.shLx) / 5.8; // ~ S*W unit recovered
+  const idle = Math.sin(g.iph);
+  switch(rig.arms){
+    case 'shrug':      // both forearms out, palms up — the badger's "well?"
+      return {
+        near:{ sx:g.shRx-0.4, ex:g.shRx+4*u, ey:shY+4*u, hx:g.shRx+6.5*u, hy:shY+1.5*u },
+        far: { sx:g.shLx+0.4, hx:g.shLx-6.5*u, hy:shY+1.5*u, showHand2:true }
+      };
+    case 'phone':      // near hand holds phone at chest, face-up
+      return {
+        near:{ sx:g.shRx-0.6, ex:g.shRx+2.2*u, ey:shY+5*u, hx:g.topX+2.4*u, hy:shY+7*u },
+        far: { sx:g.shLx+0.6, hx:g.shLx-1.4*u, hy:g.hipY-2*u, showHand2:true }
+      };
+    case 'holdchest':  // both forearms across chest (binder)
+      return {
+        near:{ sx:g.shRx-0.6, ex:g.shRx+1.4*u, ey:shY+5*u, hx:g.topX-2.6*u, hy:shY+6.5*u },
+        far: { sx:g.shLx+0.6, hx:g.topX+2.6*u, hy:shY+6.8*u, showHand2:true }
+      };
+    case 'earphone':   // near hand up to ear; far at side
+      return {
+        near:{ sx:g.shRx-0.6, ex:g.shRx+2.6*u, ey:shY-1*u, hx:g.topX+3.4*u, hy:shY-4.5*u },
+        far: { sx:g.shLx+0.6, hx:g.shLx-1.2*u, hy:g.hipY-1*u, showHand2:true }
+      };
+    case 'clipboard':  // both hands at waist holding a board
+      return {
+        near:{ sx:g.shRx-0.6, ex:g.shRx+1.6*u, ey:shY+6*u, hx:g.topX+2.4*u, hy:g.hipY-1.5*u },
+        far: { sx:g.shLx+0.6, hx:g.topX-2.4*u, hy:g.hipY-1.5*u, showHand2:true }
+      };
+    case 'pocket':     // hands in hoodie pocket
+      return {
+        near:{ sx:g.shRx-0.7, ex:g.shRx+1.2*u, ey:shY+6*u, hx:g.topX+1.6*u, hy:g.hipY+1*u },
+        far: { sx:g.shLx+0.7, hx:g.topX-1.6*u, hy:g.hipY+1*u, showHand2:false }
+      };
+    case 'mug':        // near hand holds a big mug at chest; far relaxed
+      return {
+        near:{ sx:g.shRx-0.6, ex:g.shRx+2.4*u, ey:shY+5*u, hx:g.topX+2.6*u, hy:shY+6.5*u + idle*1.2 },
+        far: { sx:g.shLx+0.6, hx:g.shLx-1.6*u, hy:g.hipY-1*u, showHand2:true }
+      };
+    case 'laptop':     // near forearm horizontal under a laptop; far hand types
+      return {
+        near:{ sx:g.shRx-0.6, ex:g.shRx+2.2*u, ey:shY+6*u, hx:g.topX+3.0*u, hy:shY+7.5*u },
+        far: { sx:g.shLx+0.6, hx:g.topX+0.8*u, hy:shY+6.5*u - Math.abs(Math.sin(g.iph*3))*0.8, showHand2:true }
+      };
+    case 'hips':       // hands on hips — elbows out
+      return {
+        near:{ sx:g.shRx-0.5, ex:g.shRx+3.4*u, ey:shY+4.5*u, hx:g.hipW/2-0.4*u, hy:g.hipY-1*u },
+        far: { sx:g.shLx+0.5, hx:-g.hipW/2+0.4*u, hy:g.hipY-1*u, showHand2:true, elbowOut:true }
+      };
+    default:           // rest at sides
+      return { near:restNear, far:restFar };
+  }
+}
+
+// class-marker shoes (Bible §15)
+function figShoe(ctx, x, y, kind, col, ol, S, sil){
+  if(kind === 'boot'){ ctx.fillStyle = col; ctx.beginPath(); rrPath(ctx, x - 2 * S, y - 4 * S, 4.6 * S, 4.4 * S, 1 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1 * S; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(x + 1.1 * S, y + 0.3 * S, 3.5 * S, 1.9 * S, 0, 0, Math.PI * 2);
+  ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1 * S; ctx.stroke();
+  if(sil) return;
+  if(kind === 'sneakwhite'){ ctx.fillStyle = '#f2ede2'; ctx.beginPath(); ctx.ellipse(x + 2.6 * S, y + 0.6 * S, 1.9 * S, 1.1 * S, 0, 0, Math.PI * 2); ctx.fill(); }
+  if(kind === 'sneak'){ ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.8 * S; ctx.beginPath(); ctx.moveTo(x - 1 * S, y + 0.6 * S); ctx.lineTo(x + 2.6 * S, y + 0.6 * S); ctx.stroke(); }
+  if(kind === 'oxblood'){ ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.ellipse(x + 2.6 * S, y - 0.1 * S, 1.4 * S, 0.7 * S, 0, 0, Math.PI * 2); ctx.fill(); }
+}
+
+// clothing silhouette detail — collar/zip/lapel + a fold line + silhouette-breaker
+function figClothing(ctx, rig, g){
+  const S = g.S, cx = g.topX, cyTop = g.shY + 1 * S, cyBot = g.hipY;
+  const lite = shade(rig.topCol, 1.14), dark = shade(rig.topCol, 0.74);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const line = (x1, y1, x2, y2, c, wd) => { ctx.strokeStyle = c; ctx.lineWidth = (wd || 1) * S; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+  switch(rig.top){
+    case 'quarterzip':
+      line(cx, cyTop, cx, cyTop + 8 * S, dark, 1.2);
+      line(cx - 2.2 * S, cyTop, cx, cyTop + 2.2 * S, dark, 1.1);
+      line(cx + 2.2 * S, cyTop, cx, cyTop + 2.2 * S, dark, 1.1);
+      ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(cx, cyTop + 8 * S, 0.9 * S, 0, 7); ctx.fill();
+      break;
+    case 'suit': {
+      ctx.fillStyle = '#eee'; ctx.beginPath();
+      ctx.moveTo(cx - 2.4 * S, cyTop); ctx.lineTo(cx + 2.4 * S, cyTop); ctx.lineTo(cx, cyTop + 9 * S); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = rig.tie || '#b23b34'; ctx.beginPath();
+      ctx.moveTo(cx - 1 * S, cyTop + 0.5 * S); ctx.lineTo(cx + 1 * S, cyTop + 0.5 * S); ctx.lineTo(cx + 1.5 * S, cyTop + 8 * S); ctx.lineTo(cx, cyTop + 10 * S); ctx.lineTo(cx - 1.5 * S, cyTop + 8 * S); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(g.shLx + 1 * S, g.shY); ctx.lineTo(cx - 1.6 * S, cyTop + 1 * S); ctx.lineTo(cx - 3 * S, cyTop + 7 * S); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(g.shRx - 1 * S, g.shY); ctx.lineTo(cx + 1.6 * S, cyTop + 1 * S); ctx.lineTo(cx + 3 * S, cyTop + 7 * S); ctx.closePath(); ctx.fill();
+      break; }
+    case 'cardigan':
+      line(cx, cyTop, cx, cyBot - 1 * S, dark, 1.4);
+      ctx.fillStyle = shade(rig.topCol, 0.9); ctx.beginPath();
+      ctx.moveTo(cx - 1.4 * S, cyTop); ctx.lineTo(cx + 1.4 * S, cyTop); ctx.lineTo(cx, cyTop + 6 * S); ctx.closePath(); ctx.fill();
+      for(let i = 0; i < 3; i++){ ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(cx + 1.6 * S, cyTop + (3 + i * 3) * S, 0.7 * S, 0, 7); ctx.fill(); }
+      break;
+    case 'blazer':
+      ctx.fillStyle = lite; ctx.beginPath();
+      ctx.moveTo(cx - 2 * S, cyTop); ctx.lineTo(cx + 2 * S, cyTop); ctx.lineTo(cx, cyTop + 7 * S); ctx.closePath(); ctx.fill();
+      line(g.shLx + 1.5 * S, g.shY + 0.5 * S, cx - 1.6 * S, cyTop + 6 * S, dark, 1.2);
+      line(g.shRx - 1.5 * S, g.shY + 0.5 * S, cx + 1.6 * S, cyTop + 6 * S, dark, 1.2);
+      break;
+    case 'hoodie':
+      ctx.strokeStyle = dark; ctx.lineWidth = 1.1 * S;
+      ctx.beginPath(); rrPath(ctx, cx - 3.4 * S, cyTop + 6 * S, 6.8 * S, 4.6 * S, 1.4 * S); ctx.stroke();
+      line(cx - 1.2 * S, cyTop, cx - 1.2 * S, cyTop + 3 * S, lite, 1);
+      line(cx + 1.2 * S, cyTop, cx + 1.2 * S, cyTop + 3 * S, lite, 1);
+      break;
+    case 'henley':
+      line(cx, cyTop, cx, cyTop + 5 * S, dark, 1.2);
+      for(let i = 0; i < 2; i++){ ctx.fillStyle = lite; ctx.beginPath(); ctx.arc(cx, cyTop + (1.6 + i * 2.4) * S, 0.7 * S, 0, 7); ctx.fill(); }
+      break;
+    case 'polo':
+      line(cx - 2 * S, cyTop - 0.5 * S, cx, cyTop + 1.6 * S, dark, 1.2);
+      line(cx + 2 * S, cyTop - 0.5 * S, cx, cyTop + 1.6 * S, dark, 1.2);
+      line(cx, cyTop + 1.6 * S, cx, cyTop + 5 * S, dark, 1.1);
+      line(g.hipW * -0.5 + 1 * S, cyBot - 1.5 * S, g.hipW * 0.5 - 1 * S, cyBot - 1.5 * S, dark, 0.9);
+      break;
+    case 'blouse':
+      line(cx - 1.8 * S, cyTop, cx, cyTop + 2.4 * S, dark, 1);
+      line(cx + 1.8 * S, cyTop, cx, cyTop + 2.4 * S, dark, 1);
+      break;
+    case 'tee':
+      ctx.strokeStyle = dark; ctx.lineWidth = 1 * S; ctx.beginPath(); ctx.arc(cx, cyTop - 0.5 * S, 2 * S, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+      break;
+  }
+  ctx.strokeStyle = dark; ctx.lineWidth = 0.9 * S; ctx.globalAlpha = 0.6;
+  ctx.beginPath(); ctx.moveTo(-g.hipW * 0.34, cyBot - 2.5 * S); ctx.quadraticCurveTo(cx, cyBot - 1 * S, g.hipW * 0.34, cyBot - 2.5 * S); ctx.stroke();
+  ctx.globalAlpha = 1;
+  if(rig.lanyard){
+    ctx.strokeStyle = '#B0553A'; ctx.lineWidth = 1.1 * S;
+    ctx.beginPath(); ctx.moveTo(cx - 2.4 * S, cyTop); ctx.lineTo(cx - 0.6 * S, cyTop + 7 * S);
+    ctx.moveTo(cx + 2.4 * S, cyTop); ctx.lineTo(cx - 0.6 * S, cyTop + 7 * S); ctx.stroke();
+    ctx.fillStyle = '#f2ede2'; ctx.strokeStyle = '#6E6960'; ctx.lineWidth = 0.8 * S;
+    ctx.beginPath(); rrPath(ctx, cx - 2 * S, cyTop + 6.5 * S, 2.8 * S, 3.6 * S, 0.6 * S); ctx.fill(); ctx.stroke();
+  }
+}
+
+// five-mood face — lid height, brow angle, mouth curve only. Deadpan family.
+const FIG_MOOD = {
+  fine:    { lid:0.28, brow:0.0,  browY:0.0,  mouth: 0.12 },
+  tired:   { lid:0.54, brow:-0.22, browY:0.12, mouth: 0.0, bags:true },
+  alarmed: { lid:0.02, brow:0.30,  browY:-0.22,mouth: 0.34, open:true },
+  scheming:{ lid:0.44, brow:0.26,  browY:-0.04,mouth:-0.20, smirk:true },
+  dead:    { lid:0.60, brow:0.0,   browY:0.06, mouth: 0.0, bags:true }
+};
+function figFace(ctx, rig, cx, cy, r, mood, o){
+  const S = r / 4.7;
+  const m = FIG_MOOD[mood] || FIG_MOOD.fine;
+  const badger = rig.badger;
+  const eyeY = cy + (badger ? -0.2 : 0.2) * S, eyeDX = r * 0.44;
+  if(badger){
+    ctx.fillStyle = '#3a352e';
+    ctx.beginPath(); ctx.ellipse(cx, eyeY - 0.3 * S, r * 0.86, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d9d2c4';
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.5, r * 0.5, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a2520'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.36, 1 * S, 0.8 * S, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  [-1, 1].forEach(sgn => {
+    const ex = cx + sgn * eyeDX;
+    const forceLid = badger ? Math.max(0.5, m.lid) : m.lid;
+    if(!badger){ ctx.fillStyle = '#f4efe4'; ctx.beginPath(); ctx.ellipse(ex, eyeY, 1.5 * S, 1.7 * S, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = badger ? '#efe9dc' : '#1c1712';
+    const pr = m.open ? 1.15 : 0.95;
+    ctx.beginPath(); ctx.ellipse(ex, eyeY + 0.3 * S, (badger ? 0.9 : 0.95) * S, pr * S, 0, 0, Math.PI * 2); ctx.fill();
+    if(!badger){ ctx.fillStyle = FIG_SKIN[rig.skin] || '#E8C39E'; ctx.fillRect(ex - 1.8 * S, eyeY - 2 * S, 3.6 * S, forceLid * 3.4 * S); }
+    ctx.strokeStyle = rig.hairCol || '#3a2f26'; ctx.lineWidth = 1.1 * S; ctx.lineCap = 'round';
+    const by = eyeY - 2.3 * S + m.browY * S, bt = m.brow * sgn * (m.smirk && sgn > 0 ? 1.8 : 1);
+    ctx.beginPath(); ctx.moveTo(ex - 1.4 * S, by + bt * S); ctx.lineTo(ex + 1.4 * S, by - bt * S); ctx.stroke();
+    if(m.bags && !badger){ ctx.strokeStyle = 'rgba(60,45,30,0.4)'; ctx.lineWidth = 0.8 * S; ctx.beginPath(); ctx.arc(ex, eyeY + 2 * S, 1.4 * S, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+  });
+  if(!badger){
+    const my = cy + r * 0.52, mw = r * 0.42;
+    ctx.strokeStyle = '#5a4636'; ctx.lineWidth = 1.1 * S; ctx.lineCap = 'round';
+    ctx.beginPath();
+    if(m.smirk){ ctx.moveTo(cx - mw, my + 0.6 * S); ctx.quadraticCurveTo(cx, my + m.mouth * 4 * S, cx + mw, my - 1 * S); }
+    else if(m.open){ ctx.ellipse(cx, my, mw * 0.5, 1.4 * S, 0, 0, Math.PI * 2); }
+    else { ctx.moveTo(cx - mw, my); ctx.quadraticCurveTo(cx, my + m.mouth * 4 * S, cx + mw, my); }
+    ctx.stroke();
+  }
+  if(rig.glasses){
+    ctx.strokeStyle = '#2a2520'; ctx.lineWidth = 0.9 * S;
+    [-1, 1].forEach(sgn => { ctx.beginPath(); ctx.arc(cx + sgn * eyeDX, eyeY + 0.3 * S, 1.9 * S, 0, Math.PI * 2); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(cx - eyeDX + 1.9 * S, eyeY + 0.3 * S); ctx.lineTo(cx + eyeDX - 1.9 * S, eyeY + 0.3 * S); ctx.stroke();
+  }
+}
+
+// hair / headwear — two-tone, one flyaway; class-defining shapes
+function figHair(ctx, rig, cx, cy, r, S, sil, o){
+  const c1 = sil ? FIG_INK : (rig.hairCol || '#2a2520'), c2 = sil ? FIG_INK : shade(rig.hairCol || '#2a2520', 1.2);
+  const top = cy - r * 0.98;
+  ctx.lineJoin = 'round';
+  switch(rig.hair){
+    case 'swoop':
+      ctx.fillStyle = c1; ctx.beginPath();
+      ctx.moveTo(cx - r * 0.95, cy - r * 0.2); ctx.quadraticCurveTo(cx - r * 0.7, top, cx + r * 0.2, cy - r * 0.75);
+      ctx.quadraticCurveTo(cx + r * 1.15, cy - r * 1.05, cx + r * 0.95, cy - r * 0.1);
+      ctx.quadraticCurveTo(cx + r * 0.4, cy - r * 0.62, cx - r * 0.2, cy - r * 0.5);
+      ctx.quadraticCurveTo(cx - r * 0.7, cy - r * 0.4, cx - r * 0.95, cy - r * 0.2); ctx.closePath(); ctx.fill();
+      break;
+    case 'combover':
+      ctx.strokeStyle = c1; ctx.lineWidth = 0.9 * S; ctx.lineCap = 'round';
+      for(let i = 0; i < 5; i++){ const t = i / 4; ctx.beginPath(); ctx.moveTo(cx - r * 0.8, cy - r * (0.55 - t * 0.1)); ctx.quadraticCurveTo(cx, top - (1 - t) * 1 * S, cx + r * 0.85, cy - r * (0.2 + t * 0.2)); ctx.stroke(); }
+      ctx.strokeStyle = c2; ctx.beginPath(); ctx.moveTo(cx + r * 0.4, cy - r * 0.8); ctx.quadraticCurveTo(cx + r * 0.9, cy - r * 1.35, cx + r * 1.1, cy - r * 1.0); ctx.stroke();
+      break;
+    case 'bob':
+      ctx.fillStyle = c1; ctx.beginPath();
+      ctx.moveTo(cx - r * 1.05, cy + r * 0.5); ctx.quadraticCurveTo(cx - r * 1.15, top, cx, top - r * 0.15);
+      ctx.quadraticCurveTo(cx + r * 1.15, top, cx + r * 1.05, cy + r * 0.5);
+      ctx.quadraticCurveTo(cx + r * 0.7, cy + r * 0.2, cx + r * 0.7, cy - r * 0.3);
+      ctx.quadraticCurveTo(cx, cy - r * 0.6, cx - r * 0.7, cy - r * 0.3);
+      ctx.quadraticCurveTo(cx - r * 0.7, cy + r * 0.2, cx - r * 1.05, cy + r * 0.5); ctx.closePath(); ctx.fill();
+      break;
+    case 'ponytail':
+      ctx.fillStyle = c1;
+      ctx.beginPath(); ctx.arc(cx, cy - r * 0.2, r * 1.02, Math.PI * 1.05, Math.PI * 1.95); ctx.lineTo(cx + r * 0.6, cy - r * 0.3); ctx.lineTo(cx - r * 0.6, cy - r * 0.3); ctx.closePath(); ctx.fill();
+      const sway = o && o.moving ? Math.sin((o.walkPhase || 0)) * 2 * S : Math.sin((o && o.idlePhase || 0)) * 0.8 * S;
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.8, cy - r * 0.5); ctx.quadraticCurveTo(cx - r * 1.5 + sway, cy - r * 0.1, cx - r * 1.2 + sway, cy + r * 0.9); ctx.quadraticCurveTo(cx - r * 0.7, cy + r * 0.2, cx - r * 0.5, cy - r * 0.3); ctx.closePath(); ctx.fill();
+      break;
+    case 'buzz':
+      ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(cx, cy, r * 0.99, Math.PI * 1.08, Math.PI * 1.92); ctx.closePath(); ctx.fill();
+      break;
+    case 'short':
+      ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(cx, cy - r * 0.15, r * 0.98, Math.PI * 1.02, Math.PI * 1.98); ctx.lineTo(cx + r * 0.9, cy - r * 0.1); ctx.lineTo(cx - r * 0.9, cy - r * 0.1); ctx.closePath(); ctx.fill();
+      break;
+    case 'bald':
+      if(rig.shine && !sil){ ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(cx - r * 0.35, cy - r * 0.55, r * 0.34, r * 0.18, -0.5, 0, Math.PI * 2); ctx.fill(); }
+      break;
+    case 'hood':
+      ctx.fillStyle = sil ? FIG_INK : (rig.topCol);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 1.25, cy + r * 0.7); ctx.quadraticCurveTo(cx - r * 1.35, cy - r * 1.3, cx, cy - r * 1.35);
+      ctx.quadraticCurveTo(cx + r * 1.35, cy - r * 1.3, cx + r * 1.25, cy + r * 0.7);
+      ctx.quadraticCurveTo(cx, cy + r * 0.2, cx - r * 1.25, cy + r * 0.7); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = sil ? FIG_INK : shade(rig.topCol, 0.8); ctx.lineWidth = 1 * S; ctx.stroke();
+      break;
+    case 'phones':
+      ctx.fillStyle = c1;
+      ctx.beginPath(); ctx.arc(cx - r * 0.7, cy - r * 0.75, r * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + r * 0.7, cy - r * 0.75, r * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy - r * 0.1, r * 1.0, Math.PI * 1.05, Math.PI * 1.95); ctx.lineTo(cx + r * 0.5, cy - r * 0.55); ctx.lineTo(cx - r * 0.5, cy - r * 0.55); ctx.closePath(); ctx.fill();
+      break;
+  }
+  if(rig.phones || rig.hair === 'phones'){
+    const overEars = rig.hair !== 'phones';
+    ctx.strokeStyle = sil ? FIG_INK : '#2a2824'; ctx.lineWidth = 1.8 * S; ctx.lineCap = 'round';
+    if(overEars){ ctx.beginPath(); ctx.arc(cx, cy - r * 0.1, r * 1.18, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.arc(cx, cy + r * 0.55, r * 1.15, Math.PI * 1.15, Math.PI * 1.85, true); ctx.stroke(); }
+    const ey = overEars ? cy - r * 0.1 : cy + r * 0.55;
+    ctx.fillStyle = sil ? FIG_INK : '#34302b';
+    [-1, 1].forEach(s => { ctx.beginPath(); ctx.ellipse(cx + s * r * 1.12, ey, 1.7 * S, 2.4 * S, 0, 0, Math.PI * 2); ctx.fill(); });
+  }
+  if(rig.airpod && !sil){ ctx.fillStyle = '#f2ede2'; ctx.beginPath(); ctx.ellipse(cx + r * 0.95, cy + r * 0.1, 1.1 * S, 1.6 * S, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#9a917f'; ctx.lineWidth = 0.6 * S; ctx.stroke(); }
+}
+
+// the ONE dominant prop, drawn at the working hand
+function figProp(ctx, rig, sh, headCX, headCY, headR, S, sil, o){
+  const col = c => sil ? FIG_INK : c;
+  const ol = sil ? FIG_INK : 'rgba(18,14,10,0.9)';
+  const nh = sh.near, fh = sh.far;
+  switch(rig.prop){
+    case 'phone': {
+      ctx.save(); ctx.translate(nh.hx, nh.hy); ctx.rotate(-0.35);
+      ctx.fillStyle = col('#23262b'); ctx.beginPath(); rrPath(ctx, -1.8 * S, -3.4 * S, 3.6 * S, 6.8 * S, 0.8 * S); ctx.fill();
+      if(!sil){ ctx.fillStyle = '#bcdfe8'; ctx.beginPath(); rrPath(ctx, -1.3 * S, -2.9 * S, 2.6 * S, 5.8 * S, 0.5 * S); ctx.fill(); }
+      ctx.strokeStyle = ol; ctx.lineWidth = 0.9 * S; ctx.beginPath(); rrPath(ctx, -1.8 * S, -3.4 * S, 3.6 * S, 6.8 * S, 0.8 * S); ctx.stroke();
+      ctx.restore(); break; }
+    case 'binder': {
+      const bx = (nh.hx + fh.hx) / 2, by = (nh.hy + fh.hy) / 2;
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(0.08);
+      ctx.fillStyle = col('#7a3b34'); ctx.beginPath(); rrPath(ctx, -6.5 * S, -5 * S, 13 * S, 10 * S, 1 * S); ctx.fill();
+      ctx.strokeStyle = ol; ctx.lineWidth = 1.1 * S; ctx.stroke();
+      if(!sil){ ctx.fillStyle = '#e9e2d2'; ctx.fillRect(-5.2 * S, -4 * S, 2 * S, 8 * S); ctx.strokeStyle = '#c9b98a'; ctx.lineWidth = 0.7 * S; for(let i = 0; i < 3; i++){ ctx.beginPath(); ctx.moveTo(-2 * S, (-2.5 + i * 2.5) * S); ctx.lineTo(5 * S, (-2.5 + i * 2.5) * S); ctx.stroke(); } }
+      ctx.restore(); break; }
+    case 'earpiece': {
+      if(!sil){ ctx.fillStyle = '#1c1712'; ctx.beginPath(); rrPath(ctx, headCX + headR * 0.7, headCY - 1.5 * S, 2.2 * S, 3.2 * S, 0.6 * S); ctx.fill(); ctx.fillStyle = '#41E3D6'; ctx.beginPath(); ctx.arc(headCX + headR * 0.7 + 1.1 * S, headCY, 0.6 * S, 0, 7); ctx.fill(); }
+      else { ctx.fillStyle = FIG_INK; ctx.beginPath(); rrPath(ctx, headCX + headR * 0.7, headCY - 1.5 * S, 2.2 * S, 3.2 * S, 0.6 * S); ctx.fill(); }
+      break; }
+    case 'clipboard': {
+      const bx = (nh.hx + fh.hx) / 2, by = (nh.hy + fh.hy) / 2;
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(-0.12);
+      ctx.fillStyle = col('#c9a25a'); ctx.beginPath(); rrPath(ctx, -4.5 * S, -6 * S, 9 * S, 12 * S, 0.8 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1 * S; ctx.stroke();
+      if(!sil){ ctx.fillStyle = '#f6f1e6'; ctx.fillRect(-3.4 * S, -4.6 * S, 6.8 * S, 9 * S); ctx.fillStyle = '#8a8f96'; ctx.fillRect(-1.6 * S, -6.4 * S, 3.2 * S, 1.4 * S); ctx.strokeStyle = '#b9b2a0'; ctx.lineWidth = 0.6 * S; for(let i = 0; i < 4; i++){ ctx.beginPath(); ctx.moveTo(-2.6 * S, (-2.5 + i * 2) * S); ctx.lineTo(2.6 * S, (-2.5 + i * 2) * S); ctx.stroke(); } }
+      ctx.restore(); break; }
+    case 'mug': {
+      ctx.save(); ctx.translate(nh.hx + 1.4 * S, nh.hy);
+      ctx.fillStyle = col('#2f6d63'); ctx.beginPath(); rrPath(ctx, -3.4 * S, -4.6 * S, 6.8 * S, 8.6 * S, 1.4 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 1.1 * S; ctx.stroke();
+      ctx.beginPath(); ctx.arc(4.2 * S, -0.3 * S, 2.4 * S, -1.2, 1.2); ctx.lineWidth = 1.6 * S; ctx.stroke();
+      if(!sil){ ctx.fillStyle = '#e9e2d2'; ctx.beginPath(); ctx.ellipse(0, -4.4 * S, 3 * S, 1 * S, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore(); break; }
+    case 'laptop': {
+      ctx.save(); ctx.translate(nh.hx - 1 * S, nh.hy - 1 * S); ctx.rotate(-0.15);
+      ctx.fillStyle = col('#3a3f47'); ctx.beginPath(); rrPath(ctx, -6 * S, -1.6 * S, 12 * S, 3.2 * S, 0.6 * S); ctx.fill(); ctx.strokeStyle = ol; ctx.lineWidth = 0.9 * S; ctx.stroke();
+      if(!sil){ ctx.fillStyle = '#20242a'; ctx.beginPath(); rrPath(ctx, -5.4 * S, -6.4 * S, 11 * S, 5.2 * S, 0.5 * S); ctx.fill(); ctx.fillStyle = 'rgba(143,183,201,0.5)'; ctx.fillRect(-4.8 * S, -5.9 * S, 9.6 * S, 4.2 * S); }
+      ctx.restore(); break; }
+  }
+}
+
 function drawActor(ctx, cam, a, w){
   const z = cam.z;
   const [px, py] = proj(cam, a.x, a.y);
-  ctx.beginPath(); ctx.ellipse(px, py, 10 * z, 5 * z, 0, 0, Math.PI * 2);
+  const rig = RIG[a.id] || RIG.you;
+  // contact shadow, sized to the figure's build
+  ctx.beginPath(); ctx.ellipse(px, py, 10 * z * (rig.w || 1), 5 * z, 0, 0, Math.PI * 2);
   ctx.fillStyle = WT.contactShadow; ctx.fill();
+  // the Boss's bad-day / patrol ring stays a floor tell
   if(a.id === 'boss' && (a.mood === 'bad' || a.state === 'patrol')){
-    ctx.beginPath(); ctx.ellipse(px, py, 14 * z, 7 * z, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(216,68,63,0.85)'; ctx.lineWidth = 2.5 * z; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(px, py, 15 * z, 7.5 * z, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(176,85,58,0.85)'; ctx.lineWidth = 2.5 * z; ctx.stroke();
   }
-  ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, 0, Math.PI * 2);
-  ctx.fillStyle = a.color; ctx.fill();
-  ctx.strokeStyle = 'rgba(21,18,13,0.35)'; ctx.lineWidth = 1.3 * z; ctx.stroke();
-  const dome = a.id === 'adam' ? 7.2 * z : 6.5 * z;   // Adam's is... more
-  ctx.beginPath(); ctx.arc(px, py - 26 * z, dome, 0, Math.PI * 2);
-  ctx.fillStyle = a.bear ? '#7d7871' : a.id === 'adam' ? '#EFD3AE' : '#E8C39E'; ctx.fill();
-  ctx.strokeStyle = 'rgba(21,18,13,0.3)'; ctx.lineWidth = 1.1 * z; ctx.stroke();
-  // key/fill rim: the 5pm sun catches the upper-left of everyone; a cool screen-
-  // glow answers on the lower-right — the double key-light, on every silhouette
-  const RL = WT.LIGHT;
-  if(RL && z > 0.62){
-    ctx.save(); ctx.lineCap = 'round';
-    ctx.strokeStyle = hexA(RL.rimWarm, 0.5); ctx.lineWidth = 1.5 * z;
-    ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, Math.PI * 0.78, Math.PI * 1.5); ctx.stroke();
-    ctx.beginPath(); ctx.arc(px, py - 26 * z, dome, Math.PI * 0.85, Math.PI * 1.55); ctx.stroke();
-    ctx.strokeStyle = hexA(RL.rimCold, 0.34); ctx.lineWidth = 1.3 * z;
-    ctx.beginPath(); ctx.ellipse(px, py - 11 * z, 8 * z, 11 * z, 0, Math.PI * -0.22, Math.PI * 0.34); ctx.stroke();
-    ctx.restore();
-  }
-  if(a.id === 'adam'){
-    // the shine: readable from across the floor
-    ctx.beginPath(); ctx.ellipse(px - 2.2 * z, py - 29.5 * z, 2.6 * z, 1.5 * z, -0.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
-  }
-  // the interception, visible: he is talking AT you
+  // ── the actor, assembled from the RIG (Bible §13/§15) ──
+  const moodMap = { good:'fine', meh:'tired', bad:'alarmed' };
+  let fmood = moodMap[a.mood] || 'fine';
+  if(a.id === 'brad' && (a.state === 'lurk' || a.state === 'lurkwalk' || a.state === 'raid')) fmood = 'scheming';
+  else if(a.state === 'patrol') fmood = 'alarmed';
+  else if(a.id === 'kayla' && a.mood === 'bad') fmood = 'dead';
+  const moving = !!(a.path && a.path.length);
+  if(moving){ const n = a.path[0]; const sdx = (n.x - a.x) - (n.y - a.y); if(Math.abs(sdx) > 0.001) a._fl = sdx < 0; }
+  const cadence = { bounce:12, march:6.5, shuffle:4.5, drift:5.5, amble:7, brisk:13, precise:11, strut:7.5 }[rig.walk] || 8;
+  drawFigure(ctx, px, py, z, rig, {
+    mood: fmood, moving,
+    walkPhase: (_tMs / 1000) * cadence * (rig.spd || 1),
+    idlePhase: (_tMs / 1000) * 1.1 + (a.x + a.y),   // desynced per position
+    faceLeft: !!a._fl
+  });
+  // the interception, visible: Adam is talking AT you
   if(a.id === 'adam' && w && w.intercept){
     ctx.font = (13 * z) + 'px system-ui';
     ctx.textAlign = 'center';
-    ctx.fillText('💬', px + 12 * z, py - 34 * z);
+    ctx.fillText('💬', px + 14 * z, py - 40 * z);
     ctx.fillStyle = 'rgba(21,18,13,0.55)';
-    ctx.font = '700 ' + Math.max(8, 9 * z) + 'px Poppins, sans-serif';
-    ctx.fillText('“quick thought—”', px, py - 44 * z);
-  }
-  if(a.bear){
-    ctx.beginPath(); ctx.arc(px - 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
-    ctx.arc(px + 5 * z, py - 31 * z, 2.6 * z, 0, Math.PI * 2);
-    ctx.fillStyle = '#35322e'; ctx.fill();
-    ctx.beginPath(); ctx.ellipse(px, py - 23.5 * z, 3.4 * z, 2.4 * z, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#d9d2c4'; ctx.fill();                       // the pale snout
-  }
-  if(a.lines){
-    ctx.font = (11 * z) + 'px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText(MOOD_FACE[a.mood], px + 11 * z, py - 32 * z);
+    ctx.font = '700 ' + Math.max(8, 9 * z) + 'px "Space Mono", monospace';
+    ctx.fillText('“quick thought—”', px, py - 50 * z);
   }
   // threat telegraphs: the floor-walk and the raid are readable at a glance
   if(a.state === 'patrol' || a.state === 'raid'){
@@ -3982,7 +4408,8 @@ return {
   goPreDemo, goForCoolHR, applyGrenade,
   sendTo, bfsPath, isWalkable, adjacentTo, getActor,
   pickActorAt, furnitureAt, isCoffeeAt, isCouchAt, isExitAt, statusOf, clockToMin, minToClock,
-  render, proj, screenToTile
+  render, proj, screenToTile,
+  RIG, drawFigure   // exposed for the cast test sheet (character-test.html)
 };
 })();
 

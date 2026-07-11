@@ -12,10 +12,15 @@ honest edges and the next places to push.
   aren't guaranteed ready on the first frame, so the first ~1s of canvas labels
   may fall back to a system stack, then swap. Harmless; a `document.fonts.ready`
   repaint would remove the flash.
-- **Character art is still "silhouette + head + prop," not the full 5-mood
-  construction kit** (§13/§15). Bodies read well from across the floor and pass
-  the silhouette test, but per-mood faces, contrapposto weight, and per-person
-  walk cycles are a later art phase.
+- **Characters were rebuilt from a construction-kit rig** (§13/§15): distinct
+  builds, posture (contrapposto/hunch/rigid/…), clothing silhouettes, two-tone
+  hair, class-marker shoes, working hands + one dominant prop, a five-mood face
+  matrix, and per-person walk cadence. Verified on `character-test.html` (six
+  lineups). Remaining finer gaps for a later art phase: figures face **3/4 only**
+  (no 4-direction heading sprites — they mirror L/R when walking); hands are
+  simple mittens (no per-finger detail); the §15 "imperfection budget" (1–4°
+  drift/rotation) is applied to props/desks but not yet to the figures; the
+  ~20-person extended cast (Cheryl, Victor, Nina, …) still needs RIG rows.
 - **Ambient life is minimal.** v1 has idle motion and the existing telegraphs;
   the ~90-behaviour ambient system (§19) and background window-walkers (§12) are
   future work.

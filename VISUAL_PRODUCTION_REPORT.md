@@ -46,11 +46,20 @@ Warm paper walls, glass that carries the warm-sky/cool-glint collision, warm-
 tinted (never black) contact shadows, a cinematic vignette, and a film-grain /
 paper-tooth overlay over the whole frame so nothing looks too clean.
 
-### 6. Character presentation — DONE (foundation level)
-The cast reads as **silhouettes** — distinct body colours + head shapes + a
-signature prop/tell each (Adam's shine, Dennis's red folder, Brad's 👀, the
-Boss's ❗) — identifiable from across the floor on the new palette. Full 5-mood
-faces and per-person walk cycles are a later art phase (see `KNOWN_ISSUES.md`).
+### 6. Character presentation — REBUILT from a construction-kit rig
+**Superseded the first pass** (which was still one body-ellipse + head-dome per
+actor). The cast is now assembled from a shared `RIG` config + a procedural
+`drawFigure` renderer (Bible §13/§15): distinct **build** (height/width/shoulder/
+hip), **posture** (contrapposto default; rigid only for the Boss; hunch/collapse/
+lounge/shrug/hover), **clothing silhouettes** (quarter-zip, cardigan, suit+tie,
+blazer, hoodie, henley, polo, blouse), two-tone **hair** (swoop, comb-over, bob,
+ponytail, bald+shine, hood), class-marker **shoes**, **working hands** holding
+**one dominant prop** (phone, binder, earpiece, clipboard, giant mug, laptop), a
+**five-mood face matrix** (fine/tired/alarmed/scheming/dead — lid/brow/mouth
+only), and **per-person gait** (Brad bounces, Dennis shuffles, the Boss marches,
+Priya walks 8% faster…). The badger is unmistakably non-human. See
+`CHARACTER_GAP_AUDIT.md` for the before→after per character, and
+`character-test.html` for the six acceptance lineups.
 
 ### 7. Ambient animation — DONE (subtle)
 The key-light **breathes** on a slow ~14s cycle; interaction rings and mood

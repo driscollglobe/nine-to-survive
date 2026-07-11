@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nine to Survive — Cast Test Sheet</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Expanded:wght@700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="ntos-world.js?v=w22"></script>
+<style>
+  :root{ --paper:#F3EBDA; --ink:#15120C; --mut:#8a8070; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:linear-gradient(158deg,#1c1710,#0f0c08);color:#EDE3CE;
+       font-family:'Space Mono',monospace;padding:22px;-webkit-font-smoothing:antialiased}
+  h1{font-family:'Archivo Expanded',sans-serif;font-weight:900;text-transform:uppercase;
+     letter-spacing:-.01em;font-size:26px;margin-bottom:4px}
+  .sub{color:#a89b82;font-size:12px;letter-spacing:.06em;margin-bottom:16px}
+  .bar{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 18px}
+  button{font-family:'Space Mono',monospace;font-size:12px;background:#2a2318;color:#EDE3CE;
+         border:1px solid #4a4030;border-radius:8px;padding:8px 14px;cursor:pointer}
+  button.on{background:#B98A4E;color:#231605;border-color:#B98A4E}
+  canvas{width:100%;max-width:1120px;border-radius:12px;background:transparent;display:block}
+  .legend{font-size:11px;color:#a89b82;margin-top:8px;line-height:1.6}
+</style>
+</head>
+<body>
+  <h1>Cast Test Sheet</h1>
+  <div class="sub">Acceptance harness for the character rig — Bible §13 / §15. A color · B silhouette · C gameplay-zoom · D walking · E five-mood matrix · F props.</div>
+  <div class="bar">
+    <button id="labels" class="on" onclick="toggleLabels()">Labels: ON</button>
+    <button onclick="setLight(true)" id="lightOn" class="on">Key-light: ON</button>
+    <button onclick="setLight(false)" id="lightOff">Key-light: OFF</button>
+  </div>
+  <canvas id="sheet"></canvas>
+  <div class="legend">
+    Acceptance: at gameplay zoom (row C) Brad/Dennis/Boss/Meredith/Kayla/Marcus/Priya are recognizable without labels ·
+    in pure black (row B) every silhouette stays distinct · in motion (row D) gait identifies the character ·
+    no two majors share body+posture+prop · YOU is unmistakably the badger.
+  </div>
+<script>
+const W = window.NtosWorld;
+const IDS = ['you','brad','dennis','boss','hr','kayla','marcus','priya','adam'];
+const NAME = {}; (W.CAST||[]).forEach(c=>NAME[c.id]=c.name.split(' ')[0].toUpperCase()); NAME.boss='BOSS';
+const MOODS = ['fine','tired','alarmed','scheming','dead'];
+const PROP = {you:'headphones',brad:'phone / AirPod',dennis:'binder',boss:'earpiece',hr:'clipboard',kayla:'headphones',marcus:'giant mug',priya:'laptop',adam:'hands on hips'};
+const cv = document.getElementById('sheet'), ctx = cv.getContext('2d');
+let LABELS = true, LIGHT = true, t0 = null;
+const CSSW = Math.min(1120, document.body.clientWidth - 44);
+const H = 1540;
+function fit(){ const dpr = window.devicePixelRatio||1; cv.width = CSSW*dpr; cv.height = H*dpr; cv.style.width = CSSW+'px'; cv.style.height = H+'px'; ctx.setTransform(dpr,0,0,dpr,0,0); }
+fit();
+
+function label(x,y,txt,c){ if(!LABELS) return; ctx.fillStyle=c||'#a89b82'; ctx.font='10px "Space Mono", monospace'; ctx.textAlign='center'; ctx.fillText(txt,x,y); }
+function heading(y,txt){ ctx.fillStyle='#B98A4E'; ctx.font='700 13px "Space Mono", monospace'; ctx.textAlign='left'; ctx.fillText(txt, 8, y); ctx.strokeStyle='rgba(185,138,78,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(8,y+6); ctx.lineTo(CSSW-8,y+6); ctx.stroke(); }
+
+function keylight(){
+  if(!LIGHT) return;
+  ctx.save(); ctx.globalCompositeOperation='soft-light';
+  let g = ctx.createRadialGradient(CSSW*0.12,-40,0, CSSW*0.12,-40, CSSW*0.9);
+  g.addColorStop(0,'rgba(244,220,166,0.22)'); g.addColorStop(1,'rgba(244,220,166,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,CSSW,H);
+  g = ctx.createRadialGradient(CSSW*1.02,H,0, CSSW*1.02,H, CSSW*0.9);
+  g.addColorStop(0,'rgba(143,183,201,0.18)'); g.addColorStop(1,'rgba(143,183,201,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,CSSW,H); ctx.restore();
+}
+
+function draw(ts){
+  if(t0===null) t0=ts; const t=(ts-t0)/1000;
+  ctx.clearRect(0,0,CSSW,H);
+  const colW = (CSSW-24)/IDS.length;
+  const cx = i => 20 + colW*i + colW/2;
+
+  // A — full-colour cast
+  heading(20, 'A · FULL-COLOUR CAST');
+  IDS.forEach((id,i)=>{ W.drawFigure(ctx, cx(i), 128, 2.3, W.RIG[id], {mood:'fine', idlePhase:t*1.1+i}); label(cx(i),150,NAME[id]); });
+
+  // B — pure-black silhouettes (on a light panel so the shapes read)
+  heading(176, 'B · PURE-BLACK SILHOUETTE TEST');
+  ctx.fillStyle='#E4D8C0'; ctx.beginPath(); (ctx.roundRect?ctx.roundRect(12,192,CSSW-24,120,10):ctx.rect(12,192,CSSW-24,120)); ctx.fill();
+  IDS.forEach((id,i)=>{ W.drawFigure(ctx, cx(i), 296, 2.3, W.RIG[id], {mood:'fine', idlePhase:t*1.1+i, silhouette:true}); label(cx(i),306,NAME[id],'#6E6960'); });
+
+  // C — normal gameplay zoom
+  heading(332, 'C · NORMAL GAMEPLAY ZOOM (recognizable without labels?)');
+  IDS.forEach((id,i)=>{ W.drawFigure(ctx, cx(i), 408, 1.05, W.RIG[id], {mood:'fine', idlePhase:t*1.1+i}); label(cx(i),424,NAME[id]); });
+
+  // D — walking (animated, alternating facing)
+  heading(448, 'D · WALKING — gait should identify the character');
+  IDS.forEach((id,i)=>{ const rig=W.RIG[id]; const cad={bounce:12,march:6.5,shuffle:4.5,drift:5.5,amble:7,brisk:13,precise:11,strut:7.5}[rig.walk]||8;
+    W.drawFigure(ctx, cx(i), 560, 2.0, rig, {mood:'fine', moving:true, walkPhase:t*cad*(rig.spd||1), faceLeft:i%2===1}); label(cx(i),582,NAME[id]+' · '+rig.walk); });
+
+  // E — five-mood matrix
+  heading(612, 'E · FIVE-MOOD FACE MATRIX');
+  MOODS.forEach((m,c)=>{ label(24+ (CSSW-40)/5*c + (CSSW-40)/10, 632, m.toUpperCase(), '#B98A4E'); });
+  IDS.forEach((id,r)=>{
+    const y = 700 + r*72;
+    label(34, y-26, NAME[id], '#cabfa8');
+    MOODS.forEach((m,c)=>{ const x = 70 + ((CSSW-90)/5)*c + ((CSSW-90)/10); W.drawFigure(ctx, x, y, 1.15, W.RIG[id], {mood:m, idlePhase:t*1.1+r+c}); });
+  });
+
+  // F — signature prop lineup
+  heading(1360, 'F · SIGNATURE PROP — one dominant object per silhouette');
+  IDS.forEach((id,i)=>{ W.drawFigure(ctx, cx(i), 1480, 2.1, W.RIG[id], {mood:'fine', idlePhase:t*1.1+i}); label(cx(i),1500,PROP[id],'#cabfa8'); });
+
+  keylight();
+}
+requestAnimationFrame(function loop(ts){ draw(ts); requestAnimationFrame(loop); });
+
+function toggleLabels(){ LABELS=!LABELS; const b=document.getElementById('labels'); b.textContent='Labels: '+(LABELS?'ON':'OFF'); b.classList.toggle('on',LABELS); }
+function setLight(v){ LIGHT=v; document.getElementById('lightOn').classList.toggle('on',v); document.getElementById('lightOff').classList.toggle('on',!v); }
+</script>
+</body>
+</html>
