@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Expanded:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n20"></script>
+<script src="ntos-game.js?v=n21"></script>
 <script src="ntos-world.js?v=w25"></script>
 <link rel="stylesheet" href="ntos-theme.css">
 </head>
@@ -554,6 +554,7 @@ function resumeGame(){
   if(!s) return startGame();
   runSeed = s.runSeed;
   g = s.g;
+  G.ensureWants(g);        // backfill want-roles onto pre-feature saves (idempotent)
   window.g = g;
   if(s.phase === 'dayend'){ screens('dayend'); showDayEnd(); return; }
   g.idxInDay = 0;          // the day restarts; meters/money keep their saved values

@@ -1134,6 +1134,120 @@ ok('activeArcs serializes with the save', (() => {
   return JSON.stringify(back.activeArcs) === JSON.stringify(g2.activeArcs);
 })());
 
+// ---- 17c. NPC wants: the motive layer (state foundation) --------------------------
+// disposition table matches the cast exactly and is well-formed
+ok('NPC_WANTS covers exactly NPC_IDS (no 8/9 drift)', (() => {
+  const a = Object.keys(G.NPC_WANTS).sort().join(',');
+  const b = G.NPC_IDS.slice().sort().join(',');
+  return a === b;
+})(), Object.keys(G.NPC_WANTS).sort().join(','));
+ok('every disposition has all three want-types, weights >= 0, positive sum', (() => {
+  return G.NPC_IDS.every(id => {
+    const d = G.NPC_WANTS[id];
+    if(!d) return false;
+    let sum = 0;
+    for(const t of G.WANT_TYPES){
+      if(typeof d[t] !== 'number' || d[t] < 0) return false;
+      sum += d[t];
+    }
+    if(Object.keys(d).length !== G.WANT_TYPES.length) return false;   // no stray types
+    return sum > 0;
+  });
+})());
+ok('WANT_TYPES is the expected three-motive vocabulary',
+  G.WANT_TYPES.length === 3
+  && G.WANT_TYPES.indexOf('fealty-patron') >= 0
+  && G.WANT_TYPES.indexOf('true-mentor') >= 0
+  && G.WANT_TYPES.indexOf('hidden-debt-trap') >= 0);
+
+// run-start: every NPC gets a valid role, revealed starts at 0
+ok('newGame rolls a valid role + revealed 0 for every NPC', (() => {
+  const g2 = G.newGame(42);
+  return G.NPC_IDS.every(id => {
+    const w = g2.npcState[id].wants;
+    return w && G.WANT_TYPES.indexOf(w.role) >= 0 && w.revealed === 0;
+  });
+})());
+
+// determinism: same seed => identical roles; different seeds diverge somewhere
+ok('same seed = identical want-roles across all NPCs', (() => {
+  const a = G.newGame(123), b = G.newGame(123);
+  return G.NPC_IDS.every(id => a.npcState[id].wants.role === b.npcState[id].wants.role);
+})());
+ok('different seeds produce differing rolls for at least some NPCs', (() => {
+  const a = G.newGame(1);
+  for(let sd = 2; sd <= 60; sd++){
+    const b = G.newGame(sd);
+    if(G.NPC_IDS.some(id => a.npcState[id].wants.role !== b.npcState[id].wants.role)) return true;
+  }
+  return false;
+})());
+ok('rollWant depends only on (runSeed, id) — pure, repeatable', (() => {
+  return G.NPC_IDS.every(id => G.rollWant(777, id) === G.rollWant(777, id));
+})());
+
+// backfill fidelity: ensureWants reproduces the fresh roll on a stripped save,
+// and never overwrites a role that's already set
+ok('ensureWants backfills stripped saves to the identical fresh roll', (() => {
+  const fresh = G.newGame(2024);
+  const stripped = JSON.parse(JSON.stringify(fresh));
+  G.NPC_IDS.forEach(id => { delete stripped.npcState[id].wants; });   // pre-feature shape
+  G.ensureWants(stripped);
+  return G.NPC_IDS.every(id =>
+    stripped.npcState[id].wants.role === fresh.npcState[id].wants.role
+    && stripped.npcState[id].wants.revealed === 0);
+})());
+ok('ensureWants is idempotent + never clobbers a set role/revealed', (() => {
+  const g2 = G.newGame(55);
+  g2.npcState.marcus.wants.revealed = 0.5;              // pretend discovery progressed
+  const before = G.NPC_IDS.map(id => g2.npcState[id].wants.role).join(',');
+  G.ensureWants(g2); G.ensureWants(g2);
+  const after = G.NPC_IDS.map(id => g2.npcState[id].wants.role).join(',');
+  return before === after && g2.npcState.marcus.wants.revealed === 0.5;
+})());
+
+// wants rides the existing save (plain data, survives a JSON round-trip)
+ok('wants serializes with the save', (() => {
+  const g2 = G.newGame(314);
+  const back = JSON.parse(JSON.stringify(g2));
+  return G.NPC_IDS.every(id =>
+    JSON.stringify(back.npcState[id].wants) === JSON.stringify(g2.npcState[id].wants));
+})());
+
+// personality anchors: over many seeds each character leans the way it was authored
+ok('disposition personalities read (Marcus mentor-leaning, HR/Dennis/Adam/Brad trap-leaning)', (() => {
+  const N = 400, tally = {};
+  G.NPC_IDS.forEach(id => tally[id] = { 'fealty-patron':0, 'true-mentor':0, 'hidden-debt-trap':0 });
+  for(let sd = 1; sd <= N; sd++)
+    G.NPC_IDS.forEach(id => { tally[id][G.rollWant(sd * 2749 + 13, id)]++; });
+  const top = id => G.WANT_TYPES.reduce((b, t) => tally[id][t] > tally[id][b] ? t : b, G.WANT_TYPES[0]);
+  return top('marcus') === 'true-mentor'
+    && top('priya')  === 'true-mentor'
+    && top('meredith') === 'hidden-debt-trap'
+    && top('dennis') === 'hidden-debt-trap'
+    && top('adam')   === 'hidden-debt-trap'
+    && top('brad')   === 'hidden-debt-trap'
+    && top('boss')   === 'fealty-patron';
+})());
+
+// ISOLATION: the new side stream must shift NOTHING pre-feature. These literals
+// were captured from the pre-wants build (seeds 1/31/42/7/100).
+ok('day-1 plan + arcs + dennisBlocker byte-identical to pre-feature build', (() => {
+  const expect = {
+    1:   { plan:'3,6',  arcs:'boss_spiral,kayla_presentation,marcus_survivor,priya_credit', blk:true  },
+    31:  { plan:'14,17', arcs:'hr_survey,kayla_presentation,marcus_survivor',                blk:false },
+    42:  { plan:'0,13', arcs:'boss_spiral,marcus_survivor,priya_credit',                     blk:false },
+    7:   { plan:'9,19', arcs:'brad_second_job,hr_survey,marcus_survivor,priya_credit',       blk:true  },
+    100: { plan:'3,14', arcs:'hr_survey,kayla_presentation,marcus_survivor',                 blk:false }
+  };
+  return Object.keys(expect).every(sd => {
+    const g2 = G.newGame(+sd), e = expect[sd];
+    return g2.plan.join(',') === e.plan
+      && Object.keys(g2.activeArcs).sort().join(',') === e.arcs
+      && g2.dennisBlockerToday === e.blk;
+  });
+})());
+
 // ---- 18. the competent policy (pure functions; consumed by movie + soak) ---------
 function fakeWorld(over){
   return Object.assign({

@@ -335,7 +335,10 @@ const NineToSurvive = (() => {
   const NPC_IDS = ['brad', 'boss', 'meredith', 'dennis', 'kayla', 'marcus', 'priya', 'adam'];
   function freshNpcState(){
     const st = {};
-    NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {} }; });
+    // wants.role is filled by ensureWants(g) at run start (needs the seed);
+    // wants.disposition is NOT stored — it's the fixed constant NPC_WANTS.
+    NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {},
+                                       wants: { role: null, revealed: 0 } }; });
     return st;
   }
 
@@ -365,6 +368,53 @@ const NineToSurvive = (() => {
     return active;
   }
 
+  // ---- What each character wants FROM YOU (office-politics motive) --------------
+  // Three parts, three lifetimes:
+  //   disposition — fixed, authored: the constant NPC_WANTS below (never saved).
+  //   role        — rolled ONCE per run from the disposition, saved on the npc.
+  //   revealed    — 0..1 discovery value, saved; wiring is a later follow-up.
+  // The roll rides a per-NPC side stream seeded off runSeed alone (arcRand's
+  // per-key philosophy): it never touches g.rngState or the arc_select stream,
+  // so it shifts no existing day-plan or balance number — and seeding PER id
+  // means a future 9th character can't reshuffle the existing eight's roles.
+  const WANT_TYPES = ['fealty-patron', 'true-mentor', 'hidden-debt-trap'];
+  const NPC_WANTS = {
+    //             fealty  mentor  trap
+    brad:     { 'fealty-patron':0.35, 'true-mentor':0.05, 'hidden-debt-trap':0.60 }, // makes you complicit
+    boss:     { 'fealty-patron':0.60, 'true-mentor':0.10, 'hidden-debt-trap':0.30 }, // wants a loyal subject
+    meredith: { 'fealty-patron':0.20, 'true-mentor':0.10, 'hidden-debt-trap':0.70 }, // help that becomes a file
+    dennis:   { 'fealty-patron':0.30, 'true-mentor':0.05, 'hidden-debt-trap':0.65 }, // favors that bind
+    adam:     { 'fealty-patron':0.30, 'true-mentor':0.05, 'hidden-debt-trap':0.65 }, // to be consulted, forever
+    kayla:    { 'fealty-patron':0.10, 'true-mentor':0.55, 'hidden-debt-trap':0.35 }, // a real peer who can also drain
+    priya:    { 'fealty-patron':0.10, 'true-mentor':0.65, 'hidden-debt-trap':0.25 }, // the genuine ally
+    marcus:   { 'fealty-patron':0.05, 'true-mentor':0.80, 'hidden-debt-trap':0.15 }  // the mentor (tips can miscalibrate)
+  };
+  // One weighted draw from a character's disposition. Weights need not sum to 1.
+  function rollWant(runSeed, id){
+    const disp = NPC_WANTS[id];
+    if(!disp) return null;
+    const rng = localRand((runSeed ^ hashStr('npc_wants') ^ hashStr(id)) | 0);
+    const total = WANT_TYPES.reduce((s, t) => s + (disp[t] || 0), 0);
+    let roll = rng() * total;
+    for(let i = 0; i < WANT_TYPES.length - 1; i++){
+      if(roll < disp[WANT_TYPES[i]]) return WANT_TYPES[i];
+      roll -= disp[WANT_TYPES[i]];
+    }
+    return WANT_TYPES[WANT_TYPES.length - 1];
+  }
+  // Idempotent: fill any npc whose want-role isn't set yet. Deterministic from
+  // runSeed, so a fresh run, a resume, or a double call all yield the same roles
+  // — which is exactly what makes it a safe backfill for pre-feature saves.
+  function ensureWants(g){
+    if(!g || !g.npcState) return;
+    NPC_IDS.forEach(id => {
+      const npc = g.npcState[id];
+      if(!npc) return;
+      if(!npc.wants) npc.wants = { role: null, revealed: 0 };
+      if(npc.wants.role == null) npc.wants.role = rollWant(g.runSeed, id);
+    });
+  }
+
   // Fresh career. Day 1, Intern, seeded plan for the first day.
   function newGame(seed){
     const g = {
@@ -387,6 +437,7 @@ const NineToSurvive = (() => {
       rngState: (seed == null ? 1 : seed) | 0
     };
     g.dennisBlockerToday = arcRand(g, 'dennis', 'blocker')() < 0.25;
+    ensureWants(g);           // roll each character's motive (own side stream)
     g.plan = planDay(g);
     return g;
   }
@@ -1947,6 +1998,7 @@ const NineToSurvive = (() => {
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,
     applyCrunch, applyCoffee, applyWorldEffect,
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
+    WANT_TYPES, NPC_WANTS, rollWant, ensureWants,
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
     addHeat, heatOf, heatLevel, HEAT_MAX, HEAT_MED, HEAT_HIGH, HR_HEAT_WARN,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
