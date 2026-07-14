@@ -1248,6 +1248,258 @@ ok('day-1 plan + arcs + dennisBlocker byte-identical to pre-feature build', (() 
   });
 })());
 
+// ---- 17d. NPC wants: the DISCOVERY mechanic (revealed) ----------------------------
+// helpers
+function trapFinder(){
+  // first game+id with a false-tell trap, and one with a plain (no-false) trap
+  let ft = null, plain = null;
+  for(let sd = 1; sd < 3000 && (!ft || !plain); sd++){
+    const g = G.newGame(sd);
+    G.NPC_IDS.forEach(id => {
+      const w = g.npcState[id].wants;
+      if(w.role !== 'hidden-debt-trap') return;
+      if(w.falseTell && !ft) ft = { g, id };
+      if(!w.falseTell && G.FALSE_TELL_IDS.indexOf(id) >= 0 && !plain) plain = { g, id };
+    });
+  }
+  return { ft, plain };
+}
+const TF = trapFinder();
+
+// (1) band mapping + helper purity
+ok('revealBand maps the three bands at the exact boundaries',
+  G.revealBand(0)==='none' && G.revealBand(0.29)==='none' && G.revealBand(0.3)==='faint'
+  && G.revealBand(0.69)==='faint' && G.revealBand(0.7)==='sharp' && G.revealBand(1)==='sharp');
+ok('revealWant clamps to [0,1]', (() => {
+  const g = G.newGame(5);
+  G.revealWant(g, 'brad', 5);   if(g.npcState.brad.wants.revealed !== 1) return false;
+  G.revealWant(g, 'brad', -9);  if(g.npcState.brad.wants.revealed !== 0) return false;
+  return true;
+})());
+ok('revealWant reports the band newly crossed (faint / sharp / null / leap)', (() => {
+  const g = G.newGame(5);
+  const a = G.revealWant(g, 'priya', 0.3);   // none -> faint
+  const b = G.revealWant(g, 'priya', 0.2);   // faint -> faint (no cross)
+  const c = G.revealWant(g, 'priya', 0.25);  // faint -> sharp
+  const g2 = G.newGame(6);
+  const d = G.revealWant(g2, 'priya', 1);    // none -> sharp (leap)
+  return a.crossed==='faint' && b.crossed===null && c.crossed==='sharp' && d.crossed==='sharp';
+})());
+ok('revealWant is a safe no-op on an unknown id', (() => {
+  const g = G.newGame(5);
+  const r = G.revealWant(g, 'nobody', 0.5);
+  return r && r.crossed === null;
+})());
+ok('motiveTell is pure + returns null in the none band', (() => {
+  const g = G.newGame(5);
+  const id = 'marcus';
+  g.npcState[id].wants.revealed = 0;
+  if(G.motiveTell(g, id) !== null) return false;
+  g.npcState[id].wants.revealed = 0.5;
+  return G.motiveTell(g, id) === G.motiveTell(g, id) && typeof G.motiveTell(g, id) === 'string';
+})());
+
+// (6-8) false-tell roll: trap-only, correctly-rated, cluster-gated
+ok('mentors + patrons NEVER carry a false tell (structural invariant)', (() => {
+  for(let sd = 1; sd <= 500; sd++){
+    const g = G.newGame(sd);
+    for(const id of G.NPC_IDS){
+      const w = g.npcState[id].wants;
+      if((w.role === 'true-mentor' || w.role === 'fealty-patron') && w.falseTell) return false;
+    }
+  }
+  return true;
+})());
+ok('only cluster traps can carry a false tell (off-cluster traps never do)', (() => {
+  for(let sd = 1; sd <= 500; sd++){
+    const g = G.newGame(sd);
+    for(const id of G.NPC_IDS){
+      const w = g.npcState[id].wants;
+      if(w.falseTell && (w.role !== 'hidden-debt-trap' || G.FALSE_TELL_IDS.indexOf(id) < 0)) return false;
+    }
+  }
+  return true;
+})());
+ok('false-tell rate among eligible traps sits near 0.4', (() => {
+  let n = 0, ft = 0;
+  for(let sd = 1; sd <= 800; sd++){
+    const g = G.newGame(sd);
+    G.NPC_IDS.forEach(id => {
+      const w = g.npcState[id].wants;
+      if(w.role === 'hidden-debt-trap' && G.FALSE_TELL_IDS.indexOf(id) >= 0){ n++; if(w.falseTell) ft++; }
+    });
+  }
+  const rate = ft / n;
+  return n > 300 && rate >= 0.30 && rate <= 0.50;
+})(), 'rate over eligible trap-rolls');
+
+// (9-10) determinism + backfill fidelity (role AND falseTell)
+ok('same seed => identical falseTell for every NPC; ensureWants never re-rolls', (() => {
+  const a = G.newGame(123), b = G.newGame(123);
+  if(!G.NPC_IDS.every(id => !!a.npcState[id].wants.falseTell === !!b.npcState[id].wants.falseTell)) return false;
+  const snap = G.NPC_IDS.map(id => a.npcState[id].wants.falseTell);
+  G.ensureWants(a); G.ensureWants(a);
+  return G.NPC_IDS.every((id, i) => a.npcState[id].wants.falseTell === snap[i]);
+})());
+ok('rollFalseTell is pure (same runSeed,id repeats)',
+  G.NPC_IDS.every(id => G.rollFalseTell(456, id) === G.rollFalseTell(456, id)));
+ok('ensureWants backfills role AND falseTell to the identical fresh roll', (() => {
+  const fresh = G.newGame(2024);
+  const stripped = JSON.parse(JSON.stringify(fresh));
+  G.NPC_IDS.forEach(id => { delete stripped.npcState[id].wants; });
+  G.ensureWants(stripped);
+  return G.NPC_IDS.every(id =>
+    stripped.npcState[id].wants.role === fresh.npcState[id].wants.role
+    && !!stripped.npcState[id].wants.falseTell === !!fresh.npcState[id].wants.falseTell
+    && stripped.npcState[id].wants.revealed === 0
+    && stripped.npcState[id].wants.tellShown === 'none');
+})());
+
+// (11-13) the correction-line contract
+ok('FALSE_TELL_IDS is kept in sync with the authored callback tables', (() => {
+  const t = G.MOTIVE_TELLS['hidden-debt-trap'];
+  const a = G.FALSE_TELL_IDS.slice().sort().join(',');
+  return a === Object.keys(t.faintFalse).sort().join(',')
+    && a === Object.keys(t.sharpCorrected).sort().join(',');
+})());
+ok('every cluster trap has 4 distinct authored variants (faint/faintFalse/sharp/sharpCorrected)', (() => {
+  const t = G.MOTIVE_TELLS['hidden-debt-trap'];
+  return G.FALSE_TELL_IDS.every(id => {
+    const four = [t.faint, t.faintFalse[id], t.sharp, t.sharpCorrected[id]];
+    if(four.some(s => typeof s !== 'string' || !s)) return false;
+    return new Set(four).size === 4;   // pairwise distinct
+  });
+})());
+ok('sharpCorrected quotes the misread back and is never the generic sharp', (() => {
+  const t = G.MOTIVE_TELLS['hidden-debt-trap'];
+  return G.FALSE_TELL_IDS.every(id => t.sharpCorrected[id] !== t.sharp);
+})());
+ok('motiveTell picks the false-tell path only for a false-tell trap', (() => {
+  if(!TF.ft || !TF.plain) return false;
+  const t = G.MOTIVE_TELLS['hidden-debt-trap'];
+  // false-tell trap: faint => mentor head-fake, sharp => cold callback
+  TF.ft.g.npcState[TF.ft.id].wants.revealed = 0.4;
+  const ff = G.motiveTell(TF.ft.g, TF.ft.id);
+  TF.ft.g.npcState[TF.ft.id].wants.revealed = 0.8;
+  const fc = G.motiveTell(TF.ft.g, TF.ft.id);
+  // plain trap: neutral faint + generic sharp
+  TF.plain.g.npcState[TF.plain.id].wants.revealed = 0.4;
+  const pf = G.motiveTell(TF.plain.g, TF.plain.id);
+  TF.plain.g.npcState[TF.plain.id].wants.revealed = 0.8;
+  const ps = G.motiveTell(TF.plain.g, TF.plain.id);
+  return ff === t.faintFalse[TF.ft.id] && fc === t.sharpCorrected[TF.ft.id]
+    && pf === t.faint && ps === t.sharp;
+})());
+
+// (14) threshold-crossing feed fires once per band
+ok('motiveMorningFeed announces a newly-crossed band exactly once', (() => {
+  const g = G.newGame(5);
+  const id = 'priya';
+  G.revealWant(g, id, 0.35);          // none -> faint
+  g.feed = [];
+  G.motiveMorningFeed(g);
+  const after1 = g.feed.length;
+  G.motiveMorningFeed(g);             // nothing new
+  const after2 = g.feed.length;
+  G.revealWant(g, id, 0.5);           // faint -> sharp
+  G.motiveMorningFeed(g);
+  const after3 = g.feed.length;
+  return after1 === 1 && after2 === 1 && after3 === 2
+    && g.npcState[id].wants.tellShown === 'sharp';
+})());
+
+// (15-16) Tier-A peak sharpens the toast; chats never do; no double-announce
+ok('a Tier-A incident that crosses sharp sharpens its toast in place', (() => {
+  const g = G.newGame(5);
+  g.npcState.meredith.wants.revealed = 0.45;      // one Tier-A push (+0.30) crosses 0.7
+  const res = G.applyIncidentChoice(g, 'hr_survey', 3, 700);   // choice: bland (no side effects needed)
+  const tell = G.motiveTell(g, 'meredith');
+  return typeof tell === 'string' && res.outcome.indexOf(tell) >= 0
+    && g.npcState.meredith.wants.tellShown === 'sharp';
+})());
+ok('the sharpened Tier-A peak is not re-announced by the morning drip', (() => {
+  const g = G.newGame(5);
+  g.npcState.meredith.wants.revealed = 0.45;
+  G.applyIncidentChoice(g, 'hr_survey', 3, 700);
+  const tell = G.motiveTell(g, 'meredith');
+  g.feed = [];
+  G.motiveMorningFeed(g);
+  return !g.feed.some(l => l.text === tell);       // already voiced at the peak
+})());
+ok('a below-sharp Tier-A does NOT sharpen (stays feed-drip territory)', (() => {
+  const g = G.newGame(5);
+  g.npcState.meredith.wants.revealed = 0;          // +0.30 => 0.30 faint, not sharp
+  const res = G.applyIncidentChoice(g, 'hr_survey', 3, 700);
+  const sharpLine = G.MOTIVE_TELLS['hidden-debt-trap'].sharp;
+  return res.outcome.indexOf(sharpLine) < 0;       // no sharp tell appended
+})());
+ok('chats deliver reveal but never sharpen their return text', (() => {
+  const g = G.newGame(5);
+  g.npcState.marcus.wants.revealed = 0.9;          // already sharp
+  g.arcs = { marcus_survivor: { stage: 1 } };
+  g.npcState.marcus.arcStage = 1;
+  const tip = G.marcusTip(g, 600);
+  // the returned tip text is one of the authored MARCUS tips, unmodified
+  return tip && [
+    'Marcus, without looking up: “He does his second lap after lunch. Be a chair.”',
+    '“That one in your stack? Nobody reads it before Thursday. Let it breathe.” One missed task forgiven at 5 PM.',
+    '“When he asks where you were, say ‘load-bearing deliverable.’ Works exactly once.” Next catch softened.',
+    '“The 2:30 is skippable. Trust me.” It was not skippable. Standing −2.'
+  ].indexOf(tip.text) >= 0;
+})());
+
+// (17-18) the load-bearing cosmetic guarantee: revealed never moves a meter/flag
+ok('discovery is strictly cosmetic: meters + worldFlagsFor identical with reveals maxed', (() => {
+  const A = G.newGame(2024), B = G.newGame(2024);
+  for(let d = 0; d < 12; d++){
+    G.NPC_IDS.forEach(id => G.revealWant(B, id, 1));           // B: everyone fully discovered
+    if(JSON.stringify(G.worldFlagsFor(A)) !== JSON.stringify(G.worldFlagsFor(B))) return false;
+    G.closeDay(A, { tasksDone: 7, tasksTotal: 8 });
+    G.closeDay(B, { tasksDone: 7, tasksTotal: 8 });
+    if(A.standing !== B.standing || A.soul !== B.soul || A.money !== B.money
+       || A.failed !== B.failed || A.escaped !== B.escaped || A.day !== B.day) return false;
+    if(A.over || B.over) break;
+    [A, B].forEach(x => { x.standing = 60; x.soul = 70; x.failed = null; x.over = false; });
+    G.nextDay(A); G.nextDay(B);
+    if(A.rngState !== B.rngState) return false;                // day-plan stream untouched by discovery
+  }
+  return true;
+})());
+
+// (19-20) two-stream byte-identical regression (npc_wants AND false_tell isolated)
+ok('rngState-after-newGame + 10-day tour byte-identical to pre-feature build', (() => {
+  const expect = {
+    1:   { rng: 440012080, tour: '3,6,14,16,7,9,1,2,4,5,12,17,11,13,8,18,10,15,0,19' },
+    31:  { rng: 440012110, tour: '14,17,3,9,1,6,0,19,13,15,11,18,8,10,2,12,7,16,4,5' },
+    42:  { rng: 440012121, tour: '0,13,7,18,10,12,3,9,8,15,6,17,1,2,16,19,4,5,11,14' },
+    7:   { rng: 440012086, tour: '9,19,8,13,1,11,7,10,0,16,17,18,2,15,6,14,4,12,3,5' },
+    100: { rng: 440012179, tour: '3,14,11,12,5,13,4,10,2,18,7,16,8,9,1,15,17,19,0,6' }
+  };
+  return Object.keys(expect).every(sd => {
+    if(G.newGame(+sd).rngState !== expect[sd].rng) return false;
+    const g = G.newGame(+sd);
+    let tour = g.plan.slice();
+    for(let d = 0; d < 9; d++){
+      g.standing = 60; g.soul = 70; g.failed = null; g.over = false;
+      G.closeDay(g, { tasksDone: 8, tasksTotal: 8 });
+      g.standing = 60; g.soul = 70; g.failed = null; g.over = false;
+      G.nextDay(g); tour = tour.concat(g.plan);
+    }
+    return tour.join(',') === expect[sd].tour;
+  });
+})());
+
+// (21) the whole wants object (incl. falseTell/revealed/tellShown) rides the save
+ok('wants serializes with the save (all four fields)', (() => {
+  const g = G.newGame(314);
+  g.npcState.marcus.wants.revealed = 0.5;   // simulate progressed discovery
+  const back = JSON.parse(JSON.stringify(g));
+  return G.NPC_IDS.every(id =>
+    JSON.stringify(back.npcState[id].wants) === JSON.stringify(g.npcState[id].wants)
+    && 'role' in back.npcState[id].wants && 'revealed' in back.npcState[id].wants
+    && 'falseTell' in back.npcState[id].wants && 'tellShown' in back.npcState[id].wants);
+})());
+
 // ---- 18. the competent policy (pure functions; consumed by movie + soak) ---------
 function fakeWorld(over){
   return Object.assign({

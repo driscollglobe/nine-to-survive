@@ -420,7 +420,21 @@ const NineToSurvive = (() => {
     }
     return WANT_TYPES[WANT_TYPES.length - 1];
   }
-  // Idempotent: fill any npc whose want-role isn't set yet. Deterministic from
+  // A hidden-debt-trap sometimes wears a mentor's face at first — a FALSE early
+  // tell that the truth overturns at sharp. Trap-only by construction (this is
+  // never called for mentor/patron roles), rolled on its OWN per-NPC side stream
+  // — independent of the npc_wants stream and of g.rngState — so it shifts no
+  // day-plan or arc. Set once, rides the save.
+  const FALSE_TELL_P = 0.4;
+  // Only these four traps have authored head-fake + cold-callback lines (see
+  // MOTIVE_TELLS below). A trap outside this set (a boss/kayla/priya who happened
+  // to roll trap) never false-tells — it would have no correction line to land.
+  // Kept in sync with MOTIVE_TELLS['hidden-debt-trap'].faintFalse by a test.
+  const FALSE_TELL_IDS = ['dennis', 'meredith', 'adam', 'brad'];
+  function rollFalseTell(runSeed, id){
+    return localRand((runSeed ^ hashStr('false_tell') ^ hashStr(id)) | 0)() < FALSE_TELL_P;
+  }
+  // Idempotent: fill any npc whose want-fields aren't set yet. Deterministic from
   // runSeed, so a fresh run, a resume, or a double call all yield the same roles
   // — which is exactly what makes it a safe backfill for pre-feature saves.
   function ensureWants(g){
@@ -429,7 +443,16 @@ const NineToSurvive = (() => {
       const npc = g.npcState[id];
       if(!npc) return;
       if(!npc.wants) npc.wants = { role: null, revealed: 0 };
-      if(npc.wants.role == null) npc.wants.role = rollWant(g.runSeed, id);
+      const w = npc.wants;
+      if(w.role == null) w.role = rollWant(g.runSeed, id);
+      // trap-only, and only where a callback line exists: mentors/patrons (and
+      // off-cluster traps) can NEVER carry a false tell (short-circuit means their
+      // false_tell stream is never even drawn — still deterministic)
+      if(w.falseTell == null)
+        w.falseTell = (w.role === 'hidden-debt-trap') && FALSE_TELL_IDS.indexOf(id) >= 0
+                      && rollFalseTell(g.runSeed, id);
+      if(w.revealed == null) w.revealed = 0;
+      if(w.tellShown == null) w.tellShown = 'none';   // highest band already voiced
     });
   }
 
@@ -687,6 +710,116 @@ const NineToSurvive = (() => {
       g.legalFeedDay = g.day;
       pushFeed(g, 553, 'Legal asked everyone to “preserve relevant documents.” Everyone suddenly has documents.');
     }
+  }
+
+  // ---- The motive layer's VOICE: what you've figured out someone wants ----------
+  // wants.revealed (0..1) is strictly COSMETIC — it drives text only, never a
+  // meter, plan, flag, or anything the world reads. Three bands escalate the
+  // tell: none (say nothing), faint (a hedged noticing), sharp (name it). A
+  // hidden-debt-trap with falseTell shows a MENTOR-flavored faint (the head-fake),
+  // then a sharpCorrected line that quotes the misread back and overturns it.
+  const REVEAL_FAINT = 0.3, REVEAL_SHARP = 0.7;
+  function revealBand(v){ return v >= REVEAL_SHARP ? 'sharp' : v >= REVEAL_FAINT ? 'faint' : 'none'; }
+  const BAND_RANK = { none: 0, faint: 1, sharp: 2 };
+  // Per role × band. Traps carry two extra variants for the false-tell path.
+  const MOTIVE_TELLS = {
+    'true-mentor': {
+      faint: 'They keep steering you right. Odd, for this place.',
+      sharp: 'They want you to make it out. That is the whole tell — no ledger, no angle.'
+    },
+    'fealty-patron': {
+      faint: 'They warm up when you defer. There is a price on that warmth somewhere.',
+      sharp: 'They do not want your work. They want your loyalty, renewed daily, out loud.'
+    },
+    'hidden-debt-trap': {
+      faint: 'Every favor from them has a faint second edge you can not quite name.',
+      sharp: 'The help was never help. They are keeping a ledger, and your name has a column now.',
+      // the head-fake (mentor-flavored) and its cold callback correction
+      faintFalse: {
+        dennis:   'Dennis walked your file through himself today. Maybe he is in your corner after all.',
+        meredith: 'Meredith checked in, unprompted. Reads almost like she is looking out for you.',
+        adam:     'Adam keeps offering to help. Annoying, but maybe well-meant.',
+        brad:     'Brad has been oddly generous with credit this week. Maybe you misjudged him.'
+      },
+      sharpCorrected: {
+        dennis:   '“In your corner.” You actually wrote that down. Dennis keeps a ledger, and every favor you mistook for kindness has a line in it with your name and a number owed.',
+        meredith: 'Looking out for you. Right. She was looking, and she was writing it down. The check-in was intake. You are, and were always, a file.',
+        adam:     'Well-meant. That was the trap wearing a cardigan. Every “help” was a debt, and Adam has come to collect, with an appendix.',
+        brad:     'Misjudged him. You almost trusted Brad. The generosity was a down payment on your silence, and the bill just arrived.'
+      }
+    }
+  };
+  // The current tell for an NPC, or null in the 'none' band. Pure read — no rng,
+  // no mutation — so any voice generator can call it freely.
+  function motiveTell(g, id){
+    const npc = g.npcState && g.npcState[id];
+    if(!npc || !npc.wants || npc.wants.role == null) return null;
+    const w = npc.wants;
+    const band = revealBand(w.revealed);
+    if(band === 'none') return null;
+    const tbl = MOTIVE_TELLS[w.role];
+    if(!tbl) return null;
+    if(w.role === 'hidden-debt-trap' && w.falseTell){
+      if(band === 'faint') return tbl.faintFalse[id] || tbl.faint;
+      return tbl.sharpCorrected[id] || tbl.sharp;   // sharp: the cold callback
+    }
+    return tbl[band] || null;
+  }
+  // Move a discovery value and report which band (if any) was newly entered this
+  // call — callers use crossed==='sharp' to sharpen a Tier-A/peak toast in place.
+  // Strictly cosmetic: mutates only wants.revealed.
+  function revealWant(g, id, amt){
+    const npc = g.npcState && g.npcState[id];
+    if(!npc || !npc.wants) return { revealed: 0, crossed: null };
+    const w = npc.wants;
+    const from = revealBand(w.revealed);
+    w.revealed = Math.min(1, Math.max(0, w.revealed + (amt || 0)));
+    const to = revealBand(w.revealed);
+    return { revealed: w.revealed, crossed: (BAND_RANK[to] > BAND_RANK[from]) ? to : null };
+  }
+  // A peak moment (Tier-A incident, flash/poison) speaks the sharp tell directly
+  // the first time we're at 'sharp' and it hasn't been voiced — and marks
+  // tellShown so the morning drip won't echo it. Returns the (maybe) appended text.
+  function sharpenPeak(g, id, text){
+    const npc = g.npcState && g.npcState[id];
+    if(!npc || !npc.wants) return text;
+    if(revealBand(npc.wants.revealed) !== 'sharp' || npc.wants.tellShown === 'sharp') return text;
+    const line = motiveTell(g, id);
+    npc.wants.tellShown = 'sharp';
+    return line ? text + ' ' + line : text;
+  }
+  // Morning ambient drip: announce any NPC whose band has advanced past what was
+  // last voiced (tellShown). Capped + deterministically ordered like moodFeed, so
+  // a busy morning stays readable. Dennis is chat-only and rarely reaches even
+  // faint — that fog is intentional.
+  function motiveMorningFeed(g){
+    if(!g.npcState) return;
+    const cands = [];
+    NPC_IDS.forEach(id => {
+      const w = g.npcState[id] && g.npcState[id].wants;
+      if(!w || w.role == null) return;
+      const band = revealBand(w.revealed);
+      if(BAND_RANK[band] > BAND_RANK[w.tellShown || 'none']){
+        const line = motiveTell(g, id);
+        if(line) cands.push({ id, band, line });
+      }
+    });
+    if(!cands.length) return;
+    // sharp reveals lead; then a deterministic shuffle among equals, at most two
+    const r = arcRand(g, 'motive', 'morning');
+    cands.sort((a, b) => BAND_RANK[b.band] - BAND_RANK[a.band]);
+    const picks = [];
+    while(cands.length && picks.length < 2){
+      const topRank = BAND_RANK[cands[0].band];
+      const tier = cands.filter(c => BAND_RANK[c.band] === topRank);
+      const chosen = tier.splice(Math.floor(r() * tier.length), 1)[0];
+      cands.splice(cands.indexOf(chosen), 1);
+      picks.push(chosen);
+    }
+    picks.forEach((p, i) => {
+      g.npcState[p.id].wants.tellShown = p.band;   // don't re-announce this band
+      pushFeed(g, 545 + i * 2, p.line);
+    });
   }
 
   // ---- The arc engine: serialized office lore -----------------------------------
@@ -1024,6 +1157,19 @@ const NineToSurvive = (() => {
     const c = def.choices[choiceIndex];
     const d = applyStoryDelta(g, c.s, c.so);
     const brad = g.npcState.brad;
+    // Tier-A reveal: these incidents put a character's true motive on display.
+    // Fire the discovery once per resolution (through every return path) and, at
+    // the instant it crosses into 'sharp', sharpen the toast in place so the peak
+    // doesn't whisper. Strictly cosmetic — revealWant only moves wants.revealed.
+    const TIER_A_TGT = { brad_discovery: 'brad', priya_demo: 'priya', hr_survey: 'meredith', boss_quick_call: 'boss' };
+    const TIER_A_AMT = { brad_discovery: 0.30, priya_demo: 0.25, hr_survey: 0.30, boss_quick_call: 0.30 };
+    const sealTier = (outcome) => {
+      const tid = TIER_A_TGT[id];
+      if(!tid) return outcome;
+      revealWant(g, tid, TIER_A_AMT[id] || 0);
+      if(id === 'priya_demo') revealWant(g, 'brad', 0.10);   // secondary: the thief, on display
+      return sharpenPeak(g, tid, outcome);                    // the peak spoke; morning won't echo it
+    };
     if(id === 'brad_discovery'){
       const a = g.arcs.brad_second_job;
       brad.counters.discoveries = (brad.counters.discoveries || 0) + 1;
@@ -1067,14 +1213,14 @@ const NineToSurvive = (() => {
           priya.trust += 2; g.npcState.brad.stress = 3;
           const d2 = applyStoryDelta(g, +8, 0);
           g.lastChoice = { choiceIndex, ds: d.ds + d2.ds, dso: d.dso + d2.dso,
-            outcome: 'Slide four divides by zero, live, on the projector. The presenter, who “built this,” cannot say why. Priya, asked to help, fixes it in forty seconds with HER NAME in the file path on screen. You are a terrible person. The day is perfect.' };
+            outcome: sealTier('Slide four divides by zero, live, on the projector. The presenter, who “built this,” cannot say why. Priya, asked to help, fixes it in forty seconds with HER NAME in the file path on screen. You are a terrible person. The day is perfect.') };
           return g.lastChoice;
         }
         priya.flags.baitLost = true;
         const d3 = applyStoryDelta(g, -7, 0);
         pushFeed(g, min, 'IT traced a file swap “in about ten minutes, honestly.” HR was less impressed than IT.');
         g.lastChoice = { choiceIndex, ds: d.ds + d3.ds, dso: d.dso + d3.dso,
-          outcome: 'The swap traces to your login by end of day. IT is impressed. HR is not. The presenter delivers an apology deck — about you. It has your headshot in it.' };
+          outcome: sealTier('The swap traces to your login by end of day. IT is impressed. HR is not. The presenter delivers an apology deck — about you. It has your headshot in it.') };
         return g.lastChoice;
       }
     }
@@ -1113,7 +1259,7 @@ const NineToSurvive = (() => {
         pushFeed(g, min, 'The quick call was quick. The silence after it wasn’t.');
       }
     }
-    g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: c.o };
+    g.lastChoice = { choiceIndex, ds: d.ds, dso: d.dso, outcome: sealTier(c.o) };
     return g.lastChoice;
   }
 
@@ -1142,6 +1288,7 @@ const NineToSurvive = (() => {
     if(tip.kind === 'delay') g.taskForgivenessToday = true;
     else if(tip.kind === 'shield') m.flags.shield = true;
     else if(tip.kind === 'miscal'){ applyStoryDelta(g, -2, 0); m.counters.miscals = (m.counters.miscals || 0) + 1; }
+    revealWant(g, 'marcus', 0.12);   // his tips ARE the mentor, in action (drip)
     pushFeed(g, min, tip.feed);
     return { kind: tip.kind, text: tip.text };
   }
@@ -1160,6 +1307,7 @@ const NineToSurvive = (() => {
     if(k.flags.satWith) return null;
     k.flags.satWith = true; k.flags.bonded = true; k.trust += 2;
     const d = applyStoryDelta(g, 0, +4);
+    revealWant(g, 'kayla', 0.15);   // real company, no agenda — you see her (drip)
     pushFeed(g, min, 'Two chairs in the kitchen. No agenda. It helped more than the deck did.');
     return { dso: d.dso, text: 'You sit with her. No advice, no pep talk, just company and a shared opinion about slide 14. The clock keeps billing you. Worth it.' };
   }
@@ -1211,6 +1359,7 @@ const NineToSurvive = (() => {
   }
   // Sitting with her that day permanently improves what her chats give back.
   function chatBonus(g, who){
+    revealWant(g, who, 0.10);   // every peer chat reads them a little (drip → morning feed)
     if(who === 'kayla' && g.npcState.kayla.flags.bonded){
       const d = applyStoryDelta(g, 0, +2);
       return d.dso;
@@ -1282,6 +1431,7 @@ const NineToSurvive = (() => {
     brad.counters.confronts = (brad.counters.confronts || 0) + 1;
     brad.counters.confrontDay = g.day;
     addHeat(g, 'brad', 1);   // CHAIN: being seen seeing him — paranoia climbs
+    revealWant(g, 'brad', 0.12);   // reading him a little better (drip → morning feed)
     pushFeed(g, min, 'Brad suddenly remembered a call. The water bottle stayed at the fountain, unfilled.');
     return '“Looking for something?” He was not. He remembered a call, urgently. The raid is off.';
   }
@@ -1293,8 +1443,9 @@ const NineToSurvive = (() => {
     brad.flags.cowed = true;
     schemeUsed(g, 'flash');
     addHeat(g, 'brad', 2);
+    revealWant(g, 'brad', 0.20);   // acting on him teaches you what he is (peak)
     pushFeed(g, min, 'Brad saw a phone wallpaper today that aged him. He has stopped visiting the bullpen.');
-    return 'You angle the phone, casually. He recognizes the deck. You put it away, still yours. He will not be visiting your inbox again.';
+    return sharpenPeak(g, 'brad', 'You angle the phone, casually. He recognizes the deck. You put it away, still yours. He will not be visiting your inbox again.');
   }
   // SCHEME: the flawed file, planted where he steals from. He presents poison.
   function baitPlanted(g, min){
@@ -1307,10 +1458,11 @@ const NineToSurvive = (() => {
     schemeUsed(g, 'poison');
     addHeat(g, 'brad', 2);   // CHAIN: he cannot prove it, which is worse
     const d = applyStoryDelta(g, +3, +2);
+    revealWant(g, 'brad', 0.20);   // watching the theft detonate is clarifying (peak)
     pushFeed(g, min, 'Brad presented “his” analysis. Cell C9 divides by a word. He said the word “directionally” four times.');
     pushFeed(g, (min || 0) + 6, 'Brad’s recap email walks back the analysis he “built.” Authorship is suddenly a team concept.');
     return { ds: d.ds, dso: d.dso,
-      text: 'Brad lifts the flawed file and presents it within the hour, confidently. It detonates on slide two. You watch from your desk, shipping actual work.' };
+      text: sharpenPeak(g, 'brad', 'Brad lifts the flawed file and presents it within the hour, confidently. It detonates on slide two. You watch from your desk, shipping actual work.') };
   }
   // INTERCEPTION: caught Dennis mid-carry — the questions get answered en route.
   function dennisWalked(g, min){
@@ -1331,6 +1483,7 @@ const NineToSurvive = (() => {
     const ad = g.npcState.adam;
     ad.counters.redirects = (ad.counters.redirects || 0) + 1;
     const d = applyStoryDelta(g, 0, -1);   // the anecdote has three parts. You hear all of them.
+    revealWant(g, 'adam', 0.15);   // twelve minutes with Adam is twelve minutes of Adam (drip)
     pushFeed(g, min, 'Adam was headed to HR but got a better offer: someone asked how things were done in 2009.');
     return { dso: d.dso, text: '“Funny you ask—” Twelve minutes on the old approval system. HR never learns of the concern. Your Soul learns about 2009.' };
   }
@@ -1341,6 +1494,7 @@ const NineToSurvive = (() => {
     ad.counters.grenades = (ad.counters.grenades || 0) + 1;
     ad.counters.grenadeDay = g.day;
     schemeUsed(g, 'grenade');
+    revealWant(g, 'adam', 0.15);   // deploying him means understanding him (drip)
     const bypass = arcRand(g, 'adam', 'grenade')() < 0.5;
     if(bypass){
       dennisApprovalCleared(g, min, 'adam');
@@ -1381,6 +1535,7 @@ const NineToSurvive = (() => {
     const mer = g.npcState.meredith;
     mer.counters.cooled = (mer.counters.cooled || 0) + 1;
     mer.counters.cooledDay = g.day;
+    revealWant(g, 'meredith', 0.20);   // turning the metadata on her is seeing her plainly (drip)
     pushFeed(g, min, 'Someone asked Meredith, hypothetically, how anonymous the survey backend is. The writing-style project ended today.');
     return 'You ask, hypothetically, about response IDs. Meredith’s highlighter caps itself. Your file gets thinner by the sound of it. The receipt is spent.';
   }
@@ -1700,6 +1855,7 @@ const NineToSurvive = (() => {
       pushFeed(g, 549, 'Dennis changed the approval workflow. The change requires approval. His.');
     advanceArcs(g);
     heatMorningFeed(g);   // heat tells + the Brad self-own + the legal morning
+    motiveMorningFeed(g); // ambient drip: newly-crossed motive bands, capped + ordered
     g.plan = planDay(g);
   }
 
@@ -2016,7 +2172,9 @@ const NineToSurvive = (() => {
     applyChoice, advance, closeDay, nextDay, canWalkOut, walkOut, verdict,
     applyCrunch, applyCoffee, applyWorldEffect,
     NPC_IDS, ARCS, advanceArcs, worldFlagsFor,
-    WANT_TYPES, NPC_WANTS, rollWant, ensureWants,
+    WANT_TYPES, NPC_WANTS, rollWant, ensureWants, rollFalseTell, FALSE_TELL_P, FALSE_TELL_IDS,
+    revealBand, revealWant, motiveTell, MOTIVE_TELLS, motiveMorningFeed,
+    REVEAL_FAINT, REVEAL_SHARP,
     pushFeed, moodFeed, feedWorldEvent, addReceipt, hasReceipt, burnReceipt,
     addHeat, heatOf, heatLevel, HEAT_MAX, HEAT_MED, HEAT_HIGH, HR_HEAT_WARN,
     ARC_INCIDENTS, applyIncidentChoice, extraChoicesFor, applyExtraChoice,
