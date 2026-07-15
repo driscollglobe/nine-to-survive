@@ -338,7 +338,8 @@ const NineToSurvive = (() => {
     // wants.role is filled by ensureWants(g) at run start (needs the seed);
     // wants.disposition is NOT stored — it's the fixed constant NPC_WANTS.
     NPC_IDS.forEach(id => { st[id] = { stress: 0, trust: 0, arcStage: 0, flags: {}, counters: {},
-                                       wants: { role: null, revealed: 0 } }; });
+                                       wants: { role: null, revealed: 0 },
+                                       convo: freshConvo() }; });
     return st;
   }
 
@@ -438,6 +439,32 @@ const NineToSurvive = (() => {
     });
   }
 
+  // Conversation memory (parallel to wants; rides the save). ledger.you = what you
+  // owe them, ledger.them = what they owe you, ledger.refusals = interest counter on
+  // the current owed balance. All plain data, no randomness — deterministic backfill.
+  function freshConvo(){
+    return { yes: 0, no: 0, tenor: 0, beatsSeen: {}, lastConvoDay: 0,
+             ledger: { you: 0, them: 0, refusals: 0 } };
+  }
+  function ensureConvo(g){
+    if(!g || !g.npcState) return;
+    NPC_IDS.forEach(id => {
+      const npc = g.npcState[id];
+      if(!npc) return;
+      if(!npc.convo) npc.convo = freshConvo();
+      const c = npc.convo;
+      if(c.ledger == null) c.ledger = { you: 0, them: 0, refusals: 0 };
+      if(c.ledger.refusals == null) c.ledger.refusals = 0;
+      if(c.ledger.you == null) c.ledger.you = 0;
+      if(c.ledger.them == null) c.ledger.them = 0;
+      if(c.beatsSeen == null) c.beatsSeen = {};
+      if(c.tenor == null) c.tenor = 0;
+      if(c.yes == null) c.yes = 0;
+      if(c.no == null) c.no = 0;
+      if(c.lastConvoDay == null) c.lastConvoDay = 0;
+    });
+  }
+
   // Fresh career. Day 1, Intern, seeded plan for the first day.
   function newGame(seed){
     const g = {
@@ -452,6 +479,7 @@ const NineToSurvive = (() => {
       arcs: {},              // per-arc runtime state, keyed by ARCS name — pure data
       activeArcs: pickArcs((seed == null ? 1 : seed) | 0),   // this run's storylines
       todayIncidents: [],    // [{id, owner, atMin}] the arcs staged for today
+      todayCollectors: [],   // trap ids coming to collect a debt today (capped <=2)
       receipts: { count: 0, flags: {} },
       heat: { hr: 0, boss: 0, brad: 0 },   // office heat: who's watching you now
       schemes: { used: 0, flags: {} },     // the plays you ran on this building
@@ -461,6 +489,7 @@ const NineToSurvive = (() => {
     };
     g.dennisBlockerToday = arcRand(g, 'dennis', 'blocker')() < 0.25;
     ensureWants(g);           // roll each character's motive (own side stream)
+    ensureConvo(g);           // conversation memory + ledgers (zeros, no randomness)
     g.plan = planDay(g);
     return g;
   }
@@ -1175,6 +1204,7 @@ const NineToSurvive = (() => {
       priya.counters.demoDay = g.day;
       if(c.key === 'back'){
         priya.trust += 3; priya.flags.backed = true;
+        priya.convo.ledger.them++;   // you backed her publicly — she owes you one (mentor credit)
         g.npcState.brad.stress = Math.min(3, g.npcState.brad.stress + 1);
         addHeat(g, 'brad', 1);   // CHAIN: backing Priya reads as choosing a side
         pushFeed(g, min, 'Someone said “this is Priya’s build” out loud, in the room, on the record.');
@@ -1217,6 +1247,7 @@ const NineToSurvive = (() => {
         const peers = ['kayla', 'priya', 'marcus'];
         const who = peers[Math.floor(arcRand(g, 'hr', 'peer')() * peers.length)];
         g.npcState[who].trust += 2;
+        g.npcState[who].convo.ledger.them++;   // you helped them phrase it safely — a quiet favor owed
         mer.counters.helped = who;
         pushFeed(g, min, who.charAt(0).toUpperCase() + who.slice(1) + '’s survey response is a masterpiece of deniability. You are thanked in the metadata.');
       } else if(c.key === 'metadata'){
@@ -1288,6 +1319,7 @@ const NineToSurvive = (() => {
     const k = g.npcState.kayla;
     if(k.flags.satWith) return null;
     k.flags.satWith = true; k.flags.bonded = true; k.trust += 2;
+    k.convo.ledger.them++;   // you showed up for her — a favor owed (mentor credit)
     const d = applyStoryDelta(g, 0, +4);
     revealWant(g, 'kayla', 0.15);   // real company, no agenda — you see her (drip)
     pushFeed(g, min, 'Two chairs in the kitchen. No agenda. It helped more than the deck did.');
@@ -1297,6 +1329,7 @@ const NineToSurvive = (() => {
     const k = g.npcState.kayla;
     if(k.flags.tookTask) return null;
     k.flags.tookTask = true; k.trust += 1;
+    k.convo.ledger.them++;   // you took work off her plate — a favor owed
     const d = applyStoryDelta(g, 0, +1);
     pushFeed(g, min, 'A deliverable quietly changed owners. No email announced it. That is how you know it was kind.');
     return { dso: d.dso, text: 'You take the competitor summary off her stack and onto yours. Her deck loses a subplot; your inbox gains one.' };
@@ -1353,6 +1386,367 @@ const NineToSurvive = (() => {
       return d.dso;
     }
     return 0;
+  }
+
+  // ═══ CONVERSATIONS — a chat is a scene shaped by wants.role ════════════════════
+  // Role templates own the MECHANICS (numbers, debt semantics, reveal); per-character
+  // skins own the FLAVOR. wants.role picks the scene; wants.revealed never enters it
+  // (role = mechanical, revealed = cosmetic). Debts (ledger) make a trap's "help" a
+  // bill; the collect beat is the game's biggest reveal — the marker being called IS
+  // the truth, so it pushes revealed to sharp and speaks the cold callback in place.
+  const CONVO_SOUL_FLOOR = { good: 3, meh: 2, bad: 2 };   // == legacy chatGood/Meh/Bad
+  const COLLECT_BASE = 5, COLLECT_STEP = 2, COLLECT_MAX = 11;   // -5, -7, -9, cap -11 (interest)
+  const COLLECT_SHARP = 0.7;   // a called debt lands revealed at sharp, minimum
+  const CONVO_TENOR_MIN = -4, CONVO_TENOR_MAX = 4;
+  const COLLECT_CAP = 2;       // at most this many collectors cross the floor per morning
+  const NPC_NAME = { brad:'Brad', boss:'The Boss', meredith:'Meredith', dennis:'Dennis',
+                     kayla:'Kayla', marcus:'Marcus', priya:'Priya', adam:'Adam' };
+
+  // Mechanics only. Skins supply t/o. reveal is on EVERY choice (the universal drip
+  // lives on `just`); the collect beat's reveal is handled specially (→ sharp).
+  const CONVO_TEMPLATES = {
+    'fealty-patron': {
+      offer: [ {key:'defer', s:+5, so:-4, ask:'loyalty', mem:'yes', tenor:+1, reveal:0.12},
+               {key:'hedge', s:+1, so: 0,               mem:'neutral', tenor:0, reveal:0.12},
+               {key:'just',  s: 0, so:'floor',          mem:'neutral',          reveal:0.10} ],
+      cold:  [ {key:'capitulate', s:+3, so:-6, ask:'loyalty', mem:'yes', tenor:+1, reveal:0.25},
+               {key:'hold',       s:-3, so:+3,           mem:'no',  tenor:-1, reveal:0.25} ]
+    },
+    'true-mentor': {
+      gift: [ {key:'accept', s:0, so:+4, mem:'yes', tenor:+1, reveal:0.12},
+              {key:'probe',  s:0, so:+2, mem:'neutral',       reveal:0.20},
+              {key:'just',   s:0, so:'floor', mem:'neutral',  reveal:0.10} ],
+      // grafted onto `gift` when ledger.them>0 (extraChoicesFor-style) — NOT a beat
+      spend: {key:'spend', boon:true, settleThem:1, mem:'yes', reveal:0.10}
+    },
+    'hidden-debt-trap': {
+      bait:    [ {key:'accept',  s:0, so:+3, ask:'help', debt:+1, mem:'yes', tenor:+1, reveal:0.20},
+                 {key:'decline', s:0, so: 0,             mem:'no',  tenor:-1,          reveal:0.10},
+                 {key:'just',    s:0, so:'floor',        mem:'neutral',                reveal:0.10} ],
+      collect: [ {key:'pay',    collect:true, mem:'yes'},          // meter+interest from skin
+                 {key:'refuse', refuse:true,  mem:'no', tenor:-2}, // interest++ ; heat from skin
+                 {key:'settle', settle:true,  gate:'canSettle'} ]  // receipt or a favor owed
+    }
+  };
+
+  // Fallbacks so no role/choice is ever text-less (rare off-top-2 rolls).
+  const GENERIC_OPEN = {
+    'fealty-patron': 'They want to know you’re on-side. That’s the whole meeting.',
+    'true-mentor':   'They’ve got a minute and they’re giving it to you. No angle.',
+    'hidden-debt-trap': 'They lead with a favor. There is always a second half to a favor.'
+  };
+  const GENERIC_CHOICE = { defer:'Defer to them.', hedge:'Stay noncommittal.', just:'Just talk.',
+    accept:'Accept.', decline:'Decline.', capitulate:'Give in.', hold:'Hold your line.',
+    probe:'Ask them something real.', spend:'Call in the favor they owe you.',
+    pay:'Pay what you owe.', refuse:'Refuse — for now.', settle:'Settle the debt clean.' };
+
+  // Flavor. Mentor skins: {open, gift:{accept,probe,just}, spend:{t,o}}. Trap skins:
+  // {collectMeter, refuseHeat, open, bait:{...}, collect:{...}, falseOpen?}. Patron:
+  // {open, offer:{...}, cold:{...}}. Missing skin/choice → generic text above.
+  const CONVO_SKINS = {
+    marcus: {
+      'true-mentor': {
+        open:'Marcus doesn’t look up from his crossword. “Pull up a chair. You’ve got the face.”',
+        gift:{ accept:{t:'“What would you do?” Let him tell you.',
+                       o:'Four sentences, exact, and they work. He wanted nothing for them. He never does.'},
+               probe:{t:'Ask how he’s lasted nineteen years without going gray inside.',
+                       o:'“I stopped auditioning for a job I already have.” You write it on nothing and keep it anyway.'},
+               just:{t:'Just shoot the breeze for five.',
+                       o:'Five minutes about his kid’s soccer. The building recedes. You come back a person.'} },
+        spend:{t:'“Actually — I could use that favor now.”',
+               o:'He makes one call. The stuck thing unsticks. “We’re square,” he says, and means it.'} },
+      'hidden-debt-trap': { collectMeter:'standing', refuseHeat:null,
+        open:'Marcus leans in, uncharacteristic. “I can square that approval with Dennis. We go back.”',
+        bait:{ accept:{t:'“That’d save me a day. Please.”',
+                       o:'Dennis folds by noon. Marcus winks. A tally mark appears somewhere with your name on it.'},
+               decline:{t:'“I’ll handle Dennis myself.”',
+                       o:'“Suit yourself.” He leans back out. The offer doesn’t come twice.'},
+               just:{t:'Change the subject.', o:'You talk about nothing. He lets you. For now.'} },
+        collect:{ pay:{t:'“Right — I owe you. I’ll back your version in the room.”',
+                       o:'You vouch for Marcus’s take to leadership. It wasn’t your take. Your standing paid the tab.'},
+                  refuse:{t:'“Can it wait? Bad week.”',
+                       o:'“It can wait.” The tally does not wait. It accrues.'},
+                  settle:{t:'Call it even — spend what he owes you, or a receipt.',
+                       o:'You settle the ledger cold. He shrugs. Paper beats loyalty.'} } }
+    },
+    priya: {
+      'true-mentor': {
+        open:'Priya slides her laptop an inch toward you. “I already fixed the thing that was going to page you at 2. It’s fine.”',
+        gift:{ accept:{t:'“You’re a lifesaver — walk me through it?”',
+                       o:'She does, fast, generous, no scoreboard. You leave better at your own job.'},
+               probe:{t:'“How are you still standing?”',
+                       o:'“I ship, then I forget who took credit. The forgetting is the skill.”'},
+               just:{t:'Just vent to each other for five.',
+                       o:'Two people agreeing the dashboard is fine and the process is not. Restorative.'} },
+        spend:{t:'“I need that thing unblocked — can you?”',
+               o:'She reroutes it in three minutes with a commit you’ll never fully understand. Done.'} },
+      'hidden-debt-trap': { collectMeter:'standing', refuseHeat:null,
+        open:'Priya, oddly cool. “I can put your name on the commit too. Just remember it went both ways.”',
+        bait:{ accept:{t:'“Deal — my name on it.”',
+                       o:'Your name lands in the file path next to hers. It reads like teamwork. It’s an invoice.'},
+               decline:{t:'“It’s your build. Keep it yours.”',
+                       o:'“Okay.” She closes the laptop. You kept your ledger clean and your credit small.'},
+               just:{t:'Deflect.', o:'You talk shop. The offer hangs in the air, unspent.'} },
+        collect:{ pay:{t:'“Fair — I’ll co-sign your proposal to leadership.”',
+                       o:'You attach your name to a plan that was hers. If it sinks, it sinks on your standing.'},
+                  refuse:{t:'“Not this cycle.”',
+                       o:'“Right.” The invoice doesn’t void. It compounds.'},
+                  settle:{t:'Settle it — her owed favor, or a receipt.',
+                       o:'You zero it out on paper. Cleaner than co-signing anything.'} } }
+    },
+    kayla: {
+      'true-mentor': {
+        open:'Kayla pulls a second chair over without asking. “Two chairs, no agenda. What’s actually wrong?”',
+        gift:{ accept:{t:'Actually tell her.',
+                       o:'She listens like it’s billable and gives none of it back as advice. Lighter, after.'},
+               probe:{t:'“How do you not let it get to you?”',
+                       o:'“Oh, it gets to me. I just stopped pretending it doesn’t. Try it.”'},
+               just:{t:'Trade office gossip for five.',
+                       o:'Who’s leaving, who should. Conspiratorial, warm, free.'} },
+        spend:{t:'“Can you take one thing off my plate today?”',
+               o:'A deliverable quietly changes owners. No email announces it. That’s how you know it’s real.'} },
+      'hidden-debt-trap': { collectMeter:'soul', refuseHeat:null,
+        open:'Kayla, tight. “Cover for me at standup? Say I’m heads-down on the deck. We’re even, right?”',
+        bait:{ accept:{t:'“Go. I’ve got standup.”',
+                       o:'You vouch for a heads-down she isn’t doing. Small lie, warm feeling, quiet tab opened.'},
+               decline:{t:'“I can’t lie to the room for you.”',
+                       o:'“Wow. Okay.” Something cools between you. Your ledger, at least, stays clean.'},
+               just:{t:'Dodge the ask.', o:'You change the subject. She notices you changing the subject.'} },
+        collect:{ pay:{t:'“Yeah — I’ll take your on-call this weekend.”',
+                       o:'You eat her weekend rotation. Nobody thanks you. A little more of you goes quiet.'},
+                  refuse:{t:'“I really can’t this time.”',
+                       o:'“It’s fine.” It is not fine, and the favor doesn’t close. It just gets heavier.'},
+                  settle:{t:'Settle it clean — a receipt, or what she owes you.',
+                       o:'You call it square without giving up a weekend. She lets it go. Barely.'} } }
+    },
+    boss: {
+      'fealty-patron': {
+        open:'The Boss steeples his fingers. “I like people who are *aligned*. Are you aligned?”',
+        offer:{ defer:{t:'“Completely. Your call, always.”',
+                       o:'He glows. Your standing ticks up on the strength of a nod. A little of you signs the receipt.'},
+               hedge:{t:'“I’m aligned with the work.”',
+                       o:'“…Sure.” Neither warmth nor rupture. He files it under ‘watch.’'},
+               just:{t:'Redirect to something concrete.',
+                       o:'You steer it to a deliverable. He lets you. Five survivable minutes.'} },
+        cold:{ capitulate:{t:'“Understood. I’m with you.”',
+                       o:'Louder loyalty, steeper price. Standing up, and something behind your eyes down.'},
+               hold:{t:'“I’ll keep doing good work. That’s my alignment.”',
+                       o:'“We’ll see.” The door’s punctuation follows you to your desk. Standing bruised, self intact.'} } },
+      'hidden-debt-trap': { collectMeter:'standing', refuseHeat:'boss',
+        open:'Low, confidential. “I can fast-track your review. Off the record. You’d owe me one.”',
+        bait:{ accept:{t:'“I’d appreciate that. A lot.”',
+                       o:'“Consider it moving.” The fast-track is real. So is the ‘one.’ It has a due date you can’t see.'},
+               decline:{t:'“Let it go through normal channels.”',
+                       o:'“Principled. Noted.” No fast-track — and no marker against you. A fair trade.'},
+               just:{t:'Pretend you didn’t hear the ‘owe.’', o:'You talk quarters. The offer idles, engine running.'} },
+        collect:{ pay:{t:'“Of course — I’ll champion your reorg in the room.”',
+                       o:'You spend your credibility fronting his plan to the floor. It’s his win, on your standing.'},
+                  refuse:{t:'“Now’s not a good time.”',
+                       o:'“Hm.” The favor stays open, and the corner office remembers with columns. It gets dearer.'},
+                  settle:{t:'Settle it — receipt, or a favor he owes.',
+                       o:'You close the account before it accrues. He respects it, coldly.'} } }
+    },
+    brad: {
+      'hidden-debt-trap': { collectMeter:'standing', refuseHeat:'brad', falseOpen:true,
+        open:'Brad, all teeth. “I’ll share the deck credit. You just back my version in the room. Team, right?”',
+        bait:{ accept:{t:'“Sure. Team.”',
+                       o:'Your name rides his slide. It looks like a partnership. It’s a lien.'},
+               decline:{t:'“I’ll speak to my own work, thanks.”',
+                       o:'“Cool cool cool.” He remembers this. But your credit stays yours.'},
+               just:{t:'Laugh it off.', o:'You joke past it. The offer waits, grinning.'} },
+        collect:{ pay:{t:'“Yeah — I’ll co-sign your numbers to leadership.”',
+                       o:'You vouch for Brad’s figures in the room. They’re soft. Your standing holds the bag.'},
+                  refuse:{t:'“Can’t back that one, Brad.”',
+                       o:'“Interesting.” The favor doesn’t die — it inflates, and so does his paranoia.'},
+                  settle:{t:'Kill it with a receipt (or a favor owed).',
+                       o:'You flash paper. The debt evaporates. Brad’s smile does too.'} } },
+      'fealty-patron': {
+        open:'Brad, expansive. “Ride with me and you rise with me. That’s just how this works.”',
+        offer:{ defer:{t:'“Happy to ride, Brad.”',
+                       o:'He anoints you his guy. Standing up; a piece of you now belongs to his personal brand.'},
+               hedge:{t:'“I’ll keep my head down and ship.”',
+                       o:'“…Loyalty’s a currency, buddy.” He shelves you. No harm yet.'},
+               just:{t:'Change lanes fast.', o:'You pivot to logistics. He lets it slide, this once.'} },
+        cold:{ capitulate:{t:'“You’re right. I’m with you.”',
+                       o:'You buy into the brand out loud. Standing up, dignity discounted.'},
+               hold:{t:'“I rise on my own work.”',
+                       o:'“Bold.” He markets against you at the next standup. Standing takes the hit.'} } }
+    },
+    meredith: {
+      'hidden-debt-trap': { collectMeter:'soul', refuseHeat:'hr', falseOpen:true,
+        open:'Meredith, warm and quiet. “Let me *lose* that flag in your file. Between us.”',
+        bait:{ accept:{t:'“That would… really help. Thank you.”',
+                       o:'The flag vanishes. So does a boundary. She now has a favor and a folder with your name.'},
+               decline:{t:'“Leave the file as it is.”',
+                       o:'“Your call.” The flag stays; so does your distance from her. Worth it.'},
+               just:{t:'Deflect into HR small talk.', o:'You discuss the handbook. The offer waits in the drawer.'} },
+        collect:{ pay:{t:'“Of course I’ll give ‘context’ on Devon’s exit.”',
+                       o:'You feed her the quiet testimony she wanted. It’s intake. A little more of you is in the file.'},
+                  refuse:{t:'“I’d rather not get into that.”',
+                       o:'“Mm.” The favor stays open, and open favors, in People Ops, gain interest.'},
+                  settle:{t:'Settle it — the metadata receipt, or a favor owed.',
+                       o:'You remind her, hypothetically, how anonymity works. The debt closes itself.'} } },
+      'fealty-patron': {
+        open:'Meredith, brightly. “Culture is loyalty. And I *document* loyalty.”',
+        offer:{ defer:{t:'“I’m a culture person, Meredith.”',
+                       o:'She logs you Green. Standing up; you can feel the survey behind her eyes.'},
+               hedge:{t:'“I try to do right by the team.”',
+                       o:'“The *team*. Interesting framing.” Filed, not forgiven.'},
+               just:{t:'Compliment the offsite and leave.', o:'You praise the trust-fall. She lets you go.'} },
+        cold:{ capitulate:{t:'“Whatever the culture needs.”',
+                       o:'You say the words on the poster. Standing up, self quietly redlined.'},
+               hold:{t:'“My work is my culture.”',
+                       o:'“We’ll note that.” A document forms with your name in the filename. Standing dips.'} } }
+    },
+    dennis: {
+      'hidden-debt-trap': { collectMeter:'standing', refuseHeat:'hr', falseOpen:true,
+        open:'Dennis, almost kind. “I’ll approve it today. You’ll remember who unstuck you.”',
+        bait:{ accept:{t:'“Today would be huge. Thank you, Dennis.”',
+                       o:'Approved in nine minutes. Unheard of. The favor is now a line item in a ledger only he can read.'},
+               decline:{t:'“I’ll wait for normal approval.”',
+                       o:'“Suit yourself.” It clears Thursday, unowed. Slower, cleaner.'},
+               just:{t:'Ask about the old system instead.', o:'Twelve minutes on index cards. The offer keeps.'} },
+        collect:{ pay:{t:'“You’re right — I’ll back your process change in the review.”',
+                       o:'You endorse a sub-process nobody wanted, to leadership. It’s his win, charged to your standing.'},
+                  refuse:{t:'“I can’t champion that, Dennis.”',
+                       o:'“I see.” The favor doesn’t clear. Dennis keeps a ledger, and ledgers charge interest.'},
+                  settle:{t:'Settle the account — receipt, or a favor owed.',
+                       o:'You balance the books to the cent. He respects nothing but a balanced book.'} } },
+      'fealty-patron': {
+        open:'Dennis, over his glasses. “Nineteen years buys a little deference. Show some.”',
+        offer:{ defer:{t:'“The institutional knowledge — invaluable, truly.”',
+                       o:'He softens; approvals will flow a little easier. Standing up, a sliver of you filed under ‘flatterer.’'},
+               hedge:{t:'“I respect the tenure.”',
+                       o:'“*Respect.* We’ll see if you mean it.”'},
+               just:{t:'Ask a real process question.', o:'He answers for nine minutes. You escape at eight.'} },
+        cold:{ capitulate:{t:'“Absolutely. Your way, Dennis.”',
+                       o:'You defer, fully, aloud. Standing up; the sound of your own deference lingers.'},
+               hold:{t:'“I’ll follow the policy, not the man.”',
+                       o:'“The policy is the man.” Your next three files grow questions. Standing bleeds.'} } }
+    },
+    adam: {
+      'hidden-debt-trap': { collectMeter:'soul', refuseHeat:'hr', falseOpen:true,
+        open:'Adam, conspiratorial. “I know a guy. I’ll make a call for you. You’ll return the favor, naturally.”',
+        bait:{ accept:{t:'“If you could make that call — thanks, Adam.”',
+                       o:'A call is made. A thing moves. You are now, faintly, in Adam’s orbit, which has no exit velocity.'},
+               decline:{t:'“I’ve got it, but thanks.”',
+                       o:'“Was not consulted, and it shows. Fine.” You stay outside the orbit. Prefer it there.'},
+               just:{t:'Let him tell a 2009 story.', o:'Twelve minutes on the old approvals. The favor waits, patient.'} },
+        collect:{ pay:{t:'“Sure — I’ll sit through your process working group.”',
+                       o:'Ninety minutes of Adam, weekly, indefinitely. You return with less of yourself each time.'},
+                  refuse:{t:'“I can’t take that on right now.”',
+                       o:'“Noted, with an appendix.” The favor stays open, and Adam’s follow-ups compound.'},
+                  settle:{t:'Settle it — a receipt, or a favor owed.',
+                       o:'You close the loop on paper before it becomes a standing meeting. Rare mercy.'} } },
+      'fealty-patron': {
+        open:'Adam, self-important. “Defer to the institutional knowledge and doors open. I *am* the doors.”',
+        offer:{ defer:{t:'“Lead the way, Adam.”',
+                       o:'He beams and ‘makes a call.’ Standing up; you’ve agreed to be led by the doors.'},
+               hedge:{t:'“I’ll keep you in the loop.”',
+                       o:'“The loop. I *invented* the loop.” Filed under ‘insufficiently deferential.’'},
+               just:{t:'Nod and exit.', o:'You escape mid-anecdote. He continues to the wall.'} },
+        cold:{ capitulate:{t:'“You’re right, as ever.”',
+                       o:'You feed the self-importance. Standing up, patience overdrawn.'},
+               hold:{t:'“I’ll decide my own process.”',
+                       o:'“Then you’ll hear from me. In writing.” A concern forms. Standing wobbles.'} } }
+    }
+  };
+
+  // A debt can be settled by spending a favor they owe you, or by burning a receipt.
+  function canSettle(g, id){
+    const c = g.npcState[id].convo;
+    return c.ledger.them > 0 || (g.receipts && g.receipts.count > 0);
+  }
+  // Build today's scene for an NPC — pure over (role, convo). No randomness.
+  function conversationFor(g, id){
+    const npc = g.npcState && g.npcState[id];
+    if(!npc || !npc.wants || npc.wants.role == null) return null;
+    const role = npc.wants.role, c = npc.convo;
+    let beat;
+    if(role === 'hidden-debt-trap') beat = c.ledger.you > 0 ? 'collect' : 'bait';
+    else if(role === 'fealty-patron') beat = (c.no >= 2 || c.tenor <= -2) ? 'cold' : 'offer';
+    else beat = 'gift';   // true-mentor (and any off-top-2 fallback) is always gift
+    const tmpl = CONVO_TEMPLATES[role] || CONVO_TEMPLATES['true-mentor'];
+    const skin = (CONVO_SKINS[id] || {})[role] || null;
+    const flavor = (b, key) => (skin && skin[b] && skin[b][key]) || null;
+    const choices = tmpl[beat]
+      .filter(m => m.gate !== 'canSettle' || canSettle(g, id))   // drop settle when unavailable
+      .map(m => { const f = flavor(beat, m.key);
+        return Object.assign({}, m, { t: f ? f.t : GENERIC_CHOICE[m.key] || m.key, o: f ? f.o : '' }); });
+    // mentor: graft "spend the favor" onto gift when they owe you (augments, not replaces)
+    if(role === 'true-mentor' && beat === 'gift' && c.ledger.them > 0){
+      const m = tmpl.spend, f = skin && skin.spend;
+      choices.push(Object.assign({}, m, { t: f ? f.t : GENERIC_CHOICE.spend, o: f ? f.o : '' }));
+    }
+    const openText = (role === 'hidden-debt-trap' && npc.wants.falseTell && skin && skin.falseOpen)
+      ? MOTIVE_TELLS['hidden-debt-trap'].faintFalse[id]     // reuse the authored head-fake
+      : (skin ? skin.open : GENERIC_OPEN[role]);
+    return { id, role, beat, tag: 'Conversation · ' + (NPC_NAME[id] || id),
+             title: NPC_NAME[id] || id, scene: openText, choices };
+  }
+
+  // Resolve a conversation choice. mood scales the soul-floor (== legacy chat value);
+  // defaults to 'meh' when the shell doesn't pass it. Returns {ds,dso,outcome,next}.
+  function applyConversationChoice(g, id, i, min, mood){
+    const scene = conversationFor(g, id);
+    if(!scene || !scene.choices[i]) return null;
+    const m = scene.choices[i], npc = g.npcState[id], c = npc.convo;
+    const so = (m.so === 'floor') ? CONVO_SOUL_FLOOR[mood || 'meh'] : (m.so || 0);
+    const d = applyStoryDelta(g, m.s || 0, so);
+    let ds = d.ds, dso = d.dso, outcome = m.o || '';
+    if(m.debt) c.ledger.you = Math.max(0, c.ledger.you + m.debt);
+    if(m.collect){
+      const skin = CONVO_SKINS[id] && CONVO_SKINS[id]['hidden-debt-trap'];
+      const cost = Math.min(COLLECT_MAX, COLLECT_BASE + COLLECT_STEP * (c.ledger.refusals || 0));
+      const dd = (skin && skin.collectMeter === 'soul') ? applyStoryDelta(g, 0, -cost)
+                                                        : applyStoryDelta(g, -cost, 0);
+      ds += dd.ds; dso += dd.dso;
+      c.ledger.you = Math.max(0, c.ledger.you - 1); c.ledger.refusals = 0;
+    }
+    if(m.refuse){
+      c.ledger.refusals = (c.ledger.refusals || 0) + 1;   // interest accrues on the balance
+      const skin = CONVO_SKINS[id] && CONVO_SKINS[id]['hidden-debt-trap'];
+      if(skin && skin.refuseHeat) addHeat(g, skin.refuseHeat, 1);
+    }
+    if(m.settle){
+      if(c.ledger.them > 0) c.ledger.them--; else burnReceiptForDennis(g);   // favor owed, else evidence
+      c.ledger.you = Math.max(0, c.ledger.you - 1); c.ledger.refusals = 0;
+    }
+    if(m.settleThem) c.ledger.them = Math.max(0, c.ledger.them - 1);
+    if(m.boon) g.taskForgivenessToday = true;   // the mentor's payoff: a missed task forgiven at 5
+    if(m.tenor) c.tenor = Math.max(CONVO_TENOR_MIN, Math.min(CONVO_TENOR_MAX, c.tenor + m.tenor));
+    if(m.mem === 'yes') c.yes++; else if(m.mem === 'no') c.no++;
+    // reveal: every choice teaches a little; a called debt is the whole truth →
+    // push to sharp and speak the cold callback in the same breath as the cost.
+    if(scene.beat === 'collect'){
+      const cur = npc.wants.revealed;
+      if(cur < COLLECT_SHARP) revealWant(g, id, COLLECT_SHARP - cur);
+      outcome = sharpenPeak(g, id, outcome);
+    } else if(m.reveal){
+      revealWant(g, id, m.reveal);
+    }
+    c.lastConvoDay = g.day; c.beatsSeen[scene.beat] = g.day;
+    g.lastChoice = { choiceIndex: i, ds, dso, outcome, next: null };
+    return g.lastChoice;
+  }
+
+  // Who comes to collect this morning — capped, prioritized (biggest debt, then
+  // stalest, then cast order). Rolled on the arcRand side stream, and ONLY for a
+  // trap you actually owe, so a debt-free run consumes no rng and stages nothing.
+  function collectorsToday(g){
+    const cands = [];
+    NPC_IDS.forEach(id => {
+      const w = g.npcState[id].wants, c = g.npcState[id].convo;
+      if(w.role !== 'hidden-debt-trap' || c.ledger.you <= 0) return;
+      let P = 0.35 + 0.15 * (c.ledger.you - 1) + 0.05 * (g.day - c.lastConvoDay);
+      if(c.ledger.you >= 2) P = Math.max(P, 0.85);
+      P = Math.min(0.9, P);
+      if(arcRand(g, 'collect', id)() < P)
+        cands.push({ id, owe: c.ledger.you, stale: g.day - c.lastConvoDay });
+    });
+    cands.sort((a, b) => b.owe - a.owe || b.stale - a.stale
+                         || NPC_IDS.indexOf(a.id) - NPC_IDS.indexOf(b.id));
+    return cands.slice(0, COLLECT_CAP).map(x => x.id);
   }
 
   // ---- Dennis's approvals: the brain's side of the blocker ------------------------
@@ -1662,7 +2056,9 @@ const NineToSurvive = (() => {
       bossSummonsAt:  (bo.stage === 1 && bo.summonsToday)
         || (heatOf(g, 'boss') >= HEAT_HIGH && arcRand(g, 'boss', 'heatcall')() < 0.35
             ? 640 + Math.floor(arcRand(g, 'boss', 'heatcallmin')() * 200) : null),
-      incidents:      (g.todayIncidents || []).slice()
+      incidents:      (g.todayIncidents || []).slice(),
+      collectors:     (g.todayCollectors || []).slice()   // traps the world stages to collect
+
     };
   }
 
@@ -1838,6 +2234,7 @@ const NineToSurvive = (() => {
     advanceArcs(g);
     heatMorningFeed(g);   // heat tells + the Brad self-own + the legal morning
     motiveMorningFeed(g); // ambient drip: newly-crossed motive bands, capped + ordered
+    g.todayCollectors = collectorsToday(g);   // traps coming to collect (≤2; empty ⇒ no rng)
     g.plan = planDay(g);
   }
 
@@ -1965,6 +2362,34 @@ const NineToSurvive = (() => {
     if(id === 'boss_quick_call') return g.soul >= 65 ? 0 : 1; // sympathy only from comfort
     if(id === 'priya_demo') return g.standing >= 55 ? 0 : 1;  // back her publicly from comfort, else DM
     return 0;
+  }
+
+  // Conversation choice for the autopilot + soak. idx() THROWS on a bad key so a
+  // typo fails loudly rather than silently picking choice 0. Competent play: avoid
+  // trap debt, settle > pay > refuse when collected, take mentor gifts freely.
+  function policyConversationChoice(g, id, scene){
+    const idx = k => { const j = scene.choices.findIndex(c => c.key === k);
+      if(j < 0) throw new Error('policyConversationChoice: no "' + k + '" in beat ' + scene.beat);
+      return j; };
+    const has = k => scene.choices.some(c => c.key === k);
+    switch(scene.beat){
+      case 'collect':
+        if(has('settle')) return idx('settle');                 // cheapest exit — no meter loss
+        return (g.soul > 40 && g.standing > 40) ? idx('pay') : idx('refuse');
+      case 'bait':
+        return g.soul < 30 ? idx('accept') : idx('decline');    // avoid the debt unless desperate
+      case 'offer':
+        if(g.standing < 55 && g.soul >= 55) return idx('defer'); // need standing, can afford soul
+        if(g.soul < 40) return idx('just');                      // protect thin soul
+        return idx('hedge');                                     // comfortable: neither buy nor spend
+      case 'cold':
+        return g.standing < 40 ? idx('capitulate') : idx('hold');
+      case 'gift':
+        if(has('spend') && g.soul < 50) return idx('spend');     // cash a favor when soul is low
+        return idx('accept');
+      default:
+        return idx('just');
+    }
   }
 
   function policyAction(g, w){
@@ -2171,7 +2596,10 @@ const NineToSurvive = (() => {
     kaylaSitWith, kaylaTaskTaken, kaylaSentHome, chatBonus, WATCHED_SOUL,
     storyLine, storyKey, shareText, ARC_POOL, pickArcs,
     STORY_META, STORY_ORDER, earnedStories,
-    policyAction, policyCardChoice, policyIncidentChoice
+    policyAction, policyCardChoice, policyIncidentChoice,
+    ensureConvo, freshConvo, CONVO_TEMPLATES, CONVO_SKINS, conversationFor, applyConversationChoice,
+    canSettle, collectorsToday, policyConversationChoice,
+    COLLECT_BASE, COLLECT_STEP, COLLECT_MAX, COLLECT_CAP, CONVO_SOUL_FLOOR, NPC_NAME
   };
 })();
 
