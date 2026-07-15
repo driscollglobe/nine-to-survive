@@ -148,7 +148,42 @@ ok('chat request accepted for a peer', W.requestChat(wk, 'kayla'));
 const chat = stepUntil(wk, 90, ['chat']);
 ok('chat signal carries who + mood', chat && chat.who === 'kayla' && ['good','meh','bad'].includes(chat.mood));
 ok('each peer chats once a day', !W.requestChat(wk, 'kayla') && W.requestChat(wk, 'marcus'));
-ok('no chatting up the boss', !W.requestChat(wk, 'boss'));
+ok('the boss is now conversable when idle (all 8 talk)', W.requestChat(wk, 'boss'));
+
+// ---- 7b. debt collectors + conversations (NPC-initiated) --------------------------
+// a trap the brain flagged walks over and OPENS the conversation itself — the
+// mechanic that makes an owed debt undodgeable (you never had to initiate).
+const wcol = W.newDay(31, 3, [], { collectors: ['dennis'] });
+wcol.bossWalks = []; wcol.bradRaids = []; wcol.crunch = null;   // isolate the collector (no other pausers)
+ok('collector staged from flags.collectors', wcol.collectors.length === 1 && wcol.collectors[0].id === 'dennis');
+const conv = stepUntil(wcol, 200, ['conversation']);
+ok('a collector walks over and opens a conversation, unprompted (anti-dodge)',
+   !!conv && conv.who === 'dennis' && conv.collect === true && conv.initiator === 'them');
+ok('the world pauses for the conversation', wcol.running === false && !!wcol.activeConversation);
+W.resolveConversation(wcol);
+ok('resolveConversation resumes the day + marks the collector done + chatted',
+   wcol.running === true && !wcol.activeConversation
+   && wcol.collectors[0].status === 'done' && wcol.chatted.dennis === true);
+
+// a no-debt day stages byte-identical: empty collectors consume zero rng
+const wA = W.newDay(31, 3, [9]);                      // no collectors flag at all
+const wB = W.newDay(31, 3, [9], { collectors: [] });  // explicit empty
+ok('no-debt day byte-identical (collector staging appended last, 0 rng when empty)',
+   wA.collectors.length === 0 && wB.collectors.length === 0
+   && JSON.stringify(wA.bossWalks) === JSON.stringify(wB.bossWalks)
+   && JSON.stringify(wA.bradRaids) === JSON.stringify(wB.bradRaids)
+   && JSON.stringify(wA.crunch) === JSON.stringify(wB.crunch)
+   && wA.tasks.total === wB.tasks.total);
+
+// availability: all 8 conversable when idle; busy states suppress it
+const wS = W.newDay(7, 2, [9]);
+ok('all 8 non-busy on-floor NPCs are conversable (incl. boss/dennis/hr/brad/adam)',
+   ['brad','boss','dennis','hr','adam','kayla','marcus','priya'].every(id => {
+     const a = W.getActor(wS, id); a.state = 'idle'; return W.conversable(wS, a);
+   }));
+ok('a busy NPC (mid-raid) is not conversable', (() => {
+   const b = W.getActor(wS, 'brad'); b.state = 'raid'; return !W.conversable(wS, b);
+})());
 
 // ---- 8. click-to-move ---------------------------------------------------------------
 const wm = W.newDay(23, 1, [9]);
@@ -211,8 +246,8 @@ ok('pickActorAt finds the boss at his spot', W.pickActorAt(w1, boss1.x, boss1.y)
 ok('pickActorAt misses empty floor', W.pickActorAt(w1, 26, 24) === null);
 const st = W.statusOf(w1, boss1);
 ok('status has name/role/mood/line', st.name === 'The Boss' && !!st.role && !!st.mood && !!st.line);
-ok('peers offer chat in status; boss does not', W.statusOf(w1, W.getActor(w1, 'kayla')).chat === true
-  && W.statusOf(w1, boss1).chat === false);
+ok('status offers chat for every idle NPC now — the boss included', W.statusOf(w1, W.getActor(w1, 'kayla')).chat === true
+  && W.statusOf(w1, boss1).chat === true);
 
 // ---- 11b. the Brad arc, staged physically ----------------------------------------------
 // clue flags: the second laptop is a flag the renderer reads; the status line shifts
