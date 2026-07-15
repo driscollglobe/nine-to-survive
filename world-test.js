@@ -145,8 +145,11 @@ ok('couch errand accepted once', W.goForCouch(wk) && !W.goForCouch(wk));
 const sat = stepUntil(wk, 60, ['couch']);
 ok('couch signal on arrival', sat && sat.type === 'couch');
 ok('chat request accepted for a peer', W.requestChat(wk, 'kayla'));
-const chat = stepUntil(wk, 90, ['chat']);
-ok('chat signal carries who + mood', chat && chat.who === 'kayla' && ['good','meh','bad'].includes(chat.mood));
+const chat = stepUntil(wk, 90, ['conversation']);
+ok('chat opens a conversation on arrival (who + mood + you-initiated + pause)',
+  chat && chat.who === 'kayla' && ['good','meh','bad'].includes(chat.mood)
+  && chat.initiator === 'you' && wk.running === false);
+W.resolveConversation(wk);   // resume for the next assertions
 ok('each peer chats once a day', !W.requestChat(wk, 'kayla') && W.requestChat(wk, 'marcus'));
 ok('the boss is now conversable when idle (all 8 talk)', W.requestChat(wk, 'boss'));
 
@@ -184,6 +187,30 @@ ok('all 8 non-busy on-floor NPCs are conversable (incl. boss/dennis/hr/brad/adam
 ok('a busy NPC (mid-raid) is not conversable', (() => {
    const b = W.getActor(wS, 'brad'); b.state = 'raid'; return !W.conversable(wS, b);
 })());
+
+// ---- 7c. world↔brain id BIJECTION (the hr↔meredith class of bug, systemically) ----
+// The world calls Meredith 'hr'; the brain keys her 'meredith'. Any such mismatch
+// makes a character silently no-op in play. Assert the full bijection — all 8, both
+// directions — plus that the collector staging map covers every brain id. Uses a
+// live game + world so it tests the real data, not a hand-copied list.
+(() => {
+  const gB = W && G.newGame(1);
+  const worldIds = W.newDay(1, 1, [9]).actors.map(a => a.id).filter(id => id !== 'you');
+  const brainIds = G.NPC_IDS.slice();
+  ok('id bijection: 8 conversable world actors ↔ 8 brain NPCs',
+    worldIds.length === 8 && brainIds.length === 8, worldIds.join(',') + ' | ' + brainIds.join(','));
+  ok('id bijection FORWARD: every world actor → a real brain npcState key',
+    worldIds.every(id => { const b = G.brainNpcId(id); return brainIds.indexOf(b) >= 0 && !!gB.npcState[b]; }),
+    worldIds.map(id => id + '→' + G.brainNpcId(id)).join(' '));
+  ok('id bijection REVERSE: every brain NPC ← exactly one world actor',
+    brainIds.every(b => worldIds.filter(id => G.brainNpcId(id) === b).length === 1));
+  ok('id bijection: injective (no two world actors collide on one brain key)', (() => {
+    const seen = {}; for(const id of worldIds){ const b = G.brainNpcId(id); if(seen[b]) return false; seen[b] = true; } return true;
+  })());
+  ok('id bijection: worldFlagsFor maps every possible collector to a real world actor',
+    brainIds.every(b => { const g2 = G.newGame(1); g2.todayCollectors = [b];
+      return worldIds.indexOf(G.worldFlagsFor(g2).collectors[0]) >= 0; }));
+})();
 
 // ---- 8. click-to-move ---------------------------------------------------------------
 const wm = W.newDay(23, 1, [9]);
@@ -360,8 +387,8 @@ ok('her status carries the physical options', /version 31/.test(stK.line)
 ok('Meredith\'s popup offers the worst helpful option', W.statusOf(wK, W.getActor(wK, 'hr')).reportkayla === true);
 // sitting with her rides the chat errand
 ok('sit-with rides the chat errand', W.requestChat(wK, 'kayla') === true);
-const sitSig = stepUntil(wK, 90, ['chat']);
-ok('arrival emits the chat signal (shell routes it to sit-with)', !!sitSig && sitSig.who === 'kayla');
+const sitSig = stepUntil(wK, 90, ['conversation']);
+ok('arrival opens a conversation (shell routes kayla-panic to sit-with)', !!sitSig && sitSig.who === 'kayla');
 // taking a task moves one onto your stack
 const wK2 = W.newDay(71, 7, [], { kaylaPanic: true });
 wK2.bossWalks = []; wK2.bradRaids = []; wK2.crunch = null;
@@ -672,7 +699,15 @@ function soakRun(seed, opts){
   const maxDays = opts.maxDays || 200;
   const policy = opts.policy || 'desk';   // 'competent' consumes G.policyAction
   const issues = [];
+  const obs = opts.obs || null;
   const g = G.newGame(seed);
+  if(opts.seedReceipt) G.addReceipt(g, 'priya_commit_log');
+  if(opts.seedDebt){   // hand a trap an owed debt so the collector economy is reachable in a probe
+    const d = opts.seedDebt;
+    g.npcState[d.id].wants.role = 'hidden-debt-trap';
+    g.npcState[d.id].convo.ledger.you = d.you;
+    g.todayCollectors = G.collectorsToday(g);   // may stage the collector on day 1 already
+  }
   while(!g.over && g.day <= maxDays){
     const flags = G.worldFlagsFor(g);
     const w = W.newDay(seed, g.day, g.plan, flags);
@@ -731,8 +766,20 @@ function soakRun(seed, opts){
             else if(!w.chatted.marcus) W.requestChat(w, 'marcus');
             else if(W.playerAtDesk(w) && !you.path.length) W.movePlayer(w, { x: 25, y: 22 });
           }
+        } else if(policy === 'suckup'){
+          // a suck-up takes every offer of help — it seeks out traps and walks
+          // straight into the ledger (the behavior that makes the trap economy real)
+          if(!w.playerErrand){
+            const you = W.getActor(w, 'you');
+            const trap = opts.trapSeek ? w.actors.find(a => { if(a.id === 'you' || w.chatted[a.id]) return false;
+              const b = g.npcState[G.brainNpcId(a.id)];
+              return W.conversable(w, a) && b && b.wants.role === 'hidden-debt-trap' && b.convo.ledger.you === 0;
+            }) : null;
+            if(trap) W.requestChat(w, trap.id);
+            else if(!W.playerAtDesk(w) && !you.path.length) W.playerGoHome(w);
+          }
         } else if(!w.playerErrand && !W.playerAtDesk(w)){
-          // desk + suckup: chained to the chair
+          // desk: chained to the chair
           const you = W.getActor(w, 'you');
           if(!you.path.length) W.playerGoHome(w);
         }
@@ -796,14 +843,39 @@ function soakRun(seed, opts){
         case 'bradfoiled': G.applyWorldEffect(g, 'bradFoiled'); break;
         case 'coffee':     G.applyCoffee(g); W.playerGoHome(w); break;
         case 'couch':      G.applyWorldEffect(g, 'couch'); W.playerGoHome(w); break;
-        case 'chat':
-          if(s.who === 'kayla' && w.flags.kaylaPanic && G.kaylaSitWith(g, Math.floor(w.clockMin))){
-            W.playerGoHome(w); break;                                      // as the shell does
+        case 'conversation': {
+          const who = s.who;
+          // sit-with special (kayla's panic day) preserved exactly as the shell does
+          if(who === 'kayla' && w.flags.kaylaPanic && G.kaylaSitWith(g, Math.floor(w.clockMin))){
+            W.resolveConversation(w); W.playerGoHome(w); break;
           }
-          G.applyWorldEffect(g, s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh');
-          G.chatBonus(g, s.who);
-          if(s.who === 'marcus') G.marcusTip(g, Math.floor(w.clockMin));   // as the shell does
-          W.playerGoHome(w); break;
+          const sc = G.conversationFor(g, who);
+          let ci;
+          if(sc.beat === 'collect' && opts.collectPolicy) ci = probeCollectChoice(g, sc, opts);
+          else if(policy === 'competent') ci = G.policyConversationChoice(g, who, sc);
+          else if(policy === 'suckup') ci = suckupConvoChoice(g, sc, opts);
+          else { let j = sc.choices.findIndex(c => c.key === 'just');
+                 if(j < 0) j = sc.choices.findIndex(c => c.key === 'refuse');
+                 ci = j >= 0 ? j : 0; }
+          const chosen = sc.choices[ci];
+          const refusalsBefore = g.npcState[G.brainNpcId(who)].convo.ledger.refusals || 0;
+          G.applyConversationChoice(g, who, ci, Math.floor(w.clockMin), s.mood);
+          if(obs){
+            if(sc.beat === 'bait' && chosen.key === 'accept') obs.debts++;
+            else if(sc.beat === 'collect'){
+              obs.collects++;
+              if(chosen.key === 'pay'){ obs.pay++;
+                if(refusalsBefore > 0){ obs.interestSeen = true;
+                  obs.maxCost = Math.max(obs.maxCost || 0, G.COLLECT_BASE + G.COLLECT_STEP * refusalsBefore); } }
+              else if(chosen.key === 'refuse') obs.refuse++;
+              else if(chosen.key === 'settle') obs.settle++;
+            }
+          }
+          if(g.over) dayDone = true;
+          W.resolveConversation(w);
+          if(!g.over) W.playerGoHome(w);
+          break;
+        }
         case 'kaylatask':     G.kaylaTaskTaken(g, Math.floor(w.clockMin)); W.playerGoHome(w); break;
         case 'taskblocked':   break;
         case 'adamintercept': G.adamIntercepted(g, Math.floor(w.clockMin), s.useful); break;
@@ -854,13 +926,37 @@ function argmaxChoice(choices, f){
   choices.forEach((c, i) => { const v = f(c); if(v > bestV){ bestV = v; best = i; } });
   return best;
 }
+// a suck-up takes every offer: accept the bait, defer to the patron, and when
+// collected, comply (settle if handed the option, else pay if it can, else refuse).
+function suckupConvoChoice(g, sc, opts){
+  const find = k => sc.choices.findIndex(c => c.key === k);
+  if(sc.beat === 'collect'){
+    if(find('settle') >= 0) return find('settle');
+    return (g.soul > 25 && g.standing > 25) ? find('pay') : find('refuse');
+  }
+  const want = { bait: 'accept', offer: 'defer', cold: 'capitulate', gift: 'accept' };
+  const i = find(want[sc.beat]);
+  return i >= 0 ? i : 0;
+}
+// probe-only collect steering, to guarantee live coverage of pay / refuse / settle
+// and the interest curve through the real pipeline (not just unit tests).
+function probeCollectChoice(g, sc, opts){
+  const find = k => sc.choices.findIndex(c => c.key === k);
+  if(opts.collectPolicy === 'settle' && find('settle') >= 0) return find('settle');
+  if(opts.collectPolicy === 'escalate'){
+    if((g.npcState[sc.id].convo.ledger.refusals || 0) < 2 && find('refuse') >= 0) return find('refuse');
+    return find('pay');
+  }
+  return find('pay') >= 0 ? find('pay') : 0;
+}
 
 const SOAK_SEEDS = 50;
 function soakSweep(policy){
   const out = { issues: [], outcomes: { escaped:0, soul:0, standing:0, timeout:0 },
                 escapeDays: [], soulAtEscape: [], stories: {} };
   for(let sd = 1; sd <= SOAK_SEEDS; sd++){
-    const r = soakRun(sd * 1000 + 7, { policy, maxDays: policy === 'rebel' ? 60 : 200 });
+    const r = soakRun(sd * 1000 + 7, { policy, trapSeek: policy === 'suckup',
+                                       maxDays: policy === 'rebel' ? 60 : 200 });
     out.issues = out.issues.concat(r.issues);
     if(r.g.escaped){
       out.outcomes.escaped++;
@@ -917,9 +1013,28 @@ ok('MATRIX movie-default ≡ competent (same function, same outcomes)',
   && JSON.stringify(soakMovie.escapeDays) === JSON.stringify(soakC.escapeDays),
   JSON.stringify(soakMovie.outcomes));
 const soakS = soakSweep('suckup');
-ok('MATRIX suck-up: usually dies of Soul, zero hangs',
-  soakS.issues.length === 0 && soakS.outcomes.soul > SOAK_SEEDS / 2
-  && soakS.outcomes.escaped === 0, JSON.stringify(soakS.outcomes));
+ok('MATRIX suck-up: never escapes, dies (Soul-dominant), zero hangs',
+  soakS.issues.length === 0 && soakS.outcomes.escaped === 0
+  && (soakS.outcomes.soul + soakS.outcomes.standing) >= SOAK_SEEDS * 0.9
+  && soakS.outcomes.soul >= soakS.outcomes.standing, JSON.stringify(soakS.outcomes));
+
+// ---- TRAP ECONOMY: reached and exercised through the LIVE pipeline ----
+// The suck-up trap-seeks (above), so its bands already fold in bait→debt→collect.
+// These three careers instrument the real world+resolver to prove every path
+// fires live — not just in the §17e unit tests — so the rebaseline means something.
+const trapObs = { debts: 0, collects: 0, pay: 0, refuse: 0, settle: 0, interestSeen: false, maxCost: 0 };
+soakRun(555001, { policy: 'suckup', trapSeek: true, obs: trapObs });                       // bait→debt→pay
+soakRun(555002, { policy: 'desk', seedDebt: { id: 'dennis', you: 2 },
+                  collectPolicy: 'escalate', obs: trapObs });                              // refuse→refuse→pay(interest)
+soakRun(555003, { policy: 'desk', seedDebt: { id: 'meredith', you: 1 },
+                  seedReceipt: true, collectPolicy: 'settle', obs: trapObs });             // settle; exercises the hr↔meredith bridge live
+ok('TRAP ECONOMY: a debt is accrued live (a bait was accepted)', trapObs.debts > 0, JSON.stringify(trapObs));
+ok('TRAP ECONOMY: a collector fires and collects live', trapObs.collects > 0, JSON.stringify(trapObs));
+ok('TRAP ECONOMY: pay / refuse / settle each resolve at least once live',
+  trapObs.pay > 0 && trapObs.refuse > 0 && trapObs.settle > 0, JSON.stringify(trapObs));
+ok('TRAP ECONOMY: interest escalation observed live (a pay charged above base)',
+  trapObs.interestSeen && trapObs.maxCost >= G.COLLECT_BASE + G.COLLECT_STEP, JSON.stringify(trapObs));
+lines.push('INFO  TRAP ECONOMY observations: ' + JSON.stringify(trapObs));
 const soakR = soakSweep('rebel');
 ok('MATRIX rebel: usually loses to Standing, never banks the number, zero hangs',
   soakR.issues.length === 0 && soakR.outcomes.standing > SOAK_SEEDS / 2

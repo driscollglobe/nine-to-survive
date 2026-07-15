@@ -1401,6 +1401,10 @@ const NineToSurvive = (() => {
   const COLLECT_CAP = 2;       // at most this many collectors cross the floor per morning
   const NPC_NAME = { brad:'Brad', boss:'The Boss', meredith:'Meredith', dennis:'Dennis',
                      kayla:'Kayla', marcus:'Marcus', priya:'Priya', adam:'Adam' };
+  // The world calls Meredith 'hr'; the brain keys her 'meredith'. Conversation
+  // callers pass whichever id they hold — normalize to the brain key here.
+  const WORLD_TO_BRAIN = { hr: 'meredith' };
+  function brainNpcId(id){ return WORLD_TO_BRAIN[id] || id; }
 
   // Mechanics only. Skins supply t/o. reveal is on EVERY choice (the universal drip
   // lives on `just`); the collect beat's reveal is handled specially (→ sharp).
@@ -1659,6 +1663,7 @@ const NineToSurvive = (() => {
   }
   // Build today's scene for an NPC — pure over (role, convo). No randomness.
   function conversationFor(g, id){
+    id = brainNpcId(id);
     const npc = g.npcState && g.npcState[id];
     if(!npc || !npc.wants || npc.wants.role == null) return null;
     const role = npc.wants.role, c = npc.convo;
@@ -1688,6 +1693,7 @@ const NineToSurvive = (() => {
   // Resolve a conversation choice. mood scales the soul-floor (== legacy chat value);
   // defaults to 'meh' when the shell doesn't pass it. Returns {ds,dso,outcome,next}.
   function applyConversationChoice(g, id, i, min, mood){
+    id = brainNpcId(id);
     const scene = conversationFor(g, id);
     if(!scene || !scene.choices[i]) return null;
     const m = scene.choices[i], npc = g.npcState[id], c = npc.convo;
@@ -1724,6 +1730,19 @@ const NineToSurvive = (() => {
       outcome = sharpenPeak(g, id, outcome);
     } else if(m.reveal){
       revealWant(g, id, m.reveal);
+    }
+    // legacy chat mechanics, folded into the resolver (the vending path is retired):
+    // Marcus's coasting tip rides his mentor gift; Kayla's bonded/ignored history
+    // colors what her chats give back. Deltas captured so the shell animates them.
+    if(id === 'marcus' && scene.role === 'true-mentor' && m.key === 'accept'){
+      const bs = g.standing, bso = g.soul;
+      const tip = marcusTip(g, min);
+      ds += g.standing - bs; dso += g.soul - bso;   // e.g. a miscalibrated tip costs Standing
+      if(tip) outcome = outcome + ' ' + tip.text;
+    }
+    if(id === 'kayla' && scene.beat !== 'collect'){
+      if(npc.flags.bonded){ const dk = applyStoryDelta(g, 0, +2); dso += dk.dso; }
+      else if(npc.flags.ignored){ const dk = applyStoryDelta(g, 0, -2); dso += dk.dso; }
     }
     c.lastConvoDay = g.day; c.beatsSeen[scene.beat] = g.day;
     g.lastChoice = { choiceIndex: i, ds, dso, outcome, next: null };
@@ -2057,7 +2076,9 @@ const NineToSurvive = (() => {
         || (heatOf(g, 'boss') >= HEAT_HIGH && arcRand(g, 'boss', 'heatcall')() < 0.35
             ? 640 + Math.floor(arcRand(g, 'boss', 'heatcallmin')() * 200) : null),
       incidents:      (g.todayIncidents || []).slice(),
-      collectors:     (g.todayCollectors || []).slice()   // traps the world stages to collect
+      // map brain ids → world actor ids (Meredith is 'hr' on the floor) so the
+      // world stages the right actor for the collection walk
+      collectors:     (g.todayCollectors || []).map(id => id === 'meredith' ? 'hr' : id)
 
     };
   }
@@ -2598,7 +2619,7 @@ const NineToSurvive = (() => {
     STORY_META, STORY_ORDER, earnedStories,
     policyAction, policyCardChoice, policyIncidentChoice,
     ensureConvo, freshConvo, CONVO_TEMPLATES, CONVO_SKINS, conversationFor, applyConversationChoice,
-    canSettle, collectorsToday, policyConversationChoice,
+    canSettle, collectorsToday, policyConversationChoice, brainNpcId,
     COLLECT_BASE, COLLECT_STEP, COLLECT_MAX, COLLECT_CAP, CONVO_SOUL_FLOOR, NPC_NAME
   };
 })();

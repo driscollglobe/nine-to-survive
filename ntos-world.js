@@ -766,8 +766,12 @@ function arriveErrand(w, you){
   } else if(e.type === 'chat'){
     const target = getActor(w, e.id);
     if(Math.hypot(target.x - you.x, target.y - you.y) <= 2.2){
-      w.playerErrand = null; w.chatted[e.id] = true;
-      w.sig.push({ type:'chat', who: e.id, name: target.name, mood: target.mood });
+      // you reached them: the day pauses and a conversation opens (brain builds the
+      // scene from wants.role). chatted is set on resolve, like the collector path.
+      w.playerErrand = null;
+      w.running = false;
+      w.activeConversation = { who: e.id };
+      w.sig.push({ type:'conversation', who: e.id, name: target.name, mood: target.mood, initiator:'you' });
     } else if(e.repaths < 3){
       e.repaths++;
       sendTo(w, you, adjacentTo(w, target), 'errand');

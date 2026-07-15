@@ -1514,6 +1514,14 @@ function applyKey(g, id, key, mood){
   return G.applyConversationChoice(g, id, pickKey(sc, key), 700, mood);
 }
 
+ok('the hr↔meredith id bridge: a world "hr" conversation resolves via brain "meredith"', (() => {
+  const g = G.newGame(3);
+  g.npcState.meredith.wants.role = 'fealty-patron';
+  const sc = G.conversationFor(g, 'hr');                 // caller holds the world id
+  if(!sc || sc.id !== 'meredith') return false;
+  const r = G.applyConversationChoice(g, 'hr', sc.choices.findIndex(c => c.key === 'defer'), 700, 'meh');
+  return !!r && g.npcState.meredith.convo.yes === 1 && r.ds > 0;
+})());
 ok('role-conditioning: same char, different role → different beat + scene', (() => {
   const gp = convoGame(3, 'dennis', 'fealty-patron');
   const gt = convoGame(3, 'dennis', 'hidden-debt-trap');
