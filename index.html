@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Expanded:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="ntos-game.js?v=n21"></script>
-<script src="ntos-world.js?v=w26"></script>
+<script src="ntos-world.js?v=w27"></script>
 <link rel="stylesheet" href="ntos-theme.css">
 </head>
 <body>
@@ -256,12 +256,38 @@ canvas.addEventListener('wheel', (e) => {
   clampCam();
 }, { passive: false });
 
+// Iso pick correction: furniture is drawn UP the screen from its tile, so a
+// click on a desk's visible top actually maps to the floor tile BEHIND it —
+// you'd walk somewhere else (or nowhere). Test the click against each piece's
+// drawn top face in screen space and snap to the furniture the player SEES.
+function pointInQuad(px, py, ax, ay, bx, by, cx, cy, dx, dy){
+  const half = (x1,y1,x2,y2) => (px - x1) * (y2 - y1) - (py - y1) * (x2 - x1);
+  const s1 = half(ax,ay,bx,by), s2 = half(bx,by,cx,cy),
+        s3 = half(cx,cy,dx,dy), s4 = half(dx,dy,ax,ay);
+  return (s1 >= 0 && s2 >= 0 && s3 >= 0 && s4 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0 && s4 <= 0);
+}
+function furnitureAtScreen(sx, sy){
+  const z = cam.z;
+  for(const f of W.FURNITURE){
+    const hpx = f.h * 34 * z;
+    const p = (gx, gy) => W.proj(cam, gx - 0.5, gy - 0.5);
+    const [ax, ay] = p(f.x, f.y), [bx, by] = p(f.x + f.w, f.y);
+    const [cx2, cy2] = p(f.x + f.w, f.y + f.d), [dx, dy] = p(f.x, f.y + f.d);
+    if(pointInQuad(sx, sy, ax, ay - hpx, bx, by - hpx, cx2, cy2 - hpx, dx, dy - hpx)) return f;
+  }
+  return null;
+}
+
 function handleWorldClick(sx, sy){
   if(!world || world.dayOver) return;
-  const t = W.screenToTile(cam, sx, sy);
+  let t = W.screenToTile(cam, sx, sy);
   const actor = W.pickActorAt(world, t.x, t.y);
   if(actor){ showStatus(actor, sx, sy); return; }
   hideStatus();
+  // clicked a drawn furniture top? snap to that piece's tile so the coffee/
+  // couch/exit/desk branches below see what the player saw
+  const fScreen = furnitureAtScreen(sx, sy);
+  if(fScreen) t = { x: fScreen.x + (fScreen.w - 1) / 2, y: fScreen.y + (fScreen.d - 1) / 2 };
   if(W.isCoffeeAt(t.x, t.y)){
     if(world.coffeeUsed) toast('You’ve had your one coffee mercy today.');
     else if(W.goForCoffee(world)) toast('Heading for coffee…');
@@ -278,7 +304,13 @@ function handleWorldClick(sx, sy){
     return;
   }
   // plain floor: walk there
-  W.movePlayer(world, t);
+  if(W.movePlayer(world, t)) return;
+  // blocked tile (furniture): YOUR desk means "back to my seat"; anything else
+  // walks you to the nearest open tile beside it — a click never dead-ends
+  const gx = Math.round(t.x), gy = Math.round(t.y);
+  const f = fScreen || W.furnitureAt(gx, gy);
+  if(f && f.id === 'desk-you'){ W.playerGoHome(world); toast('Heading back to your seat.'); return; }
+  if(f) W.movePlayer(world, W.adjacentTo(world, { x: gx, y: gy }));
 }
 
 /* ---- status popup + toast ---- */

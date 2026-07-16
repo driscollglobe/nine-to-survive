@@ -3906,10 +3906,10 @@ const FIG_INK  = '#1b1712';
 // are proportion multipliers; restFace is the signature resting expression; idle
 // is the signature idle-loop gesture.
 const RIG = {
-  you:   { h:0.96,w:1.30,shoulder:1.04,hip:1.22, legLen:0.70,torso:1.06,headScale:1.34, posture:'shrug',
+  you:   { h:0.94,w:1.52,shoulder:1.02,hip:1.50, legLen:0.58,torso:1.10,headScale:1.42, posture:'shrug',
            head:'round', hair:'phones', hairCol:'#2b2824', skin:'badger', top:'tee', topCol:'#4B4743',
            bottom:'pants', botCol:'#3b3833', shoes:'sneak', shoeCol:'#2b2824', arms:'shrug', prop:null,
-           walk:'trudge', spd:1.0, idle:'settle', restFace:'tired', badger:true },
+           walk:'trudge', spd:1.0, idle:'settle', restFace:'fine', badger:true },
   brad:  { h:1.24,w:0.80,shoulder:1.06,hip:0.76, legLen:1.22,torso:0.92,headScale:0.90, posture:'leanfwd',
            head:'oval', hair:'swoop', hairCol:'#2a2019', skin:'tan', top:'quarterzip', topCol:'#3f6ca8',
            bottom:'slacks', botCol:'#39414d', shoes:'sneakwhite', shoeCol:'#efeae0', arms:'phone', prop:'phone',
@@ -4071,14 +4071,14 @@ function drawFigure(ctx, px, py, z, rig, o){
   if(rig.badger){
     // the mascot gets his own body: a chunky round pear (belly-forward, no
     // clothing) with a pale tummy patch — cuter, and unmistakably not a human
-    const midY = (shY + hipY) / 2 + 0.8 * S;
-    const rx = hipW * 0.72, ry = (hipY - shY) * 0.72;
+    const midY = (shY + hipY) / 2 + 1.2 * S;
+    const rx = hipW * 0.82, ry = (hipY - shY) * 0.80;   // properly plump
     ctx.beginPath(); ctx.ellipse(topX * 0.5, midY, rx, ry, 0, 0, Math.PI * 2);
     ctx.fillStyle = F(rig.topCol); ctx.fill();
     ctx.strokeStyle = OL; ctx.lineWidth = 1.3 * S; ctx.stroke();
     if(!sil){
-      ctx.beginPath(); ctx.ellipse(topX * 0.5, midY + ry * 0.18, rx * 0.56, ry * 0.6, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#d9d2c4'; ctx.fill();                       // the tummy
+      ctx.beginPath(); ctx.ellipse(topX * 0.5, midY + ry * 0.16, rx * 0.62, ry * 0.66, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#d9d2c4'; ctx.fill();                       // the big soft tummy
     }
   } else {
     ctx.beginPath();
@@ -4297,33 +4297,69 @@ function figFace(ctx, rig, cx, cy, r, mood, o){
   const eyeR = r * 0.35;                 // big eyes = friendly
   const eyeDX = r * 0.43;
   const eyeY = cy + r * 0.15;            // set low on the face (baby proportion)
-  if(badger){                            // bandit mask + pale muzzle behind the eyes
-    ctx.fillStyle = '#3a352e';
-    ctx.beginPath(); ctx.ellipse(cx, eyeY - r * 0.04, r * 0.94, r * 0.52, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#e6dfd0';
-    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.6, r * 0.54, r * 0.46, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2a2520'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.44, 1.2 * S, 0.9 * S, 0, 0, Math.PI * 2); ctx.fill();
+  if(badger){
+    // ── the LOGO face: wide deadpan eyes under flat lids, a real muzzle with a
+    // big soft nose, gentle mouth. Drawn whole, then return — his own face rig.
+    const eY = cy - r * 0.02;
+    // BADGER stripes, not a raccoon band: two soft VERTICAL dark stripes running
+    // down through each eye, pale blaze between them and pale cheeks outside
+    ctx.fillStyle = '#413c34';
+    [-1, 1].forEach(sgn => {
+      ctx.beginPath(); ctx.ellipse(cx + sgn * r * 0.46, eY - r * 0.12, r * 0.27, r * 0.78, 0, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.fillStyle = 'rgba(224,120,104,0.25)';   // soft blush on the pale cheeks
+    [-1, 1].forEach(sgn => { ctx.beginPath(); ctx.ellipse(cx + sgn * r * 0.78, cy + r * 0.34, r * 0.16, r * 0.11, 0, 0, Math.PI * 2); ctx.fill(); });
+    [-1, 1].forEach(sgn => {              // eyes: wide pale ovals + FLAT heavy lid
+      const ex = cx + sgn * r * 0.46, eyW = r * 0.34, eyH = r * 0.3;
+      ctx.save();
+      ctx.beginPath(); ctx.ellipse(ex, eY, eyW, eyH, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#f2ecdd'; ctx.fill(); ctx.clip();
+      const lidF = Math.min(0.62, 0.34 + (m.lid || 0) * 0.45);   // deadpan base
+      ctx.fillStyle = '#26211c';
+      ctx.fillRect(ex - eyW, eY - eyH, eyW * 2, eyH * lidF * 2);  // the flat lid
+      ctx.fillStyle = '#211a14';                                  // pupil under it
+      ctx.beginPath(); ctx.arc(ex, eY + eyH * 0.22, r * 0.105, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';                    // one tiny glint
+      ctx.beginPath(); ctx.arc(ex - r * 0.035, eY + eyH * 0.12, r * 0.032, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#211a14'; ctx.lineWidth = 1.5 * S;       // bold ink ring
+      ctx.beginPath(); ctx.ellipse(ex, eY, eyW, eyH, 0, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.fillStyle = '#e6dfd0';            // the muzzle, prominent like the mark
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.58, r * 0.55, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#211a14';            // big soft nose
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.4, r * 0.22, r * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2a2520'; ctx.lineWidth = 1.4 * S; ctx.lineCap = 'round';
+    const mm = Math.max(-0.5, Math.min(0.5, m.mouth + 0.1));      // gentle mouth
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.26, cy + r * 0.66);
+    ctx.quadraticCurveTo(cx, cy + r * 0.66 + mm * 4 * S, cx + r * 0.26, cy + r * 0.68);
+    ctx.stroke();
+    return;
   }
   // rosy cheeks — warmth
   ctx.fillStyle = 'rgba(224,120,104,0.30)';
   [-1, 1].forEach(sgn => { ctx.beginPath(); ctx.ellipse(cx + sgn * r * 0.66, cy + r * 0.44, r * 0.21, r * 0.13, 0, 0, Math.PI * 2); ctx.fill(); });
-  // eyes: big, glossy, forward-looking
+  // eyes: friendly, not bulging. The badger gets calm matte eyes (no white
+  // sclera ring — it reads bug-eyed against his dark mask) with ONE small glint.
   [-1, 1].forEach(sgn => {
     const ex = cx + sgn * eyeDX;
-    ctx.fillStyle = '#fcf8ef';
-    ctx.beginPath(); ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.12, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(28,20,12,0.45)'; ctx.lineWidth = 0.8 * S; ctx.stroke();
-    const pr = (m.open ? 0.9 : 0.82) * eyeR, pyE = eyeY + eyeR * 0.12;
-    ctx.fillStyle = '#5b3f28';                                   // warm iris (softer than pure black)
+    if(!badger){
+      ctx.fillStyle = '#fcf8ef';
+      ctx.beginPath(); ctx.ellipse(ex, eyeY, eyeR, eyeR * 1.12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(28,20,12,0.45)'; ctx.lineWidth = 0.8 * S; ctx.stroke();
+    }
+    const pr = (badger ? 0.62 : (m.open ? 0.9 : 0.82)) * eyeR, pyE = eyeY + eyeR * 0.12;
+    ctx.fillStyle = badger ? '#4a3524' : '#5b3f28';              // warm iris
     ctx.beginPath(); ctx.arc(ex, pyE, pr, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#211a14';                                   // pupil
     ctx.beginPath(); ctx.arc(ex, pyE + pr * 0.05, pr * 0.6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffffff';                                   // a big glossy sparkle + a small one
-    ctx.beginPath(); ctx.arc(ex - pr * 0.3, pyE - pr * 0.4, pr * 0.42, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex + pr * 0.36, pyE + pr * 0.3, pr * 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';                                   // catchlight(s)
+    ctx.beginPath(); ctx.arc(ex - pr * 0.3, pyE - pr * 0.4, pr * (badger ? 0.3 : 0.42), 0, Math.PI * 2); ctx.fill();
+    if(!badger){ ctx.beginPath(); ctx.arc(ex + pr * 0.36, pyE + pr * 0.3, pr * 0.2, 0, Math.PI * 2); ctx.fill(); }
     if(m.lid > 0.34){                                            // sleepy lid — gentle, partial
       ctx.fillStyle = badger ? '#3a352e' : (FIG_SKIN[rig.skin] || '#E8C39E');
-      const drop = Math.min(0.85, m.lid);
+      // the badger stays bright-eyed: his lids never pass a light "sleepy-cute"
+      const drop = Math.min(badger ? 0.42 : 0.85, m.lid);
       ctx.beginPath(); ctx.ellipse(ex, eyeY - eyeR * (1 - drop), eyeR * 1.06, eyeR * drop * 0.95, 0, 0, Math.PI * 2); ctx.fill();
     }
     // soft, short, gently-curved brow sitting high
@@ -4627,7 +4663,10 @@ function drawActor(ctx, cam, a, w){
   ctx.fillStyle = 'rgba(21,18,13,0.65)';
   ctx.font = '700 ' + Math.max(8, 8.5 * z) + 'px Poppins, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(a.id === 'you' ? 'YOU' : a.name.split(' ')[0].toUpperCase(), px, py + 12 * z);
+  // floor name: first name — but skip articles so "The Boss" reads BOSS, not THE
+  const nm = a.id === 'you' ? 'YOU'
+    : a.name.split(' ').filter(wd => wd.toLowerCase() !== 'the')[0].toUpperCase();
+  ctx.fillText(nm, px, py + 12 * z);
 }
 
 return {
@@ -5193,12 +5232,38 @@ canvas.addEventListener('wheel', (e) => {
   clampCam();
 }, { passive: false });
 
+// Iso pick correction: furniture is drawn UP the screen from its tile, so a
+// click on a desk's visible top actually maps to the floor tile BEHIND it —
+// you'd walk somewhere else (or nowhere). Test the click against each piece's
+// drawn top face in screen space and snap to the furniture the player SEES.
+function pointInQuad(px, py, ax, ay, bx, by, cx, cy, dx, dy){
+  const half = (x1,y1,x2,y2) => (px - x1) * (y2 - y1) - (py - y1) * (x2 - x1);
+  const s1 = half(ax,ay,bx,by), s2 = half(bx,by,cx,cy),
+        s3 = half(cx,cy,dx,dy), s4 = half(dx,dy,ax,ay);
+  return (s1 >= 0 && s2 >= 0 && s3 >= 0 && s4 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0 && s4 <= 0);
+}
+function furnitureAtScreen(sx, sy){
+  const z = cam.z;
+  for(const f of W.FURNITURE){
+    const hpx = f.h * 34 * z;
+    const p = (gx, gy) => W.proj(cam, gx - 0.5, gy - 0.5);
+    const [ax, ay] = p(f.x, f.y), [bx, by] = p(f.x + f.w, f.y);
+    const [cx2, cy2] = p(f.x + f.w, f.y + f.d), [dx, dy] = p(f.x, f.y + f.d);
+    if(pointInQuad(sx, sy, ax, ay - hpx, bx, by - hpx, cx2, cy2 - hpx, dx, dy - hpx)) return f;
+  }
+  return null;
+}
+
 function handleWorldClick(sx, sy){
   if(!world || world.dayOver) return;
-  const t = W.screenToTile(cam, sx, sy);
+  let t = W.screenToTile(cam, sx, sy);
   const actor = W.pickActorAt(world, t.x, t.y);
   if(actor){ showStatus(actor, sx, sy); return; }
   hideStatus();
+  // clicked a drawn furniture top? snap to that piece's tile so the coffee/
+  // couch/exit/desk branches below see what the player saw
+  const fScreen = furnitureAtScreen(sx, sy);
+  if(fScreen) t = { x: fScreen.x + (fScreen.w - 1) / 2, y: fScreen.y + (fScreen.d - 1) / 2 };
   if(W.isCoffeeAt(t.x, t.y)){
     if(world.coffeeUsed) toast('You’ve had your one coffee mercy today.');
     else if(W.goForCoffee(world)) toast('Heading for coffee…');
@@ -5215,7 +5280,13 @@ function handleWorldClick(sx, sy){
     return;
   }
   // plain floor: walk there
-  W.movePlayer(world, t);
+  if(W.movePlayer(world, t)) return;
+  // blocked tile (furniture): YOUR desk means "back to my seat"; anything else
+  // walks you to the nearest open tile beside it — a click never dead-ends
+  const gx = Math.round(t.x), gy = Math.round(t.y);
+  const f = fScreen || W.furnitureAt(gx, gy);
+  if(f && f.id === 'desk-you'){ W.playerGoHome(world); toast('Heading back to your seat.'); return; }
+  if(f) W.movePlayer(world, W.adjacentTo(world, { x: gx, y: gy }));
 }
 
 /* ---- status popup + toast ---- */

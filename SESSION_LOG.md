@@ -987,3 +987,47 @@ live-drawn figure; the drawn badger is game-only. Inlined a 480px version
 (~137 KB) as the mascot image; the asset is itself a full circle, so the blend
 issue is gone by construction. Removed the mascot draw loop. The chunky in-game
 badger, on-ear headphones, and face stroke-weight fixes from 13 stay as-is.
+
+### Session 13c — plump badger + bright eyes (w27)
+Kevin: the badger must be plumper/fatter/cuter and stand out (in-game too), and
+his eyes read "drug addict" — must be cute. Renderer-only.
+- **Plump**: RIG.you pushed to w1.52 hip1.50 legLen0.58 headScale1.42; the pear
+  body + tummy patch drawn rounder/bigger (rx .82·hipW, ry .80, tummy .62/.66).
+  Reads as a round little mascot next to any human; verified next to Marcus/Brad
+  and in-game at play zoom.
+- **Bright eyes**: restFace was 'tired' (permanent half-lids over the big glossy
+  eyes = stoned). Now 'fine' (wide sparkly default), and the badger's lids are
+  capped at a light 0.42 drop so even tired/dead moods read sleepy-cute.
+game-test 281/0, world sweep green, no console errors. Standalone + build w27.
+
+### Session 13d — the logo face + label fix (w27)
+- **Badger face rebuilt to match the brand mark**: wide pale deadpan eyes under a
+  FLAT heavy lid (logo-style, not droopy, not sparkly), pupils with one tiny
+  glint, a prominent muzzle with a big soft nose, gentle mouth; bold ink eye
+  rings; soft blush. Own early-return branch in figFace — the badger has his own
+  face rig now. (Journey: beady→scary, giant sparkly→bug-eyed, half-lids→stoned;
+  the logo's flat-lid deadpan is the landing spot.)
+- **Floor label fix**: "The Boss" rendered its first word — you'd see "THE" over
+  his head. Labels now skip articles → BOSS.
+game-test 281/0, world sweep green, no console errors. Standalone + build w27.
+Shipped to BOTH repos: dev (nine-to-survive, branch visual-production-v1) and
+the live Pages site (ninetosurvive → index.html + ntos-standalone.html).
+
+### Session 13e — badger stripes (not a raccoon) + iso click-pick fix (w27)
+- **Badger markings corrected**: the horizontal dark band read RACCOON. Replaced
+  with proper badger identity — two soft VERTICAL stripes down through each eye,
+  pale blaze between, pale cheeks (blush moved onto them). Logo-face eyes stay.
+- **Click-to-move fix (real bug, shell-side)**: furniture is drawn UP the screen
+  from its tile, so clicking a desk's visible top mapped to the floor tile
+  BEHIND it — movePlayer either walked you somewhere else or (blocked tile)
+  silently did nothing. That's Kevin's "couldn't get back to my seat."
+  - furnitureAtScreen(): screen-space hit test against each piece's drawn top
+    face; clicks snap to the furniture the player actually SEES.
+  - Clicking YOUR desk (tile or sprite) now walks you home to your seat (toast).
+  - Any other blocked/furniture click walks you to the nearest open adjacent
+    tile — a click never dead-ends. Coffee/couch/exit sprites route to their
+    proper actions (verified: machine-top click → coffee errand).
+  - Automated 209-tile click sweep: 195 land exactly; all 14 exceptions are
+    tiles visually occluded by furniture tops, now correctly redirected
+    (desk-top clicks → seat, plant-top → beside it, exit-top → the toast).
+game-test 281/0, world sweep green. Standalone + build refreshed; live re-staged.
