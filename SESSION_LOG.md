@@ -1046,3 +1046,12 @@ game-test 281/0, world sweep green. Standalone + build refreshed; live re-staged
   width), front-most wins, checked BEFORE the tile pick. Verified: all 8 NPCs
   open their popup from a body click at their desks.
 game-test 281/0, world sweep green. Standalone + build w28.
+
+### Session 14b — MERGED: Ting's motive discovery layer (n22 + w28)
+Merged origin/motive-discovery-layer into visual-production-v1. Only conflict:
+version tags (took newest of each — his n22 brain, our w28 world); standalone
+rebuilt fresh from merged sources rather than trusting the auto-merge of a
+generated file. Verified merged: game-test 304/0 (his 23 §17d discovery checks +
+everything else), world sweep 151/0, browser smoke clean (8 roles roll,
+motiveTell/motiveMorningFeed live, no console errors, visuals intact).
+The motive system is now on the shared branch and live.
