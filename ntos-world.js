@@ -1044,6 +1044,13 @@ function playerGoHome(w){
   sendTo(w, you, you.home, 'walking');
   w.moveMarker = { x: you.home.x, y: you.home.y };
 }
+// Idle at the couch spot = sitting. Presentation-only: render() and drawActor
+// use this to draw you ON the cushion instead of standing behind the backrest.
+function playerOnCouch(w){
+  const you = getActor(w, 'you');
+  return !you.path.length && !w.playerErrand
+    && Math.hypot(you.x - COUCH_SPOT.x, you.y - COUCH_SPOT.y) < 0.8;
+}
 
 // ── interceptions + schemes: react to what you can SEE crossing the floor ─────
 function confrontBrad(w){
@@ -1508,7 +1515,12 @@ function render(w, ctx, cam, vw, vh, tMs){
 
   const drawables = [];
   FURNITURE.forEach(f => drawables.push({ d: f.x + f.w / 2 + f.y + f.d / 2, f }));
-  w.actors.forEach(a => { if(!a.off) drawables.push({ d: a.x + a.y + 0.01, a }); });
+  w.actors.forEach(a => {
+    if(a.off) return;
+    // seated on the couch: draw AFTER the couch so the cushion doesn't cover you
+    const d = (a.id === 'you' && playerOnCouch(w)) ? a.x + a.y + 2.5 : a.x + a.y + 0.01;
+    drawables.push({ d, a });
+  });
   drawables.sort((p, q) => p.d - q.d);
   drawables.forEach(item => {
     if(item.f) drawBox(ctx, cam, item.f, w);
@@ -1978,7 +1990,9 @@ function drawFigure(ctx, px, py, z, rig, o){
   ctx.translate(0, bob);
 
   // ── key levels (feet at 0, up = negative) — legs, torso, head vary per rig ──
-  const legLen = 12.6 * (rig.legLen || 1), torsoLen = 11.5 * (rig.torso || 1);
+  // seated: legs collapse to dangling stubs so the body settles onto the seat
+  const legLen = 12.6 * (rig.legLen || 1) * (o.seated ? 0.30 : 1),
+        torsoLen = 11.5 * (rig.torso || 1);
   const hipY = -legLen * S * H;
   const shY  = hipY - torsoLen * S * H + P.shDrop * S;
   const hipW = 5.0 * S * W * (rig.hip || 1);
@@ -2511,11 +2525,21 @@ function drawPortrait(ctx, id, x, y, sz, tMs, mood){
 
 function drawActor(ctx, cam, a, w){
   const z = cam.z;
-  const [px, py] = proj(cam, a.x, a.y);
+  let [px, py] = proj(cam, a.x, a.y);
   const rig = RIG[a.id] || RIG.you;
-  // contact shadow, sized to the figure's build
-  ctx.beginPath(); ctx.ellipse(px, py, 10 * z * (rig.w || 1), 5 * z, 0, 0, Math.PI * 2);
-  ctx.fillStyle = WT.contactShadow; ctx.fill();
+  // ON the couch, not behind it: idle at the couch spot renders as sitting on
+  // the cushion one tile forward, legs dangling (presentation only — the logic
+  // tile is unchanged)
+  const seated = a.id === 'you' && w && playerOnCouch(w);
+  if(seated){
+    const [sx2, sy2] = proj(cam, COUCH_SPOT.x, COUCH_SPOT.y + 1);
+    px = sx2; py = sy2 - 12 * z;             // settle onto the cushion top
+  }
+  // contact shadow, sized to the figure's build (the couch provides its own)
+  if(!seated){
+    ctx.beginPath(); ctx.ellipse(px, py, 10 * z * (rig.w || 1), 5 * z, 0, 0, Math.PI * 2);
+    ctx.fillStyle = WT.contactShadow; ctx.fill();
+  }
   // the Boss's bad-day / patrol ring stays a floor tell
   if(a.id === 'boss' && (a.mood === 'bad' || a.state === 'patrol')){
     ctx.beginPath(); ctx.ellipse(px, py, 15 * z, 7.5 * z, 0, 0, Math.PI * 2);
@@ -2532,7 +2556,7 @@ function drawActor(ctx, cam, a, w){
   if(moving){ const n = a.path[0]; const sdx = (n.x - a.x) - (n.y - a.y); if(Math.abs(sdx) > 0.001) a._fl = sdx < 0; }
   const cadence = { bounce:12, march:6.5, shuffle:4.2, drift:5.2, amble:6.6, brisk:13, precise:11, strut:7.5, trudge:6 }[rig.walk] || 8;
   drawFigure(ctx, px, py, z, rig, {
-    mood: fmood, moving,
+    mood: fmood, moving, seated,
     walkPhase: (_tMs / 1000) * cadence * (rig.spd || 1),
     idlePhase: (_tMs / 1000) * 1.1 + (a.x + a.y),   // desynced per position
     faceLeft: !!a._fl

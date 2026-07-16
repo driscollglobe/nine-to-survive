@@ -1031,3 +1031,18 @@ the live Pages site (ninetosurvive → index.html + ntos-standalone.html).
     tiles visually occluded by furniture tops, now correctly redirected
     (desk-top clicks → seat, plant-top → beside it, exit-top → the toast).
 game-test 281/0, world sweep green. Standalone + build refreshed; live re-staged.
+
+### Session 14 — sit ON the couch + actor-click fix (Ting's report) (w28)
+- **Couch**: idling at COUCH_SPOT now renders you sitting ON the cushion one
+  tile forward, legs dangling (drawFigure o.seated: legs collapse to stubs so
+  the body settles onto the seat), drawn after the couch (depth bump) so the
+  backrest doesn't cover you; couch provides the shadow. playerOnCouch(w)
+  helper; presentation-only — the logic tile is unchanged.
+- **Actor picking (bug found by Ting's Claude — confirmed)**: characters draw
+  up-screen like furniture, and pickActorAt used the raw tile with 0.75
+  tolerance and early-returned before the furniture snap — clicking a seated
+  NPC's body landed ~1 tile behind them and did nothing. Shell-side
+  actorAtScreen(): hit-test each actor's drawn body box (rig-accurate height/
+  width), front-most wins, checked BEFORE the tile pick. Verified: all 8 NPCs
+  open their popup from a body click at their desks.
+game-test 281/0, world sweep green. Standalone + build w28.

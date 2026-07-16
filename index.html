@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Expanded:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="ntos-game.js?v=n21"></script>
-<script src="ntos-world.js?v=w27"></script>
+<script src="ntos-world.js?v=w28"></script>
 <link rel="stylesheet" href="ntos-theme.css">
 </head>
 <body>
@@ -277,11 +277,33 @@ function furnitureAtScreen(sx, sy){
   }
   return null;
 }
+// Characters draw up-screen from their tile just like furniture — a click on
+// Dennis's body maps to the floor tile behind him and the old tile-tolerance
+// pick missed. Hit-test each actor's drawn body box; front-most wins.
+function actorAtScreen(sx, sy){
+  const z = cam.z;
+  let hit = null, hitDepth = -1;
+  for(const a of world.actors){
+    if(a.off) continue;
+    const rig = (W.RIG && W.RIG[a.id]) || {};
+    const H = rig.h || 1;
+    const hpx = ((12.6 * (rig.legLen || 1) + 11.5 * (rig.torso || 1)) * H
+                + 2 * 4.6 * (rig.headScale || 1) * 1.34 + 4) * z;
+    const halfW = 9 * z * (rig.w || 1) + 4 * z;
+    const [fx, fy] = W.proj(cam, a.x, a.y);
+    if(sx >= fx - halfW && sx <= fx + halfW && sy >= fy - hpx && sy <= fy + 6 * z){
+      const d = a.x + a.y;
+      if(d > hitDepth){ hit = a; hitDepth = d; }
+    }
+  }
+  return hit;
+}
 
 function handleWorldClick(sx, sy){
   if(!world || world.dayOver) return;
   let t = W.screenToTile(cam, sx, sy);
-  const actor = W.pickActorAt(world, t.x, t.y);
+  // pick what the player SEES: drawn bodies first, then the old feet-tile pick
+  const actor = actorAtScreen(sx, sy) || W.pickActorAt(world, t.x, t.y);
   if(actor){ showStatus(actor, sx, sy); return; }
   hideStatus();
   // clicked a drawn furniture top? snap to that piece's tile so the coffee/
