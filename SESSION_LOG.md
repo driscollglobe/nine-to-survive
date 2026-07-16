@@ -958,3 +958,32 @@ like on a screen. Renderer + shell presentation only; no gameplay touched.
   hood so it frames the crown and the face stays fully visible.
 Verified: cute portrait grid (all 9), and live in-game popups for Marcus + Kayla,
 no console errors. 269 + 151, 0 failed. Standalone + build refreshed.
+
+### Session 13 — mascot blend fix + chunky badger (w26)
+Kevin: the logo circle's colors didn't blend, and the in-game bear was too skinny
+/ not cute enough — "he can be different than the rest." Renderer + shell only.
+- **Start-screen mascot**: replaced the static PNG (whose baked plate/bevel never
+  quite matched the circle) with the LIVE code-drawn badger — full figure,
+  mid-shrug, on a painted warm backdrop inside the circle. Blends by construction,
+  animates subtly, and dropped ~96 KB of base64 from index.html.
+- **The badger's own body**: rig.badger now gets a chunky round pear body with a
+  pale tummy patch (no human trapezoid torso, no clothing lines) + stubbier legs
+  and a bigger head (w1.30 hip1.22 legLen0.70 headScale1.34). Unmistakably the
+  mascot, not a ninth human.
+- **Headphones ON the ears**: the old neckband arc crossed his face at big head
+  sizes; now crown band + on-ear cups over the round ears (Kayla keeps her
+  over-ear cans).
+- **Face stroke-weight fix**: figFace derived its stroke unit from r/4.7, but
+  chibi heads are drawn ×1.34 — every brow/mouth/glasses line was 34% too fat
+  (the badger's smile read as a giant open mouth). Now r/6.3.
+Verified: start screen blends seamlessly, badger cute at mascot + floor + card
+sizes, Marcus card portrait clean, no console errors. game-test 281/0 (incl.
+Ting's §17c), world-test sweep green. Standalone + build refreshed.
+
+### Session 13b — the real logo on the start screen
+Correction from Kevin: the start screen should carry the actual circular brand
+logo (design/assets/logo-circle.png — badger + NINE TO SURVIVE wordmark), not a
+live-drawn figure; the drawn badger is game-only. Inlined a 480px version
+(~137 KB) as the mascot image; the asset is itself a full circle, so the blend
+issue is gone by construction. Removed the mascot draw loop. The chunky in-game
+badger, on-ear headphones, and face stroke-weight fixes from 13 stay as-is.

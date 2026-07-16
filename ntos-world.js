@@ -1864,7 +1864,7 @@ const FIG_INK  = '#1b1712';
 // are proportion multipliers; restFace is the signature resting expression; idle
 // is the signature idle-loop gesture.
 const RIG = {
-  you:   { h:1.00,w:1.14,shoulder:1.12,hip:1.04, legLen:0.88,torso:1.02,headScale:1.20, posture:'shrug',
+  you:   { h:0.96,w:1.30,shoulder:1.04,hip:1.22, legLen:0.70,torso:1.06,headScale:1.34, posture:'shrug',
            head:'round', hair:'phones', hairCol:'#2b2824', skin:'badger', top:'tee', topCol:'#4B4743',
            bottom:'pants', botCol:'#3b3833', shoes:'sneak', shoeCol:'#2b2824', arms:'shrug', prop:null,
            walk:'trudge', spd:1.0, idle:'settle', restFace:'tired', badger:true },
@@ -2025,17 +2025,31 @@ function drawFigure(ctx, px, py, z, rig, o){
   figLimb(ctx, shoObj.far.sx, shY + 0.5 * S, shoObj.far.hx, shoObj.far.hy, armW, F(rig.topCol), OL, S);
   figHand(ctx, shoObj.far.hx, shoObj.far.hy, 2.2 * S, F(skin), OL, S);
 
-  // ── torso (clothing silhouette) ──
-  ctx.beginPath();
-  ctx.moveTo(-hipW / 2, hipY);
-  ctx.lineTo(shLx, shY);
-  ctx.quadraticCurveTo(topX, shY - 2.4 * S, shRx, shY);
-  ctx.lineTo(hipW / 2, hipY);
-  ctx.quadraticCurveTo(0, hipY + 2.2 * S, -hipW / 2, hipY);
-  ctx.closePath();
-  ctx.fillStyle = F(rig.topCol); ctx.fill();
-  ctx.strokeStyle = OL; ctx.lineWidth = 1.3 * S; ctx.stroke();
-  if(!sil) figClothing(ctx, rig, { hipW, shW, shLx, shRx, shY, hipY, topX, S, OL });
+  // ── torso ──
+  if(rig.badger){
+    // the mascot gets his own body: a chunky round pear (belly-forward, no
+    // clothing) with a pale tummy patch — cuter, and unmistakably not a human
+    const midY = (shY + hipY) / 2 + 0.8 * S;
+    const rx = hipW * 0.72, ry = (hipY - shY) * 0.72;
+    ctx.beginPath(); ctx.ellipse(topX * 0.5, midY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = F(rig.topCol); ctx.fill();
+    ctx.strokeStyle = OL; ctx.lineWidth = 1.3 * S; ctx.stroke();
+    if(!sil){
+      ctx.beginPath(); ctx.ellipse(topX * 0.5, midY + ry * 0.18, rx * 0.56, ry * 0.6, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#d9d2c4'; ctx.fill();                       // the tummy
+    }
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(-hipW / 2, hipY);
+    ctx.lineTo(shLx, shY);
+    ctx.quadraticCurveTo(topX, shY - 2.4 * S, shRx, shY);
+    ctx.lineTo(hipW / 2, hipY);
+    ctx.quadraticCurveTo(0, hipY + 2.2 * S, -hipW / 2, hipY);
+    ctx.closePath();
+    ctx.fillStyle = F(rig.topCol); ctx.fill();
+    ctx.strokeStyle = OL; ctx.lineWidth = 1.3 * S; ctx.stroke();
+    if(!sil) figClothing(ctx, rig, { hipW, shW, shLx, shRx, shY, hipY, topX, S, OL });
+  }
 
   // ── neck + head (shape varies: square jaw, egg, oval, round) ──
   const neckW = (rig.posture === 'hunch' ? 3.8 : 3.0) * S;   // Dennis's head sits low on a thick neck
@@ -2234,7 +2248,8 @@ const FIG_MOOD = {
 // cheeks, a small friendly mouth. Mood shifts stay gentle — grumpy at worst,
 // never scary. Built from eye/brow/mouth like before, just softened & enlarged.
 function figFace(ctx, rig, cx, cy, r, mood, o){
-  const S = r / 4.7;
+  const S = r / 6.3;   // heads are drawn ×1.34 chibi; divide it back out so
+                       // brows/mouth/glasses keep their intended stroke weight
   const m = FIG_MOOD[mood] || FIG_MOOD.fine;
   const badger = rig.badger;
   const eyeR = r * 0.35;                 // big eyes = friendly
@@ -2359,14 +2374,23 @@ function figHair(ctx, rig, cx, cy, r, S, sil, o){
       ctx.beginPath(); ctx.arc(cx, cy - r * 0.1, r * 1.0, Math.PI * 1.05, Math.PI * 1.95); ctx.lineTo(cx + r * 0.5, cy - r * 0.55); ctx.lineTo(cx - r * 0.5, cy - r * 0.55); ctx.closePath(); ctx.fill();
       break;
   }
-  if(rig.phones || rig.hair === 'phones'){
-    const overEars = rig.hair !== 'phones';
+  if(rig.hair === 'phones'){
+    // the badger wears his ON the ears: cups over the round ears + a crown band.
+    // Cuter, and it never crosses the face at any scale.
+    ctx.strokeStyle = sil ? FIG_INK : '#2a2824'; ctx.lineWidth = 2.2 * S; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy - r * 0.12, r * 1.02, Math.PI * 1.22, Math.PI * 1.78); ctx.stroke();
+    [-1, 1].forEach(s => {
+      ctx.beginPath(); ctx.arc(cx + s * r * 0.7, cy - r * 0.75, r * 0.34, 0, Math.PI * 2);
+      ctx.fillStyle = sil ? FIG_INK : '#34302b'; ctx.fill();
+      if(!sil){ ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1 * S;
+        ctx.beginPath(); ctx.arc(cx + s * r * 0.7, cy - r * 0.75, r * 0.2, 0, Math.PI * 2); ctx.stroke(); }
+    });
+  } else if(rig.phones){
+    // Kayla: big over-ear cans + overhead band
     ctx.strokeStyle = sil ? FIG_INK : '#2a2824'; ctx.lineWidth = 1.8 * S; ctx.lineCap = 'round';
-    if(overEars){ ctx.beginPath(); ctx.arc(cx, cy - r * 0.1, r * 1.18, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
-    else { ctx.beginPath(); ctx.arc(cx, cy + r * 0.55, r * 1.15, Math.PI * 1.15, Math.PI * 1.85, true); ctx.stroke(); }
-    const ey = overEars ? cy - r * 0.1 : cy + r * 0.55;
+    ctx.beginPath(); ctx.arc(cx, cy - r * 0.1, r * 1.18, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
     ctx.fillStyle = sil ? FIG_INK : '#34302b';
-    [-1, 1].forEach(s => { ctx.beginPath(); ctx.ellipse(cx + s * r * 1.12, ey, 1.7 * S, 2.4 * S, 0, 0, Math.PI * 2); ctx.fill(); });
+    [-1, 1].forEach(s => { ctx.beginPath(); ctx.ellipse(cx + s * r * 1.12, cy - r * 0.1, 1.7 * S, 2.4 * S, 0, 0, Math.PI * 2); ctx.fill(); });
   }
   if(rig.airpod && !sil){ ctx.fillStyle = '#f2ede2'; ctx.beginPath(); ctx.ellipse(cx + r * 0.95, cy + r * 0.1, 1.1 * S, 1.6 * S, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#9a917f'; ctx.lineWidth = 0.6 * S; ctx.stroke(); }
 }
