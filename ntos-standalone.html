@@ -1461,6 +1461,23 @@ const NineToSurvive = (() => {
     accept:'Accept.', decline:'Decline.', capitulate:'Give in.', hold:'Hold your line.',
     probe:'Ask them something real.', spend:'Call in the favor they owe you.',
     pay:'Pay what you owe.', refuse:'Refuse — for now.', settle:'Settle the debt clean.' };
+  // Outcome fallback (role-neutral, in-voice) for an off-skin roll — the ~10% case
+  // where a character draws a role it has no authored skin for. Without this the
+  // outcome came back an EMPTY STRING and the conversation read as broken.
+  const GENERIC_OUTCOME = {
+    defer:'You defer. It lands well, and it costs you a little, the way it always does.',
+    hedge:'You stay noncommittal. Neither warmth nor rupture — filed for later.',
+    just:'Five minutes of being a person in a building that keeps forgetting you are one. It helps.',
+    accept:'You take what’s offered. Whether it was a gift or a hook, you find out later.',
+    decline:'You pass. Your ledger stays clean; the offer cools and waits.',
+    capitulate:'You give them the loyalty they wanted, out loud. It buys peace and costs a sliver of you.',
+    hold:'You hold your line. They note it — in a column, somewhere.',
+    probe:'You ask the real question. The answer, rehearsed or not, tells you something.',
+    spend:'You call in the favor they owed you. It clears, cleanly.',
+    pay:'You settle what you owed. The books balance; you’re lighter by exactly that much.',
+    refuse:'You put it off. The debt doesn’t close — it just gets heavier.',
+    settle:'You square the account without giving up anything you can’t spare.'
+  };
 
   // Flavor. Mentor skins: {open, gift:{accept,probe,just}, spend:{t,o}}. Trap skins:
   // {collectMeter, refuseHeat, open, bait:{...}, collect:{...}, falseOpen?}. Patron:
@@ -1695,11 +1712,13 @@ const NineToSurvive = (() => {
     const choices = tmpl[beat]
       .filter(m => m.gate !== 'canSettle' || canSettle(g, id))   // drop settle when unavailable
       .map(m => { const f = flavor(beat, m.key);
-        return Object.assign({}, m, { t: f ? f.t : GENERIC_CHOICE[m.key] || m.key, o: f ? f.o : '' }); });
+        return Object.assign({}, m, { t: f ? f.t : GENERIC_CHOICE[m.key] || m.key,
+                                      o: f ? f.o : (GENERIC_OUTCOME[m.key] || '…') }); });
     // mentor: graft "spend the favor" onto gift when they owe you (augments, not replaces)
     if(role === 'true-mentor' && beat === 'gift' && c.ledger.them > 0){
       const m = tmpl.spend, f = skin && skin.spend;
-      choices.push(Object.assign({}, m, { t: f ? f.t : GENERIC_CHOICE.spend, o: f ? f.o : '' }));
+      choices.push(Object.assign({}, m, { t: f ? f.t : GENERIC_CHOICE.spend,
+                                          o: f ? f.o : GENERIC_OUTCOME.spend }));
     }
     const openText = (role === 'hidden-debt-trap' && npc.wants.falseTell && skin && skin.falseOpen)
       ? MOTIVE_TELLS['hidden-debt-trap'].faintFalse[id]     // reuse the authored head-fake

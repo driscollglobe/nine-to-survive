@@ -1749,6 +1749,46 @@ ok('convo (ledger/refusals) serializes; ensureConvo backfills a stripped save', 
   return okSer && okBf;
 })());
 
+// COVERAGE: every (character, role, beat, choice) — including gated states where
+// settle is dropped — must resolve to a NON-EMPTY outcome. A silent empty outcome
+// (off-skin roll, missing skin) reads as a broken conversation and fails here.
+ok('every conversation choice returns a non-empty outcome (all chars × roles × beats, incl. gated)', (() => {
+  const ROLES = ['fealty-patron', 'true-mentor', 'hidden-debt-trap'];
+  const empties = [];
+  const setupsFor = role =>
+    role === 'hidden-debt-trap'
+      ? [{ n:'bait', you:0 }, { n:'collect', you:1 },
+         { n:'collect+favor', you:1, them:1 }, { n:'collect+receipt', you:1, receipt:true }]
+    : role === 'fealty-patron'
+      ? [{ n:'offer', no:0 }, { n:'cold', no:2 }]
+      : [{ n:'gift', them:0 }, { n:'gift+spend', them:1 }];
+  G.NPC_IDS.forEach(id => ROLES.forEach(role => setupsFor(role).forEach(su => {
+    // count the rendered choices once, then resolve each on a fresh game
+    const probe = G.newGame(3);
+    const pnp = probe.npcState[id];
+    pnp.wants.role = role; pnp.wants.falseTell = false;
+    if(su.you != null) pnp.convo.ledger.you = su.you;
+    if(su.them != null) pnp.convo.ledger.them = su.them;
+    if(su.no != null) pnp.convo.no = su.no;
+    if(su.receipt) G.addReceipt(probe, 'priya_commit_log');
+    const n = G.conversationFor(probe, id).choices.length;
+    for(let i = 0; i < n; i++){
+      const g = G.newGame(3);
+      const np = g.npcState[id];
+      np.wants.role = role; np.wants.falseTell = false;
+      if(su.you != null) np.convo.ledger.you = su.you;
+      if(su.them != null) np.convo.ledger.them = su.them;
+      if(su.no != null) np.convo.no = su.no;
+      if(su.receipt) G.addReceipt(g, 'priya_commit_log');
+      const res = G.applyConversationChoice(g, id, i, 700, 'meh');
+      const o = res && res.outcome;
+      if(typeof o !== 'string' || o.trim() === '')
+        empties.push(id + '/' + role + '/' + su.n + '/#' + i);
+    }
+  })));
+  return empties.length === 0;
+})(), 'empty-outcome combos must be 0');
+
 // ---- 18. the competent policy (pure functions; consumed by movie + soak) ---------
 function fakeWorld(over){
   return Object.assign({
