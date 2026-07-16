@@ -1055,3 +1055,11 @@ generated file. Verified merged: game-test 304/0 (his 23 §17d discovery checks 
 everything else), world sweep 151/0, browser smoke clean (8 roles roll,
 motiveTell/motiveMorningFeed live, no console errors, visuals intact).
 The motive system is now on the shared branch and live.
+
+### Session 14c — OBESE badger (w29)
+Kevin: not overweight — obese, Cartman-fat. RIG.you pushed to w2.05 shoulder1.45
+hip1.95 legLen0.40; the body branch is now a near-sphere (rx .92·hipW, ry
+.85+4.5S) that swallows the stub legs and sags low, with an enormous tummy
+(.68/.72). Verified big (dwarfs Marcus/Brad), at his desk in-game (tummy pokes
+over the desktop), no console errors. game-test 304/0, sweep green. w29 shipped
+to dev + live.
