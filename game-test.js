@@ -1500,6 +1500,295 @@ ok('wants serializes with the save (all four fields)', (() => {
     && 'falseTell' in back.npcState[id].wants && 'tellShown' in back.npcState[id].wants);
 })());
 
+// ---- 17e. CONVERSATIONS: the motive layer becomes playable ------------------------
+function convoGame(seed, id, role, falseTell){
+  const g = G.newGame(seed);
+  g.npcState[id].wants.role = role;
+  g.npcState[id].wants.revealed = 0; g.npcState[id].wants.tellShown = 'none';
+  if(role === 'hidden-debt-trap') g.npcState[id].wants.falseTell = !!falseTell;
+  return g;
+}
+const pickKey = (scene, key) => scene.choices.findIndex(c => c.key === key);
+function applyKey(g, id, key, mood){
+  const sc = G.conversationFor(g, id);
+  return G.applyConversationChoice(g, id, pickKey(sc, key), 700, mood);
+}
+
+ok('the hr↔meredith id bridge: a world "hr" conversation resolves via brain "meredith"', (() => {
+  const g = G.newGame(3);
+  g.npcState.meredith.wants.role = 'fealty-patron';
+  const sc = G.conversationFor(g, 'hr');                 // caller holds the world id
+  if(!sc || sc.id !== 'meredith') return false;
+  const r = G.applyConversationChoice(g, 'hr', sc.choices.findIndex(c => c.key === 'defer'), 700, 'meh');
+  return !!r && g.npcState.meredith.convo.yes === 1 && r.ds > 0;
+})());
+ok('role-conditioning: same char, different role → different beat + scene', (() => {
+  const gp = convoGame(3, 'dennis', 'fealty-patron');
+  const gt = convoGame(3, 'dennis', 'hidden-debt-trap');
+  const sp = G.conversationFor(gp, 'dennis'), st = G.conversationFor(gt, 'dennis');
+  return sp.beat === 'offer' && st.beat === 'bait' && sp.scene !== st.scene;
+})());
+ok('mentor gift.accept never creates a debt', (() => {
+  const g = convoGame(3, 'marcus', 'true-mentor'); applyKey(g, 'marcus', 'accept', 'meh');
+  return g.npcState.marcus.convo.ledger.you === 0;
+})());
+ok('trap bait.accept creates exactly one debt', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap'); applyKey(g, 'dennis', 'accept', 'meh');
+  return g.npcState.dennis.convo.ledger.you === 1;
+})());
+ok('collect pay charges the skin meter (dennis=standing) and clears the debt', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap'); g.npcState.dennis.convo.ledger.you = 1;
+  const before = g.standing; const r = applyKey(g, 'dennis', 'pay', 'meh');
+  return g.npcState.dennis.convo.ledger.you === 0 && (before - g.standing) === 5 && r.dso === 0;
+})());
+ok('a soul-leverage trap (meredith) collects on Soul, not Standing', (() => {
+  const g = convoGame(3, 'meredith', 'hidden-debt-trap'); g.npcState.meredith.convo.ledger.you = 1;
+  const bS = g.standing, bSo = g.soul; applyKey(g, 'meredith', 'pay', 'meh');
+  return g.standing === bS && (bSo - g.soul) === 5;
+})());
+// FIX 2: collect is the biggest reveal — pushes to sharp + speaks the callback in place
+ok('a false-tell collect crosses to sharp AND lands the cold callback in the outcome', (() => {
+  const g = convoGame(1, 'dennis', 'hidden-debt-trap', true);
+  g.npcState.dennis.convo.ledger.you = 1; g.npcState.dennis.wants.revealed = 0.4;
+  const r = applyKey(g, 'dennis', 'pay', 'meh');
+  const cb = G.MOTIVE_TELLS['hidden-debt-trap'].sharpCorrected.dennis;
+  return g.npcState.dennis.wants.revealed >= 0.7 && r.outcome.indexOf(cb) >= 0;
+})());
+ok('a plain-trap collect speaks the generic sharp tell', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap', false);
+  g.npcState.dennis.convo.ledger.you = 1; g.npcState.dennis.wants.revealed = 0;
+  const r = applyKey(g, 'dennis', 'pay', 'meh');
+  return r.outcome.indexOf(G.MOTIVE_TELLS['hidden-debt-trap'].sharp) >= 0;
+})());
+// interest escalation
+ok('collect cost escalates with refusals: 5,7,9, capped 11', (() => {
+  const costs = [];
+  for(let refuse = 0; refuse <= 4; refuse++){
+    const g = convoGame(3, 'dennis', 'hidden-debt-trap');
+    g.npcState.dennis.convo.ledger.you = 1; g.npcState.dennis.convo.ledger.refusals = refuse;
+    const b = g.standing; applyKey(g, 'dennis', 'pay', 'meh'); costs.push(b - g.standing);
+  }
+  return costs.join(',') === '5,7,9,11,11';
+})());
+ok('refuse increments interest; pay resets it; interest is separate from convo.no', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap'); g.npcState.dennis.convo.ledger.you = 2;
+  applyKey(g, 'dennis', 'refuse', 'meh');
+  const a = g.npcState.dennis.convo;
+  const ok1 = a.ledger.refusals === 1 && a.no === 1 && a.ledger.you === 2;
+  applyKey(g, 'dennis', 'pay', 'meh');
+  return ok1 && g.npcState.dennis.convo.ledger.refusals === 0 && g.npcState.dennis.convo.ledger.you === 1;
+})());
+ok('the collect beat has no just-talk exit (anti-dodge at the choice)', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap'); g.npcState.dennis.convo.ledger.you = 1;
+  const sc = G.conversationFor(g, 'dennis');
+  return sc.beat === 'collect' && !sc.choices.some(c => c.key === 'just');
+})());
+// patron
+ok('patron defer → +Standing/−Soul, no debt', (() => {
+  const g = convoGame(5, 'boss', 'fealty-patron'); const r = applyKey(g, 'boss', 'defer', 'meh');
+  return r.ds > 0 && r.dso < 0 && g.npcState.boss.convo.ledger.you === 0;
+})());
+ok('patron flips to cold after convo.no>=2; mentor stays gift', (() => {
+  const g = convoGame(5, 'boss', 'fealty-patron');
+  const before = G.conversationFor(g, 'boss').beat;
+  g.npcState.boss.convo.no = 2;
+  const after = G.conversationFor(g, 'boss').beat;
+  const gm = convoGame(5, 'marcus', 'true-mentor'); gm.npcState.marcus.convo.no = 5;
+  return before === 'offer' && after === 'cold' && G.conversationFor(gm, 'marcus').beat === 'gift';
+})());
+// FIX 3: credit graft augments gift, never replaces it
+ok('mentor gift always renders; spend grafts on only when them>0 (no downgrade)', (() => {
+  const g = convoGame(3, 'priya', 'true-mentor');
+  const s0 = G.conversationFor(g, 'priya');
+  g.npcState.priya.convo.ledger.them = 1;
+  const s1 = G.conversationFor(g, 'priya');
+  const has = (s, k) => s.choices.some(c => c.key === k);
+  return s0.beat === 'gift' && s1.beat === 'gift'
+    && has(s0, 'accept') && has(s1, 'accept')          // gift never lost
+    && !has(s0, 'spend') && has(s1, 'spend');          // spend only when owed
+})());
+ok('spending a favor grants the boon (taskForgiveness) and decrements them', (() => {
+  const g = convoGame(3, 'priya', 'true-mentor'); g.npcState.priya.convo.ledger.them = 1;
+  applyKey(g, 'priya', 'spend', 'meh');
+  return g.taskForgivenessToday === true && g.npcState.priya.convo.ledger.them === 0;
+})());
+// FIX 1: reveal across the board (traps + patrons taught, universal just-drip)
+ok('every beat teaches: just≈+0.10, trap bait.accept≈+0.20, patron cold≈+0.25', (() => {
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  const gj = convoGame(3, 'dennis', 'hidden-debt-trap'); applyKey(gj, 'dennis', 'just', 'meh');
+  const gb = convoGame(3, 'adam', 'hidden-debt-trap');   applyKey(gb, 'adam', 'accept', 'meh');
+  const gc = convoGame(3, 'boss', 'fealty-patron'); gc.npcState.boss.convo.no = 2;
+  applyKey(gc, 'boss', 'capitulate', 'meh');
+  return near(gj.npcState.dennis.wants.revealed, 0.10)
+      && near(gb.npcState.adam.wants.revealed, 0.20)
+      && near(gc.npcState.boss.wants.revealed, 0.25);
+})());
+// ledger.them sourcing
+ok('solidarity sources ledger.them (back Priya / sit with Kayla / take her task)', (() => {
+  const g1 = G.newGame(11);
+  G.applyIncidentChoice(g1, 'priya_demo', G.ARC_INCIDENTS.priya_demo.choices.findIndex(c => c.key === 'back'), 700);
+  const g2 = G.newGame(11); G.kaylaSitWith(g2, 700);
+  const g3 = G.newGame(11); G.kaylaTaskTaken(g3, 700);
+  return g1.npcState.priya.convo.ledger.them === 1
+      && g2.npcState.kayla.convo.ledger.them === 1
+      && g3.npcState.kayla.convo.ledger.them === 1;
+})());
+ok('canSettle is two-sided (them>0 OR a receipt held)', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap');
+  const c0 = G.canSettle(g, 'dennis');
+  g.npcState.dennis.convo.ledger.them = 1; const c1 = G.canSettle(g, 'dennis');
+  g.npcState.dennis.convo.ledger.them = 0; G.addReceipt(g, 'priya_commit_log');
+  const c2 = G.canSettle(g, 'dennis');
+  return c0 === false && c1 === true && c2 === true;
+})());
+ok('settle with a favor cancels the debt, spends the favor, costs no meters', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap');
+  g.npcState.dennis.convo.ledger.you = 1; g.npcState.dennis.convo.ledger.them = 1;
+  const bS = g.standing, bSo = g.soul; applyKey(g, 'dennis', 'settle', 'meh');
+  return g.npcState.dennis.convo.ledger.you === 0 && g.npcState.dennis.convo.ledger.them === 0
+    && g.standing === bS && g.soul === bSo;
+})());
+// soul-floor preserved (mood-scaled)
+ok('just-talk floor ≈ legacy chat soul: +3 good / +2 else, nothing else moves', (() => {
+  const rg = applyKey(convoGame(3, 'marcus', 'true-mentor'), 'marcus', 'just', 'good');
+  const rm = applyKey(convoGame(3, 'marcus', 'true-mentor'), 'marcus', 'just', 'meh');
+  return rg.dso === 3 && rm.dso === 2 && rg.ds === 0 && rm.ds === 0;
+})());
+// role mechanical / revealed cosmetic
+ok('scene branches on role, NEVER on revealed', (() => {
+  const a = convoGame(3, 'dennis', 'hidden-debt-trap'); a.npcState.dennis.wants.revealed = 0;
+  const b = convoGame(3, 'dennis', 'hidden-debt-trap'); b.npcState.dennis.wants.revealed = 0.9;
+  const sa = G.conversationFor(a, 'dennis'), sb = G.conversationFor(b, 'dennis');
+  return sa.beat === sb.beat && sa.scene === sb.scene
+    && JSON.stringify(sa.choices.map(c => [c.key, c.s, c.so]))
+     === JSON.stringify(sb.choices.map(c => [c.key, c.s, c.so]));
+})());
+// FIX minor: policy exercises hedge; idx throws on a bad key
+ok('policy offer picks defer / just / hedge by state (hedge reachable)', (() => {
+  const g = convoGame(5, 'boss', 'fealty-patron'); const sc = G.conversationFor(g, 'boss');
+  const at = (st, so) => { g.standing = st; g.soul = so; return sc.choices[G.policyConversationChoice(g, 'boss', sc)].key; };
+  return at(40, 70) === 'defer' && at(70, 30) === 'just' && at(70, 70) === 'hedge';
+})());
+ok('policy collect prefers settle > pay; throws loudly on a typo key', (() => {
+  const g = convoGame(3, 'dennis', 'hidden-debt-trap');
+  g.npcState.dennis.convo.ledger.you = 1; g.npcState.dennis.convo.ledger.them = 1;
+  const s = G.conversationFor(g, 'dennis');
+  const settle = s.choices[G.policyConversationChoice(g, 'dennis', s)].key === 'settle';
+  let threw = false;
+  try { G.policyConversationChoice(G.newGame(1), 'x', { beat: 'gift', choices: [{ key: 'nope' }] }); }
+  catch(e){ threw = /no "accept"/.test(e.message); }
+  return settle && threw;
+})());
+// collector cap + priority
+ok('collector morning capped at 2 even with four maxed debts', (() => {
+  for(let s = 1; s <= 40; s++){
+    const g = G.newGame(s);
+    ['dennis','meredith','adam','brad'].forEach(id => {
+      g.npcState[id].wants.role = 'hidden-debt-trap'; g.npcState[id].convo.ledger.you = 2; });
+    if(G.collectorsToday(g).length > 2) return false;
+  }
+  return true;
+})());
+ok('collectors returned in priority order (bigger debt never behind a smaller)', (() => {
+  const owe = { dennis: 3, meredith: 2, adam: 2, brad: 1 };
+  for(let s = 1; s <= 50; s++){
+    const g = G.newGame(s);
+    Object.keys(owe).forEach(id => {
+      g.npcState[id].wants.role = 'hidden-debt-trap'; g.npcState[id].convo.ledger.you = owe[id]; });
+    const c = G.collectorsToday(g);
+    if(c.length > 2) return false;
+    if(c.length === 2 && owe[c[0]] < owe[c[1]]) return false;
+  }
+  return true;
+})());
+// ANTI-DODGE (brain): an owed trap comes to collect without you ever initiating
+ok('anti-dodge: a stacked debt (you>=2) is flagged to collect within a few mornings', (() => {
+  const g = G.newGame(3);
+  g.npcState.dennis.wants.role = 'hidden-debt-trap'; g.npcState.dennis.convo.ledger.you = 2;
+  let flagged = false;
+  for(let d = 0; d < 4 && !flagged; d++){
+    g.standing = 60; g.soul = 70; g.failed = null; g.over = false;
+    G.closeDay(g, { tasksDone: 8, tasksTotal: 8 });
+    g.standing = 60; g.soul = 70; g.failed = null; g.over = false;
+    G.nextDay(g);
+    if(g.todayCollectors.indexOf('dennis') >= 0) flagged = true;
+  }
+  return flagged;
+})());
+// isolation: conversations add no newGame randomness; a debt-free run stages no collectors
+ok('day-1 rngState byte-identical for 1/31/42/7/100 (convo adds no newGame rng)', (() => {
+  const exp = { 1: 440012080, 31: 440012110, 42: 440012121, 7: 440012086, 100: 440012179 };
+  return Object.keys(exp).every(s => G.newGame(+s).rngState === exp[s]);
+})());
+ok('a debt-free run stages zero collectors across a full career (no arcRand consumed)', (() => {
+  const g = G.newGame(31);
+  for(let d = 0; d < 12; d++){
+    g.standing = 60; g.soul = 70; g.failed = null; g.over = false;
+    G.closeDay(g, { tasksDone: 8, tasksTotal: 8 });
+    g.standing = 60; g.soul = 70; g.failed = null; g.over = false;
+    G.nextDay(g);
+    if(g.todayCollectors.length !== 0) return false;
+  }
+  return true;
+})());
+ok('resolver deterministic given (seed, state)', (() => {
+  const r1 = applyKey(convoGame(9, 'boss', 'fealty-patron'), 'boss', 'defer', 'meh');
+  const r2 = applyKey(convoGame(9, 'boss', 'fealty-patron'), 'boss', 'defer', 'meh');
+  return r1.ds === r2.ds && r1.dso === r2.dso && r1.outcome === r2.outcome;
+})());
+ok('convo (ledger/refusals) serializes; ensureConvo backfills a stripped save', (() => {
+  const g = G.newGame(314);
+  g.npcState.dennis.convo.ledger.you = 2; g.npcState.dennis.convo.ledger.refusals = 1;
+  const back = JSON.parse(JSON.stringify(g));
+  const okSer = G.NPC_IDS.every(id => JSON.stringify(back.npcState[id].convo) === JSON.stringify(g.npcState[id].convo));
+  const stripped = JSON.parse(JSON.stringify(G.newGame(5)));
+  G.NPC_IDS.forEach(id => { delete stripped.npcState[id].convo; });
+  G.ensureConvo(stripped);
+  const okBf = G.NPC_IDS.every(id => stripped.npcState[id].convo && stripped.npcState[id].convo.ledger.you === 0
+    && stripped.npcState[id].convo.ledger.refusals === 0);
+  return okSer && okBf;
+})());
+
+// COVERAGE: every (character, role, beat, choice) — including gated states where
+// settle is dropped — must resolve to a NON-EMPTY outcome. A silent empty outcome
+// (off-skin roll, missing skin) reads as a broken conversation and fails here.
+ok('every conversation choice returns a non-empty outcome (all chars × roles × beats, incl. gated)', (() => {
+  const ROLES = ['fealty-patron', 'true-mentor', 'hidden-debt-trap'];
+  const empties = [];
+  const setupsFor = role =>
+    role === 'hidden-debt-trap'
+      ? [{ n:'bait', you:0 }, { n:'collect', you:1 },
+         { n:'collect+favor', you:1, them:1 }, { n:'collect+receipt', you:1, receipt:true }]
+    : role === 'fealty-patron'
+      ? [{ n:'offer', no:0 }, { n:'cold', no:2 }]
+      : [{ n:'gift', them:0 }, { n:'gift+spend', them:1 }];
+  G.NPC_IDS.forEach(id => ROLES.forEach(role => setupsFor(role).forEach(su => {
+    // count the rendered choices once, then resolve each on a fresh game
+    const probe = G.newGame(3);
+    const pnp = probe.npcState[id];
+    pnp.wants.role = role; pnp.wants.falseTell = false;
+    if(su.you != null) pnp.convo.ledger.you = su.you;
+    if(su.them != null) pnp.convo.ledger.them = su.them;
+    if(su.no != null) pnp.convo.no = su.no;
+    if(su.receipt) G.addReceipt(probe, 'priya_commit_log');
+    const n = G.conversationFor(probe, id).choices.length;
+    for(let i = 0; i < n; i++){
+      const g = G.newGame(3);
+      const np = g.npcState[id];
+      np.wants.role = role; np.wants.falseTell = false;
+      if(su.you != null) np.convo.ledger.you = su.you;
+      if(su.them != null) np.convo.ledger.them = su.them;
+      if(su.no != null) np.convo.no = su.no;
+      if(su.receipt) G.addReceipt(g, 'priya_commit_log');
+      const res = G.applyConversationChoice(g, id, i, 700, 'meh');
+      const o = res && res.outcome;
+      if(typeof o !== 'string' || o.trim() === '')
+        empties.push(id + '/' + role + '/' + su.n + '/#' + i);
+    }
+  })));
+  return empties.length === 0;
+})(), 'empty-outcome combos must be 0');
+
 // ---- 18. the competent policy (pure functions; consumed by movie + soak) ---------
 function fakeWorld(over){
   return Object.assign({

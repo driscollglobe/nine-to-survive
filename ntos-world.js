@@ -79,22 +79,22 @@ const ZONES = [
 const CAST = [
   { id:'you',    name:'You',    role:'Trying to get out', color:'#4B4743', bear:true,
     spot:{x:9, y:16} },   // the shrugging badger (brand mascot) — grays, not browns
-  { id:'brad',   name:'Brad',   role:'Credit reallocation', color:'#2F6BE0',
+  { id:'brad',   name:'Brad',   role:'Credit reallocation', color:'#2F6BE0', chat:true,
     spot:{x:14, y:16},
     lines:{ good:'Just circled back on something that was yours.',
             meh:'Polishing a deck. The data looks familiar.',
             bad:'His “win” got questioned. Volatile.' } },
-  { id:'dennis', name:'Dennis', role:'Senior approval-holder, 19 years', color:'#5C7A5C',
+  { id:'dennis', name:'Dennis', role:'Senior approval-holder, 19 years', color:'#5C7A5C', chat:true,
     spot:{x:35, y:21},
     lines:{ good:'Only has FOUR questions today. A gift.',
             meh:'Reviewing. Do not ask about the timeline.',
             bad:'Someone went around him once in 2019. He remembers.' } },
-  { id:'boss',   name:'The Boss', role:'Ambush scheduler', color:'#15120D',
+  { id:'boss',   name:'The Boss', role:'Ambush scheduler', color:'#15120D', chat:true,
     spot:{x:34, y:5},
     lines:{ good:'Had a good call. Approachable for ~an hour.',
             meh:'Neutral. Could go either way. Tread evenly.',
             bad:'BAD DAY. Do not be away from your desk when he walks.' } },
-  { id:'hr',     name:'Meredith (HR)', role:'People & Culture™', color:'#B0568C',
+  { id:'hr',     name:'Meredith (HR)', role:'People & Culture™', color:'#B0568C', chat:true,
     spot:{x:5, y:5},
     lines:{ good:'Planning mandatory fun. You are on a list.',
             meh:'Updating the handbook. Section: you.',
@@ -115,7 +115,7 @@ const CAST = [
             meh:'In four meetings that could be emails.',
             bad:'Brad presented her numbers this morning.' } },
   // appended LAST so his seeding can ride a side stream (see newDay)
-  { id:'adam',   name:'Adam',   role:'Institutional knowledge, self-appointed', color:'#A88C5F',
+  { id:'adam',   name:'Adam',   role:'Institutional knowledge, self-appointed', color:'#A88C5F', chat:true,
     spot:{x:19, y:16},
     lines:{ good:'Has concerns about the process. Would love to share them. Will regardless.',
             meh:'Was not consulted, and it shows, he says.',
@@ -234,6 +234,8 @@ function newDay(seed, day, plan, flags){
     }))).sort((a, b) => a.atMin - b.atMin),
     nextEvent: 0,
     activeEvent: null,
+    activeConversation: null,   // {who, collect?} while a conversation overlay is up (world paused)
+    collectors: [],             // debt collectors staged from flags.collectors (built at tail of newDay)
     // the actual work: tasks land in your inbox through the day (load seeded below)
     tasks: { pending: 0, done: 0, spawned: 0, total: 0, progress: 0,
              spawnAt: [], blocked: 0, blockedAt: [] },
@@ -339,6 +341,12 @@ function newDay(seed, day, plan, flags){
   for(let i = 0; i < extraRaids; i++)
     w.bradRaids.push({ atMin: 600 + Math.floor(rand(w) * 360), status: 'pending' });
   w.bradRaids.sort((a, b) => a.atMin - b.atMin);
+  // debt collectors: traps the brain flagged (worldFlagsFor → flags.collectors, already
+  // capped ≤2) cross the floor to collect. Staged LAST so a no-debt day (empty list =
+  // zero rand consumed) is byte-identical to before; a collector day only ADDS these walks.
+  w.collectors = (flags.collectors || []).map(id => ({
+    id, atMin: 600 + Math.floor(rand(w) * 360), status: 'pending'
+  })).sort((a, b) => a.atMin - b.atMin);
   return w;
 }
 
@@ -523,6 +531,22 @@ function step(w, dt){
     }
   });
 
+  // ---- debt collectors: a trap crosses the floor to collect (NPC-initiated) ----
+  // The brain decided who (flags.collectors, ≤2). They walk to your desk like a
+  // raid; on arrival the day pauses and a conversation opens (the collect beat).
+  // This is what makes a debt undodgeable — you never had to walk to them.
+  w.collectors.forEach(co => {
+    if(co.status === 'pending' && w.clockMin >= co.atMin){
+      const trap = getActor(w, co.id);
+      if(trap && !trap.off
+         && (trap.state === 'idle' || trap.state === 'walking' || trap.state === 'returning')){
+        trap.path = [];
+        if(sendTo(w, trap, adjacentTo(w, { x: you.home.x, y: you.home.y }), 'collect'))
+          co.status = 'out';
+      }
+    }
+  });
+
   // ---- Adam's concern walk: he is heading to HR "with a concern" ----
   // Interceptable mid-walk: redirect him (eat the 2009 anecdote) or, on a
   // blocker day, point him at Dennis instead. If he lands, HR opens a folder.
@@ -641,8 +665,9 @@ function step(w, dt){
     }
   }
 
-  // ---- 5 PM ----
-  if(!w.dayOver && w.clockMin >= 1020 && w.nextEvent >= w.events.length && !w.activeEvent){
+  // ---- 5 PM ---- (never end the day mid-conversation)
+  if(!w.dayOver && w.clockMin >= 1020 && w.nextEvent >= w.events.length
+     && !w.activeEvent && !w.activeConversation){
     w.dayOver = true;
     w.sig.push({ type:'dayover', tasksDone: w.tasks.done, tasksTotal: w.tasks.total });
   }
@@ -672,6 +697,15 @@ function handleArrival(w, a, you){
   }
   else if(a.state === 'patrol' && a.id === 'boss'){ bossArrives(w, a, you); }
   else if(a.state === 'raid' && a.id === 'brad'){ bradArrives(w, a, you); }
+  else if(a.state === 'collect'){
+    // a trap reached your desk to collect. Pause the day and open the conversation
+    // (the brain will serve the collect beat). Resumed by resolveConversation.
+    a.state = 'atPlayer';
+    w.running = false;
+    w.activeConversation = { who: a.id, collect: true };
+    w.sig.push({ type: 'conversation', who: a.id, name: a.name, mood: a.mood,
+                 initiator: 'them', collect: true });
+  }
   else if(a.state === 'deck' && a.id === 'brad'){
     // the slip: your desk, his laptop, their logo — then he's off to the stairwell
     if(w.bradDeck) w.bradDeck.status = 'done';
@@ -732,8 +766,12 @@ function arriveErrand(w, you){
   } else if(e.type === 'chat'){
     const target = getActor(w, e.id);
     if(Math.hypot(target.x - you.x, target.y - you.y) <= 2.2){
-      w.playerErrand = null; w.chatted[e.id] = true;
-      w.sig.push({ type:'chat', who: e.id, name: target.name, mood: target.mood });
+      // you reached them: the day pauses and a conversation opens (brain builds the
+      // scene from wants.role). chatted is set on resolve, like the collector path.
+      w.playerErrand = null;
+      w.running = false;
+      w.activeConversation = { who: e.id };
+      w.sig.push({ type:'conversation', who: e.id, name: target.name, mood: target.mood, initiator:'you' });
     } else if(e.repaths < 3){
       e.repaths++;
       sendTo(w, you, adjacentTo(w, target), 'errand');
@@ -935,6 +973,19 @@ function resolveCrunch(w){
   w.running = true;
 }
 
+// Conversation resolved: the other party goes home, the day resumes. Works for
+// both a collector (they came to you) and a player-initiated chat (commit 3).
+function resolveConversation(w){
+  if(!w.activeConversation) return;
+  const who = w.activeConversation.who;
+  const npc = getActor(w, who);
+  if(npc && !npc.off) sendTo(w, npc, npc.home, 'returning');
+  w.collectors.forEach(co => { if(co.id === who) co.status = 'done'; });
+  w.chatted[who] = true;              // one conversation per person per day
+  w.activeConversation = null;
+  w.running = true;
+}
+
 function eventsRemaining(w){
   return w.events.filter(e => e.status !== 'done').length;
 }
@@ -1029,9 +1080,16 @@ function resolveQuickCall(w){
   if(w.summons) w.summons.status = 'done';
   w.running = true;
 }
+// A conversation is available when the actor is on the floor and not mid-scheme:
+// busy states have their own affordances (raid/carry/summons/etc.), so no small talk.
+const CONVO_BUSY = ['raid','patrol','summoned','escort','escorting','escorted','carry',
+                    'concern','grenade','lurk','lurkwalk','deck','demoprep','senthome','hrvisit','collect'];
+function conversable(w, actor){
+  return !!actor && !actor.off && !!actor.chat && CONVO_BUSY.indexOf(actor.state) < 0;
+}
 function requestChat(w, id){
   const target = getActor(w, id);
-  if(!target || !target.chat || w.chatted[id]) return false;
+  if(!conversable(w, target) || w.chatted[id]) return false;
   const you = getActor(w, 'you');
   if(!sendTo(w, you, adjacentTo(w, target), 'errand')) return false;
   w.playerErrand = { type:'chat', id, repaths: 0 };
@@ -1252,7 +1310,7 @@ function statusOf(w, actor){
     name: actor.name, role: actor.role, mood: actor.mood,
     face: MOOD_FACE[actor.mood],
     line: actor.lines ? actor.lines[actor.mood] : '',
-    chat: !!actor.chat && !w.chatted[actor.id],
+    chat: conversable(w, actor) && !w.chatted[actor.id],
     quickcall: actor.id === 'boss' && !!(w.summons && w.summons.status === 'open')
   };
 }
@@ -2656,7 +2714,8 @@ function drawActor(ctx, cam, a, w){
 return {
   GRID_W, GRID_H, TW, TH, CAST, FURNITURE, ZONES, OWNER_BY_ENC, STAIRS_SPOT,
   TASKS_MIN, TASKS_MAX, TASK_WORK_SECS, CRUNCH_CHANCE, CLOCK_SPEED,
-  setEncounters, newDay, step, resolveEncounter, resolveCrunch, eventsRemaining,
+  setEncounters, newDay, step, resolveEncounter, resolveConversation, resolveCrunch, eventsRemaining,
+  conversable,
   movePlayer, goForCoffee, goForCouch, requestChat, playerGoHome, playerAtDesk,
   armWalkout, goForExit, goForBossCall, resolveQuickCall, takeKaylaTask, reportKayla,
   goForApproval, flatterDennis, clearAllBlocked, APPROVAL_WAIT_SECS,

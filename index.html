@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Archivo+Expanded:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="ntos-game.js?v=n22"></script>
-<script src="ntos-world.js?v=w29"></script>
+<script src="ntos-game.js?v=n23"></script>
+<script src="ntos-world.js?v=w30"></script>
 <link rel="stylesheet" href="ntos-theme.css">
 </head>
 <body>
@@ -907,33 +907,7 @@ function handleSignal(s){
     case 'walkout':
       doWalkOut();
       break;
-    case 'chat': {
-      if(s.who === 'kayla' && world.flags.kaylaPanic){
-        const sit = G.kaylaSitWith(g, Math.floor(world.clockMin));
-        if(sit){
-          setMeter('soul', g.soul); applyDelta('soul', sit.dso);
-          toast(sit.text);
-          W.playerGoHome(world);
-          break;
-        }
-      }
-      const kind = s.mood === 'good' ? 'chatGood' : s.mood === 'bad' ? 'chatBad' : 'chatMeh';
-      const res = worldEffect(kind);
-      const bond = G.chatBonus(g, s.who);
-      if(bond){ setMeter('soul', g.soul); }
-      const tip = s.who === 'marcus' ? G.marcusTip(g, Math.floor(world.clockMin)) : null;
-      if(tip){
-        if(tip.kind === 'miscal'){ setMeter('standing', g.standing); applyDelta('standing', -2); }
-        if(tip.kind === 'bosswalk'){
-          const nw = world.bossWalks.find(b => b.status === 'pending');
-          toast(tip.text + (nw ? ' (Next walk ≈ ' + W.minToClock(nw.atMin) + '.)' : ' (He’s done walking today.)'));
-        } else toast(tip.text);
-      } else {
-        toast(s.name.split(' ')[0] + ': five minutes of being human. Soul +' + (res ? res.dso : ''));
-      }
-      W.playerGoHome(world);
-      break;
-    }
+    case 'conversation': openConversation(s); break;
     case 'couch':
       worldEffect('couch');
       G.feedWorldEvent(g, 'couch', Math.floor(world.clockMin));
@@ -1011,8 +985,10 @@ if(MOVIE){
       if(!$id('enc').classList.contains('hidden')){
         // the ONE policy picks — same function the headless soak proves
         const incId = $id('cardoverlay').dataset.incident;
-        const idx = incId ? G.policyIncidentChoice(g, incId)
-                          : G.policyCardChoice(g, g.plan[g.idxInDay]);
+        const convWho = $id('cardoverlay').dataset.conversation;
+        const idx = convWho ? G.policyConversationChoice(g, convWho, G.conversationFor(g, convWho))
+                  : incId    ? G.policyIncidentChoice(g, incId)
+                             : G.policyCardChoice(g, g.plan[g.idxInDay]);
         const c = document.querySelector('#choices .choice[data-idx="' + idx + '"]')
                || document.querySelector('#choices .choice');
         if(c) c.click();
@@ -1184,8 +1160,62 @@ function choose(i){
   next.textContent = g.failed ? 'See how it ends' : 'Back to your desk';
 }
 
+/* ---- conversations (a chat is a scene shaped by wants.role) ---- */
+let activeConversation = null;
+function openConversation(s){
+  // sit-with special (kayla's panic day) keeps its bespoke world beat
+  if(s.who === 'kayla' && world.flags.kaylaPanic){
+    const sit = G.kaylaSitWith(g, Math.floor(world.clockMin));
+    if(sit){
+      setMeter('soul', g.soul); applyDelta('soul', sit.dso);
+      toast(sit.text);
+      W.resolveConversation(world); W.playerGoHome(world);
+      return;
+    }
+  }
+  const scene = G.conversationFor(g, s.who);
+  if(!scene){ W.resolveConversation(world); W.playerGoHome(world); return; }   // never strand
+  activeConversation = { who: s.who, mood: s.mood };
+  $id('cardoverlay').dataset.conversation = s.who;   // autopilot can read it
+  $id('cardoverlay').classList.remove('hidden');
+  $id('enc').classList.remove('hidden');
+  $id('out').classList.add('hidden');
+  $id('tag').textContent = scene.tag;
+  $id('etitle').textContent = scene.title;
+  $id('escene').textContent = scene.scene;
+  setCardPortrait(s.who);
+  const box = $id('choices'); box.innerHTML = '';
+  scene.choices.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'choice'; b.textContent = c.t;
+    b.dataset.idx = i;
+    b.onclick = () => chooseConversation(i);
+    box.appendChild(b);
+  });
+}
+function chooseConversation(i){
+  const res = G.applyConversationChoice(g, activeConversation.who, i,
+    Math.floor(world.clockMin), activeConversation.mood);
+  if(!res) return;
+  applyDelta('standing', res.ds);
+  applyDelta('soul', res.dso);
+  $id('enc').classList.add('hidden');
+  $id('out').classList.remove('hidden');
+  $id('oline').textContent = res.outcome;
+  $id('nextbtn').textContent = g.failed ? 'See how it ends' : 'Back to your desk';
+}
+
 function advance(){
   $id('cardoverlay').classList.add('hidden');
+  if(activeConversation){
+    activeConversation = null;
+    delete $id('cardoverlay').dataset.conversation;
+    if(g.failed) return endGame();
+    W.resolveConversation(world);
+    W.playerGoHome(world);
+    saveRun('day');
+    return;
+  }
   if(activeIncident){
     const wasQuickCall = activeIncident === 'boss_quick_call' && !world.activeEvent;
     activeIncident = null;           // incident cards don't advance the deck index
